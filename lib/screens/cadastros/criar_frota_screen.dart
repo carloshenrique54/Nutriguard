@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../widgets/custom_end_drawer.dart';
-import '../../repository/app_repository.dart';
+import '../../services/supabase_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/models.dart';
 import '../../widgets/animated_components.dart';
 import '../../widgets/watermark_background.dart';
 
 class VeiculoItem {
-  final Device device;
+  final DispositivoModel device;
   final String operador;
   bool isSelected;
 
@@ -23,29 +24,52 @@ class CriarFrotaScreen extends StatefulWidget {
 
 class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
   final _nomeCtrl = TextEditingController();
+  final SupabaseService _supabase = SupabaseService();
   String? _selectedGerenteId;
   List<VeiculoItem> veiculos = [];
+  List<UsuarioModel> _gerentes = [];
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadDevices();
+    _fetchData();
   }
 
-  void _loadDevices() {
-    veiculos = AppRepository.instance.devices.map((d) {
-      final op = AppRepository.instance.getUserById(d.operadorId);
-      return VeiculoItem(
-        device: d,
-        operador: op != null ? 'Operador: ${op.nome}' : 'Sem operador',
-        isSelected: false,
-      );
-    }).toList();
+  Future<void> _fetchData() async {
+    setState(() => _isLoading = true);
+    try {
+      final dispositivos = await _supabase.getDispositivos();
+      
+      // Obter todos os usuários (necessário filtrar gerentes e operadores localmente ou via API)
+      final res = await Supabase.instance.client.from('Usuarios').select();
+      final allUsers = (res as List).map((e) => UsuarioModel.fromJson(e)).toList();
+      
+      _gerentes = allUsers.where((u) => u.cargo?.toLowerCase() == 'gerente').toList();
+
+      veiculos = dispositivos.map((d) {
+        final op = allUsers.firstWhere((u) => u.id == d.idOperador, orElse: () => UsuarioModel(id: ''));
+        return VeiculoItem(
+          device: d,
+          operador: op.nome != null ? 'Operador: ${op.nome}' : 'Sem operador',
+          isSelected: false,
+        );
+      }).toList();
+
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao buscar dados: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   int get selectedCount => veiculos.where((v) => v.isSelected).length;
 
-  void _criarFrota() {
+  void _criarFrota() async {
     HapticFeedback.lightImpact();
     if (_nomeCtrl.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -59,29 +83,45 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
       return;
     }
 
-    final selectedDevices = veiculos.where((v) => v.isSelected).map((v) => v.device.id).toList();
+    // Insert new frota
+    try {
+      final response = await Supabase.instance.client.from('Frotas').insert({
+        'nome': _nomeCtrl.text,
+        'id_gerente': _selectedGerenteId,
+      }).select().single();
+      
+      final newFrotaId = response['id'];
 
-    final newFleet = Fleet(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      nome: _nomeCtrl.text,
-      gerenteId: _selectedGerenteId,
-      deviceIds: selectedDevices,
-    );
+      // Atualizar o id_frota nos dispositivos selecionados
+      final selectedDevices = veiculos.where((v) => v.isSelected).map((v) => v.device.id).toList();
+      for (var devId in selectedDevices) {
+        await Supabase.instance.client.from('Dispositivos').update({'id_frota': newFrotaId}).eq('id', devId);
+      }
 
-    AppRepository.instance.addFleet(newFleet);
-    HapticFeedback.mediumImpact();
-
-    _nomeCtrl.clear();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Frota criada com sucesso!', style: TextStyle(color: Colors.white)),
-        backgroundColor: Colors.green,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      ),
-    );
-
+      HapticFeedback.mediumImpact();
+      _nomeCtrl.clear();
+      
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Frota criada com sucesso!', style: TextStyle(color: Colors.white)),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        ),
+      );
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao criar frota: $e', style: const TextStyle(color: Colors.white)),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        ),
+      );
+    }
   }
 
   @override
@@ -137,9 +177,10 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
                         width: 40,
                         height: 40,
                         child: Image.asset(
-                          'web/icons/1.png',
-                          errorBuilder: (ctx, error, stackTrace) =>
-                              Image.asset('web/icons/1.png', width: 32, height: 32),
+                          'assets/images/logo.png',
+                          width: 32,
+                          height: 32,
+                          color: const Color(0xFFC23147),
                         ),
                       ),
                     ),
@@ -227,9 +268,8 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
                     hint: const Text('Selecione...'),
                     isExpanded: true,
                     icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFFC23147)),
-                    items: AppRepository.instance.users
-                        .where((u) => u.role == 'gerente')
-                        .map((u) => DropdownMenuItem(value: u.id, child: Text(u.nome)))
+                    items: _gerentes
+                        .map((u) => DropdownMenuItem(value: u.id, child: Text(u.nome ?? 'Sem nome')))
                         .toList(),
                     onChanged: (val) {
                       if (val != null) setState(() => _selectedGerenteId = val);
@@ -280,7 +320,9 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
                         trackBorderColor: WidgetStateProperty.all(Colors.transparent),
                       ),
                     ),
-                    child: Scrollbar(
+                    child: _isLoading 
+                      ? const Center(child: CircularProgressIndicator(color: Color(0xFFC23147)))
+                      : Scrollbar(
                       thickness: 6,
                       radius: const Radius.circular(3),
                       thumbVisibility: true,
@@ -333,7 +375,7 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          veiculo.device.nome,
+                                          veiculo.device.nomeDispositivo ?? 'Sem Nome',
                                           style: const TextStyle(
                                             color: Colors.black87,
                                             fontWeight: FontWeight.bold,

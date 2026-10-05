@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../widgets/custom_end_drawer.dart';
 import '../../widgets/auth_components.dart';
-import '../../repository/app_repository.dart';
+import '../../services/supabase_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -14,29 +14,43 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _emailCtrl = TextEditingController();
   final _senhaCtrl = TextEditingController();
+  final _supabaseService = SupabaseService();
+  bool _isLoading = false;
 
-  void _login() {
+  void _login() async {
     HapticFeedback.lightImpact();
+    setState(() => _isLoading = true);
     try {
-      AppRepository.instance.login(_emailCtrl.text.trim(), _senhaCtrl.text.trim());
+      await _supabaseService.signIn(_emailCtrl.text.trim(), _senhaCtrl.text.trim());
+      
+      final currentUserId = _supabaseService.currentUser?.id;
+      if (currentUserId == null) throw Exception('User not found');
+      
+      final perfil = await _supabaseService.getUsuarioPerfil(currentUserId);
+      
       HapticFeedback.mediumImpact();
-      final role = AppRepository.instance.currentUser?.role;
+      if (!mounted) return;
+      
+      final role = perfil?.cargo?.toLowerCase();
       if (role == 'adm' || role == 'gerente') {
         Navigator.pushReplacementNamed(context, '/dashboard-adm-frota');
       } else if (role == 'operador') {
-        Navigator.pushReplacementNamed(context, '/dashboard-veiculo'); // Or dashboard operador
+        Navigator.pushReplacementNamed(context, '/dashboard-veiculo');
       } else {
         Navigator.pushReplacementNamed(context, '/dashboard-vazio');
       }
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Credenciais inválidas!', style: TextStyle(color: Colors.white)),
+          content: Text('Erro ao fazer login: ${e.toString()}', style: const TextStyle(color: Colors.white)),
           backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         ),
       );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -80,14 +94,18 @@ class _LoginScreenState extends State<LoginScreen> {
                         obscureText: true,
                       ),
                       const SizedBox(height: 16),
-                      PrimaryGradientButton(
-                        text: "Login",
-                        onPressed: _login,
-                      ),
-                      GoogleButton(
-                        text: "Entrar com Google",
-                        onPressed: () {},
-                      ),
+                      _isLoading 
+                          ? const CircularProgressIndicator(color: Color(0xFFAD2C3F))
+                          : PrimaryGradientButton(
+                              text: "Login",
+                              onPressed: _login,
+                            ),
+                      if (!_isLoading) ...[
+                        GoogleButton(
+                          text: "Entrar com Google",
+                          onPressed: () {},
+                        ),
+                      ],
                       const SizedBox(height: 24),
                       GestureDetector(
                         onTap: () => Navigator.pushNamed(context, '/cadastro'),

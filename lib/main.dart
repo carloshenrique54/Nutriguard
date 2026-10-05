@@ -23,7 +23,16 @@ import 'screens/listagens/listar_frotas_screen.dart';
 import 'screens/acoes/iniciar_viagem_screen.dart';
 import 'screens/acoes/configuracoes_screen.dart';
 
-void main() {
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  await Supabase.initialize(
+    url: 'https://tlcsqlemhpxftatpivac.supabase.co',
+    anonKey: 'sb_publishable_RkyrNG8clRlnHWJFvmOEPQ_DIRp4SKV',
+  );
+
   runApp(const NutriGuardApp());
 }
 

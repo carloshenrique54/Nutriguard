@@ -149,37 +149,21 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                   end: const Alignment(1.0, 0.3),
                 ).createShader(bounds);
               },
-              blendMode: BlendMode.srcATop,
+              blendMode: BlendMode.modulate,
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Ícone da Maçã
+                  // Logo NutriGuard
                   ScaleTransition(
                     scale: _scalePulse,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        // Outline
-                        Opacity(
-                          opacity: _outlineOpacity.value,
-                          child: Image.asset(
-                            'web/icons/1.png',
-                            width: 120,
-                            height: 120,
-                            color: const Color(0xFFC23147).withOpacity(0.5),
-                            colorBlendMode: BlendMode.srcATop,
-                          ),
-                        ),
-                        // Fill
-                        Opacity(
-                          opacity: _fillOpacity.value,
-                          child: Image.asset(
-                            'web/icons/1.png',
-                            width: 120,
-                            height: 120,
-                          ),
-                        ),
-                      ],
+                    child: Opacity(
+                      opacity: (_outlineOpacity.value * 0.35 + _fillOpacity.value * 0.65).clamp(0.0, 1.0),
+                      child: Image.asset(
+                        'assets/images/logo.png',
+                        width: 140,
+                        height: 140,
+                        fit: BoxFit.contain,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 24),

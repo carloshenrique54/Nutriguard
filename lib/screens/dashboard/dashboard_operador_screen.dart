@@ -1,26 +1,60 @@
 import 'package:flutter/material.dart';
 import '../../widgets/custom_bottom_nav_bar.dart';
 import '../../widgets/custom_end_drawer.dart';
-import '../../repository/app_repository.dart';
+import '../../services/supabase_service.dart';
+import '../../models/models.dart';
 import '../../widgets/watermark_background.dart';
 
-class DashboardOperadorScreen extends StatelessWidget {
+class DashboardOperadorScreen extends StatefulWidget {
   const DashboardOperadorScreen({super.key});
+
+  @override
+  State<DashboardOperadorScreen> createState() => _DashboardOperadorScreenState();
+}
+
+class _DashboardOperadorScreenState extends State<DashboardOperadorScreen> {
+  final SupabaseService _supabase = SupabaseService();
+  bool _isLoading = true;
+  String _userRole = 'OPERADOR';
+  List<OcorrenciaModel> _alerts = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchData();
+  }
+
+  Future<void> _fetchData() async {
+    setState(() => _isLoading = true);
+    try {
+      final currentUserId = _supabase.currentUser?.id;
+      if (currentUserId != null) {
+        final perfil = await _supabase.getUsuarioPerfil(currentUserId);
+        if (perfil != null) _userRole = perfil.cargo ?? 'OPERADOR';
+      }
+
+      final ocorrencias = await _supabase.getOcorrencias();
+      ocorrencias.sort((a, b) => (b.criadoEm ?? DateTime.now()).compareTo(a.criadoEm ?? DateTime.now()));
+      _alerts = ocorrencias.take(5).toList();
+
+      if (mounted) setState(() => _isLoading = false);
+    } catch (e) {
+      debugPrint('Erro: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       extendBody: true,
-      
       backgroundColor: const Color(0xFFFFF2E0),
-      
       bottomNavigationBar: const CustomBottomNavBar(selectedIndex: 2),
       body: WatermarkBackground(
         child: SafeArea(
-          child: ListenableBuilder(
-          listenable: AppRepository.instance,
-          builder: (context, child) {
-            return SingleChildScrollView(
+          child: _isLoading 
+            ? const Center(child: CircularProgressIndicator(color: Color(0xFFC23147)))
+            : SingleChildScrollView(
               padding: const EdgeInsets.all(16.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -37,17 +71,13 @@ class DashboardOperadorScreen extends StatelessWidget {
                   const SizedBox(height: 60), // Extra space for BottomAppBar
                 ],
               ),
-            );
-          }
-        ),
+            ),
         ),
       ),
     );
   }
 
-
   Widget _buildHeader(BuildContext context) {
-    final user = AppRepository.instance.currentUser;
     return Row(
       children: [
         const Text(
@@ -66,7 +96,7 @@ class DashboardOperadorScreen extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
           ),
           child: Text(
-            user?.role.toUpperCase() ?? 'OPERADOR',
+            _userRole.toUpperCase(),
             style: const TextStyle(
               color: Colors.white,
               fontSize: 12,
@@ -82,9 +112,10 @@ class DashboardOperadorScreen extends StatelessWidget {
               width: 40,
               height: 40,
               child: Image.asset(
-                'web/icons/1.png',
-                errorBuilder: (ctx, error, stackTrace) =>
-                    Image.asset('web/icons/1.png', width: 32, height: 32),
+                'assets/images/logo.png',
+                color: const Color(0xFFC23147),
+                width: 32,
+                height: 32,
               ),
             ),
           ),
@@ -181,7 +212,7 @@ class DashboardOperadorScreen extends StatelessWidget {
       children: [
         Row(
           children: [
-            Expanded(
+            const Expanded(
               child: InfoCard(
                 icon: Icons.shield_outlined,
                 title: 'Limite definido',
@@ -189,7 +220,7 @@ class DashboardOperadorScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 16),
-            Expanded(
+            const Expanded(
               child: InfoCard(
                 icon: Icons.access_time,
                 title: 'Última atualização',
@@ -238,12 +269,12 @@ class DashboardOperadorScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 16),
-            Expanded(
+            const Expanded(
               child: InfoCard(
                 icon: Icons.widgets_outlined,
                 title: 'Nivel de vibração',
                 value: '',
-                bottomWidget: const Padding(
+                bottomWidget: Padding(
                   padding: EdgeInsets.only(top: 8.0),
                   child: Icon(
                     Icons.stacked_line_chart,
@@ -286,7 +317,7 @@ class DashboardOperadorScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 16),
-            Expanded(
+            const Expanded(
               child: InfoCard(
                 icon: Icons.battery_charging_full,
                 title: 'Bateria',
@@ -306,15 +337,15 @@ class DashboardOperadorScreen extends StatelessWidget {
         color: const Color(0xFFC8E569),
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Row(
+      child: const Row(
         children: [
-          const CircleAvatar(
+          CircleAvatar(
             backgroundColor: Colors.white,
             radius: 20,
             child: Icon(Icons.check, color: Colors.green, size: 24),
           ),
-          const SizedBox(width: 12),
-          const Expanded(
+          SizedBox(width: 12),
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -333,16 +364,14 @@ class DashboardOperadorScreen extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          const Icon(Icons.local_shipping, size: 40, color: Colors.black87),
+          SizedBox(width: 8),
+          Icon(Icons.local_shipping, size: 40, color: Colors.black87),
         ],
       ),
     );
   }
 
   Widget _buildRecentEvents() {
-    final alerts = AppRepository.instance.alerts;
-    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -385,14 +414,14 @@ class DashboardOperadorScreen extends StatelessWidget {
             ],
           ),
           child: Column(
-            children: alerts.map((alert) {
+            children: _alerts.map((alert) {
               return Column(
                 children: [
                   _buildEventRow(
-                    icon: alert.gravidade == 'alta' ? Icons.warning : Icons.info_outline,
-                    title: alert.titulo,
-                    subtitle: alert.subtitulo,
-                    time: alert.hora,
+                    icon: (alert.valorRegistrado ?? 0) > 10 ? Icons.warning : Icons.info_outline,
+                    title: alert.tipo ?? 'Evento',
+                    subtitle: alert.status ?? 'Registrado',
+                    time: alert.criadoEm != null ? '${alert.criadoEm!.hour}:${alert.criadoEm!.minute}' : '12:00',
                   ),
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 8.0),
@@ -417,7 +446,7 @@ class DashboardOperadorScreen extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         CircleAvatar(
-          backgroundColor: const Color(0xFFC8E569).withValues(alpha: 0.3),
+          backgroundColor: const Color(0xFFC8E569).withOpacity(0.3),
           radius: 20,
           child: Icon(icon, color: Colors.green, size: 20),
         ),
@@ -499,7 +528,7 @@ class InfoCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: const Color(0xFFC23147).withValues(alpha: 0.1),
+              color: const Color(0xFFC23147).withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(icon, color: const Color(0xFFC23147), size: 20),
@@ -524,7 +553,7 @@ class InfoCard extends StatelessWidget {
               ),
             ),
           ],
-          ?bottomWidget,
+          if (bottomWidget != null) bottomWidget!,
         ],
       ),
     );

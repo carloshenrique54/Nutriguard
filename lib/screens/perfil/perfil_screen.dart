@@ -77,9 +77,9 @@ class PerfilScreen extends StatelessWidget {
               width: 40,
               height: 40,
               child: Image.asset(
-                'web/icons/1.png',
+                'assets/images/logo.png',
                 errorBuilder: (ctx, error, stackTrace) =>
-                    Image.asset('web/icons/1.png', width: 32, height: 32),
+                    const Icon(Icons.local_shipping_outlined, color: Color(0xFFC23147), size: 32),
               ),
             ),
           ),

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../widgets/custom_end_drawer.dart';
-import '../../repository/app_repository.dart';
+import '../../services/supabase_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/models.dart';
 import '../../widgets/animated_components.dart';
 import '../../widgets/watermark_background.dart';
@@ -32,8 +33,32 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
   final _intervaloCtrl = TextEditingController();
   
   String? _selectedOperadorId;
+  List<UsuarioModel> _operadores = [];
+  bool _isLoading = true;
 
-  void _cadastrar() {
+  @override
+  void initState() {
+    super.initState();
+    _fetchOperadores();
+  }
+
+  Future<void> _fetchOperadores() async {
+    try {
+      final res = await Supabase.instance.client.from('Usuarios').select();
+      final allUsers = (res as List).map((e) => UsuarioModel.fromJson(e)).toList();
+      if (mounted) {
+        setState(() {
+          _operadores = allUsers.where((u) => u.cargo?.toLowerCase() == 'operador').toList();
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _cadastrar() async {
     HapticFeedback.lightImpact();
     if (_nomeCtrl.text.isEmpty || _numSerieCtrl.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -47,41 +72,49 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
       return;
     }
 
-    final newDevice = Device(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      nome: _nomeCtrl.text,
-      numeroSerie: _numSerieCtrl.text,
-      modelo: _modeloDispCtrl.text, // Could be _modeloVeiculoCtrl if merged, but sticking to model
-      operadorId: _selectedOperadorId,
-      tempMin: _tempMinCtrl.text,
-      tempMax: _tempMaxCtrl.text,
-      humidadeMax: _humidadeCtrl.text,
-      carga: 'N/A', // Assuming from _modeloVeiculoCtrl or other
-    );
+    try {
+      await Supabase.instance.client.from('Dispositivos').insert({
+        'nome_dispositivo': _nomeCtrl.text,
+        'id_operador': _selectedOperadorId,
+        'temperatura_minima': double.tryParse(_tempMinCtrl.text),
+        'temperatura_maxima': double.tryParse(_tempMaxCtrl.text),
+        'umidade_maxima': double.tryParse(_humidadeCtrl.text),
+      });
 
-    AppRepository.instance.addDevice(newDevice);
-    HapticFeedback.mediumImpact();
+      HapticFeedback.mediumImpact();
 
-    _nomeCtrl.clear();
-    _numSerieCtrl.clear();
-    _modeloDispCtrl.clear();
-    _modeloVeiculoCtrl.clear();
-    _placaCtrl.clear();
-    _tempMinCtrl.clear();
-    _tempMaxCtrl.clear();
-    _humidadeCtrl.clear();
-    _sensibilidadeCtrl.clear();
-    _limiteVibracaoCtrl.clear();
-    _intervaloCtrl.clear();
+      _nomeCtrl.clear();
+      _numSerieCtrl.clear();
+      _modeloDispCtrl.clear();
+      _modeloVeiculoCtrl.clear();
+      _placaCtrl.clear();
+      _tempMinCtrl.clear();
+      _tempMaxCtrl.clear();
+      _humidadeCtrl.clear();
+      _sensibilidadeCtrl.clear();
+      _limiteVibracaoCtrl.clear();
+      _intervaloCtrl.clear();
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Dispositivo cadastrado com sucesso!', style: TextStyle(color: Colors.white)),
-        backgroundColor: Colors.green,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      ),
-    );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Dispositivo cadastrado com sucesso!', style: TextStyle(color: Colors.white)),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao cadastrar: $e', style: const TextStyle(color: Colors.white)),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        ),
+      );
+    }
   }
 
   @override
@@ -151,9 +184,10 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
                         width: 40,
                         height: 40,
                         child: Image.asset(
-                          'web/icons/1.png',
-                          errorBuilder: (ctx, error, stackTrace) =>
-                              Image.asset('web/icons/1.png', width: 32, height: 32),
+                          'assets/images/logo.png',
+                          width: 32,
+                          height: 32,
+                          color: const Color(0xFFC23147),
                         ),
                       ),
                     ),
@@ -261,9 +295,8 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
                           hint: const Text('Selecione...'),
                           isExpanded: true,
                           icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFFC23147)),
-                          items: AppRepository.instance.users
-                              .where((u) => u.role == 'operador')
-                              .map((u) => DropdownMenuItem(value: u.id, child: Text(u.nome)))
+                          items: _operadores
+                              .map((u) => DropdownMenuItem(value: u.id, child: Text(u.nome ?? 'Sem nome')))
                               .toList(),
                           onChanged: (val) {
                             if (val != null) setState(() => _selectedOperadorId = val);

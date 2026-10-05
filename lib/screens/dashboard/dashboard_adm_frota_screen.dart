@@ -1,27 +1,81 @@
 import 'package:flutter/material.dart';
 import '../../widgets/custom_bottom_nav_bar.dart';
 import '../../widgets/custom_end_drawer.dart';
-import '../../repository/app_repository.dart';
+import '../../services/supabase_service.dart';
+import '../../models/models.dart';
 import '../../widgets/animated_components.dart';
 import '../../widgets/watermark_background.dart';
 
-class DashboardAdmFrotaScreen extends StatelessWidget {
+class DashboardAdmFrotaScreen extends StatefulWidget {
   const DashboardAdmFrotaScreen({super.key});
+
+  @override
+  State<DashboardAdmFrotaScreen> createState() => _DashboardAdmFrotaScreenState();
+}
+
+class _DashboardAdmFrotaScreenState extends State<DashboardAdmFrotaScreen> {
+  final SupabaseService _supabase = SupabaseService();
+  bool _isLoading = true;
+  String _userName = 'Admin';
+  String _userRole = 'ADM';
+  int _devicesCount = 0;
+  List<FrotaModel> _frotas = [];
+  Map<String, int> _frotaDeviceCounts = {};
+  List<OcorrenciaModel> _alerts = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchData();
+  }
+
+  Future<void> _fetchData() async {
+    setState(() => _isLoading = true);
+    try {
+      final currentUserId = _supabase.currentUser?.id;
+      if (currentUserId != null) {
+        final perfil = await _supabase.getUsuarioPerfil(currentUserId);
+        if (perfil != null) {
+          _userName = perfil.nome ?? 'Admin';
+          _userRole = perfil.cargo ?? 'ADM';
+        }
+      }
+
+      final frotas = await _supabase.getFrotas();
+      final dispositivos = await _supabase.getDispositivos();
+      final ocorrencias = await _supabase.getOcorrencias();
+
+      _frotas = frotas;
+      _devicesCount = dispositivos.length;
+
+      Map<String, int> counts = {};
+      for (var f in frotas) {
+        counts[f.id] = dispositivos.where((d) => d.idFrota == f.id).length;
+      }
+      _frotaDeviceCounts = counts;
+
+      // Pegar as 5 ultimas ocorrencias (simulado)
+      ocorrencias.sort((a, b) => (b.criadoEm ?? DateTime.now()).compareTo(a.criadoEm ?? DateTime.now()));
+      _alerts = ocorrencias.take(5).toList();
+
+      if (mounted) setState(() => _isLoading = false);
+    } catch (e) {
+      debugPrint('Erro no dashboard adm: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       extendBody: true,
-      
       backgroundColor: const Color(0xFFFFF2E0),
-      
       bottomNavigationBar: const CustomBottomNavBar(selectedIndex: 2),
       body: WatermarkBackground(
         child: SafeArea(
-          child: ListenableBuilder(
-          listenable: AppRepository.instance,
-          builder: (context, child) {
-            return SingleChildScrollView(
+          child: _isLoading 
+            ? const Center(child: CircularProgressIndicator(color: Color(0xFFC23147)))
+            : SingleChildScrollView(
               padding: const EdgeInsets.all(16.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -38,16 +92,13 @@ class DashboardAdmFrotaScreen extends StatelessWidget {
                   const SizedBox(height: 60), // Space for BottomAppBar
                 ],
               ),
-            );
-          }
-        ),
+            ),
         ),
       ),
     );
   }
 
   Widget _buildHeader(BuildContext context) {
-    final user = AppRepository.instance.currentUser;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -69,7 +120,7 @@ class DashboardAdmFrotaScreen extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
-                user?.role.toUpperCase() ?? 'ADM',
+                _userRole.toUpperCase(),
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 12,
@@ -85,9 +136,10 @@ class DashboardAdmFrotaScreen extends StatelessWidget {
                   width: 40,
                   height: 40,
                   child: Image.asset(
-                    'web/icons/1.png',
-                    errorBuilder: (context, error, stackTrace) =>
-                        Image.asset('web/icons/1.png', width: 32, height: 32),
+                    'assets/images/logo.png',
+                    color: const Color(0xFFC23147),
+                    width: 32,
+                    height: 32,
                   ),
                 ),
               ),
@@ -100,7 +152,7 @@ class DashboardAdmFrotaScreen extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(4),
               decoration: BoxDecoration(
-                color: const Color(0xFFC8E569).withValues(alpha: 0.3),
+                color: const Color(0xFFC8E569).withOpacity(0.3),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Icon(
@@ -115,7 +167,7 @@ class DashboardAdmFrotaScreen extends StatelessWidget {
               style: TextStyle(color: Colors.black54, fontSize: 14),
             ),
             Text(
-              user?.nome ?? 'Admin',
+              _userName,
               style: const TextStyle(
                 color: Colors.black87,
                 fontWeight: FontWeight.bold,
@@ -129,7 +181,6 @@ class DashboardAdmFrotaScreen extends StatelessWidget {
   }
 
   Widget _buildManagementCard() {
-    final devicesCount = AppRepository.instance.devices.length;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -149,7 +200,7 @@ class DashboardAdmFrotaScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 AnimatedCounterText(
-                  value: devicesCount,
+                  value: _devicesCount,
                   suffix: ' Veículos',
                   style: const TextStyle(
                     color: Colors.black,
@@ -166,7 +217,7 @@ class DashboardAdmFrotaScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildStatusIndicator(Colors.green, '$devicesCount Normais'),
+                _buildStatusIndicator(Colors.green, '$_devicesCount Normais'),
                 const SizedBox(height: 4),
                 _buildStatusIndicator(Colors.orange, '0 Atenção'),
                 const SizedBox(height: 4),
@@ -230,7 +281,7 @@ class DashboardAdmFrotaScreen extends StatelessWidget {
         const SizedBox(height: 16),
         InfoCard(
           title: 'Veículos online hoje',
-          value: '${AppRepository.instance.devices.length}/${AppRepository.instance.devices.length}',
+          value: '$_devicesCount/$_devicesCount',
           bottomTag: 'Limite definido: 40%',
           tagColor: Colors.grey.shade200,
           tagTextColor: Colors.black54,
@@ -241,7 +292,6 @@ class DashboardAdmFrotaScreen extends StatelessWidget {
   }
 
   Widget _buildOtherFleets() {
-    final fleets = AppRepository.instance.fleets;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -284,10 +334,11 @@ class DashboardAdmFrotaScreen extends StatelessWidget {
             ],
           ),
           child: Column(
-            children: fleets.map((f) {
+            children: _frotas.map((f) {
+              final dCount = _frotaDeviceCounts[f.id] ?? 0;
               return Column(
                 children: [
-                  _buildFleetRow(f.nome, '${f.deviceIds.length} Veículos', f.deviceIds.length, 0, 0),
+                  _buildFleetRow(f.nome ?? 'Sem Nome', '$dCount Veículos', dCount, 0, 0),
                   const Divider(height: 1, color: Colors.black12),
                 ],
               );
@@ -347,9 +398,9 @@ class DashboardAdmFrotaScreen extends StatelessWidget {
       width: 24,
       height: 24,
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.2),
+        color: color.withOpacity(0.2),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withValues(alpha: 0.5)),
+        border: Border.all(color: color.withOpacity(0.5)),
       ),
       alignment: Alignment.center,
       child: Text(
@@ -364,8 +415,6 @@ class DashboardAdmFrotaScreen extends StatelessWidget {
   }
 
   Widget _buildRecentEvents() {
-    final alerts = AppRepository.instance.alerts;
-    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -408,14 +457,14 @@ class DashboardAdmFrotaScreen extends StatelessWidget {
             ],
           ),
           child: Column(
-            children: alerts.map((alert) {
+            children: _alerts.map((alert) {
               return Column(
                 children: [
                   _buildEventRow(
-                    icon: alert.gravidade == 'alta' ? Icons.warning : Icons.info_outline,
-                    title: alert.titulo,
-                    subtitle: alert.subtitulo,
-                    time: alert.hora,
+                    icon: (alert.valorRegistrado ?? 0) > 10 ? Icons.warning : Icons.info_outline,
+                    title: alert.tipo ?? 'Evento',
+                    subtitle: alert.status ?? 'Registrado',
+                    time: alert.criadoEm != null ? '${alert.criadoEm!.hour}:${alert.criadoEm!.minute}' : '12:00',
                   ),
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 8.0),
@@ -440,7 +489,7 @@ class DashboardAdmFrotaScreen extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         CircleAvatar(
-          backgroundColor: const Color(0xFFC8E569).withValues(alpha: 0.3),
+          backgroundColor: const Color(0xFFC8E569).withOpacity(0.3),
           radius: 20,
           child: Icon(icon, color: Colors.green, size: 20),
         ),

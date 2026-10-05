@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../../widgets/custom_end_drawer.dart';
-import '../../repository/app_repository.dart';
-import '../../models/models.dart';
+import '../../services/supabase_service.dart';
 import '../../widgets/animated_components.dart';
 import '../../widgets/watermark_background.dart';
 
@@ -19,10 +19,23 @@ class _CadastrarFuncionarioScreenState extends State<CadastrarFuncionarioScreen>
   final _emailCtrl = TextEditingController();
   final _telefoneCtrl = TextEditingController();
   final _senhaCtrl = TextEditingController();
+  final SupabaseService _supabase = SupabaseService();
   
   String _selectedRole = 'gerente';
 
-  void _cadastrar() {
+  final _cpfFormatter = MaskTextInputFormatter(
+      mask: '###.###.###-##', 
+      filter: { "#": RegExp(r'[0-9]') },
+      type: MaskAutoCompletionType.lazy
+  );
+
+  final _telefoneFormatter = MaskTextInputFormatter(
+      mask: '(##) #####-####', 
+      filter: { "#": RegExp(r'[0-9]') },
+      type: MaskAutoCompletionType.lazy
+  );
+
+  void _cadastrar() async {
     HapticFeedback.lightImpact();
     if (_nomeCtrl.text.isEmpty || _cpfCtrl.text.isEmpty || _emailCtrl.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -36,33 +49,44 @@ class _CadastrarFuncionarioScreenState extends State<CadastrarFuncionarioScreen>
       return;
     }
 
-    final newUser = User(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      nome: _nomeCtrl.text,
-      email: _emailCtrl.text,
-      senha: _senhaCtrl.text,
-      cpf: _cpfCtrl.text,
-      telefone: _telefoneCtrl.text,
-      role: _selectedRole,
-    );
+    try {
+      await _supabase.signUp(
+        email: _emailCtrl.text.trim(),
+        password: _senhaCtrl.text.trim(),
+        nome: _nomeCtrl.text.trim(),
+        cpf: _cpfCtrl.text.trim(),
+        telefone: _telefoneCtrl.text.trim(),
+        cargo: _selectedRole,
+      );
 
-    AppRepository.instance.addUser(newUser);
-    HapticFeedback.mediumImpact();
+      HapticFeedback.mediumImpact();
 
-    _nomeCtrl.clear();
-    _cpfCtrl.clear();
-    _emailCtrl.clear();
-    _telefoneCtrl.clear();
-    _senhaCtrl.clear();
+      _nomeCtrl.clear();
+      _cpfCtrl.clear();
+      _emailCtrl.clear();
+      _telefoneCtrl.clear();
+      _senhaCtrl.clear();
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Funcionário cadastrado com sucesso!', style: TextStyle(color: Colors.white)),
-        backgroundColor: Colors.green,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      ),
-    );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Funcionário cadastrado com sucesso!', style: TextStyle(color: Colors.white)),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao cadastrar: $e', style: const TextStyle(color: Colors.white)),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        ),
+      );
+    }
   }
 
   @override
@@ -126,9 +150,10 @@ class _CadastrarFuncionarioScreenState extends State<CadastrarFuncionarioScreen>
                         width: 40,
                         height: 40,
                         child: Image.asset(
-                          'web/icons/1.png',
-                          errorBuilder: (ctx, error, stackTrace) =>
-                              Image.asset('web/icons/1.png', width: 32, height: 32),
+                          'assets/images/logo.png',
+                          width: 32,
+                          height: 32,
+                          color: const Color(0xFFC23147),
                         ),
                       ),
                     ),
@@ -233,18 +258,23 @@ class _CadastrarFuncionarioScreenState extends State<CadastrarFuncionarioScreen>
                             label: 'CPF do $_selectedRole',
                             hintText: 'XXX.XXX.XXX-XX',
                             controller: _cpfCtrl,
+                            inputFormatters: [_cpfFormatter],
+                            keyboardType: TextInputType.number,
                           ),
                           const SizedBox(height: 12),
                           CustomFormInput(
                             label: 'E-mail do $_selectedRole',
                             hintText: 'exemplo@email.com',
                             controller: _emailCtrl,
+                            keyboardType: TextInputType.emailAddress,
                           ),
                           const SizedBox(height: 12),
                           CustomFormInput(
                             label: 'Telefone do $_selectedRole',
-                            hintText: 'XX XXXX-XXXX',
+                            hintText: '(XX) XXXXX-XXXX',
                             controller: _telefoneCtrl,
+                            inputFormatters: [_telefoneFormatter],
+                            keyboardType: TextInputType.phone,
                           ),
                           const SizedBox(height: 12),
                           CustomFormInput(
@@ -285,6 +315,8 @@ class CustomFormInput extends StatelessWidget {
   final String hintText;
   final bool obscureText;
   final TextEditingController? controller;
+  final List<TextInputFormatter>? inputFormatters;
+  final TextInputType? keyboardType;
 
   const CustomFormInput({
     super.key,
@@ -292,6 +324,8 @@ class CustomFormInput extends StatelessWidget {
     required this.hintText,
     this.obscureText = false,
     this.controller,
+    this.inputFormatters,
+    this.keyboardType,
   });
 
   @override
@@ -317,6 +351,8 @@ class CustomFormInput extends StatelessWidget {
           child: TextField(
             controller: controller,
             obscureText: obscureText,
+            inputFormatters: inputFormatters,
+            keyboardType: keyboardType,
             decoration: InputDecoration.collapsed(
               hintText: hintText,
               hintStyle: TextStyle(color: Colors.grey.shade400),
