@@ -17,10 +17,10 @@ class IniciarViagemScreen extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.only(right: 16.0),
                 child: Image.asset(
-                  'nutriguard1/web/icons/1.png',
+                  'assets/images/logo.png',
                   width: 32,
                   height: 32,
-                  errorBuilder: (ctx, err, stack) => const Icon(Icons.apple, color: Color(0xFFC23147), size: 32),
+                  errorBuilder: (ctx, err, stack) => const Icon(Icons.local_shipping_outlined, color: Color(0xFFC23147), size: 32),
                 ),
               ),
             ),

@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../widgets/custom_bottom_nav_bar.dart';
 import '../../widgets/custom_end_drawer.dart';
-import '../../repository/app_repository.dart';
+import '../../services/supabase_service.dart';
+import '../../models/models.dart';
 import '../../widgets/animated_components.dart';
 import '../../widgets/watermark_background.dart';
 
@@ -19,18 +20,35 @@ class HistoricoScreen extends StatefulWidget {
 }
 
 class _HistoricoScreenState extends State<HistoricoScreen> {
+  final SupabaseService _supabase = SupabaseService();
   bool _isLoading = true;
+  List<OcorrenciaModel> _alerts = [];
+  String _userRole = 'OPERADOR';
 
   @override
   void initState() {
     super.initState();
-    _simulateLoading();
+    _fetchData();
   }
 
-  Future<void> _simulateLoading() async {
+  Future<void> _fetchData() async {
     setState(() => _isLoading = true);
-    await Future.delayed(const Duration(milliseconds: 1500));
-    if (mounted) setState(() => _isLoading = false);
+    try {
+      final currentUserId = _supabase.currentUser?.id;
+      if (currentUserId != null) {
+        final perfil = await _supabase.getUsuarioPerfil(currentUserId);
+        if (perfil != null) _userRole = perfil.cargo ?? 'OPERADOR';
+      }
+
+      final ocorrencias = await _supabase.getOcorrencias();
+      ocorrencias.sort((a, b) => (b.criadoEm ?? DateTime.now()).compareTo(a.criadoEm ?? DateTime.now()));
+      _alerts = ocorrencias;
+
+      if (mounted) setState(() => _isLoading = false);
+    } catch (e) {
+      debugPrint('Erro: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -44,73 +62,76 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
         child: SafeArea(
           child: Padding(
           padding: const EdgeInsets.only(left: 16.0, top: 16.0, right: 16.0),
-          child: ListenableBuilder(
-            listenable: AppRepository.instance,
-            builder: (context, child) {
-              final alerts = AppRepository.instance.alerts;
-
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildHeader(context),
-                  const SizedBox(height: 24),
-                  Expanded(
-                    child: RefreshIndicator(
-                      color: const Color(0xFFC23147),
-                      onRefresh: () async {
-                        HapticFeedback.lightImpact();
-                        await _simulateLoading();
-                      },
-                      child: _isLoading
-                          ? ListView.builder(
-                              itemCount: 4,
-                              itemBuilder: (context, index) => Padding(
-                                padding: const EdgeInsets.only(bottom: 16.0),
-                                child: ShimmerEffect(
-                                  width: double.infinity,
-                                  height: 90,
-                                  borderRadius: 12,
-                                ),
-                              ),
-                            )
-                          : ListView.builder(
-                              padding: const EdgeInsets.only(bottom: 100),
-                              itemCount: alerts.length,
-                              itemBuilder: (context, index) {
-                                final alert = alerts[index];
-                                final isWarning = alert.gravidade == 'alta';
-
-                                return AnimatedListItem(
-                                  index: index,
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      if (index == 0 || alerts[index - 1].hora != alert.hora)
-                                        _buildTimeText('Hoje - ${alert.hora}'),
-                                      TimelineCard(
-                                        title: alert.titulo,
-                                        location: 'Localização atualizada',
-                                        time: alert.hora,
-                                        isAlert: isWarning,
-                                        extraInfo: alert.subtitulo,
-                                        icon: isWarning ? Icons.warning_amber_rounded : Icons.info_outline,
-                                        iconColor: isWarning ? const Color(0xFFC23147) : const Color(0xFF8DB600),
-                                        iconBgColor: isWarning ? const Color(0xFFFFE5E5) : const Color(0xFFE5F5C9),
-                                      ),
-                                      if (index < alerts.length - 1)
-                                        _buildArrow(),
-                                      if (index == alerts.length - 1)
-                                        const SizedBox(height: 24),
-                                    ],
-                                  ),
-                                );
-                              },
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHeader(context),
+              const SizedBox(height: 24),
+              Expanded(
+                child: RefreshIndicator(
+                  color: const Color(0xFFC23147),
+                  onRefresh: () async {
+                    HapticFeedback.lightImpact();
+                    await _fetchData();
+                  },
+                  child: _isLoading
+                      ? ListView.builder(
+                          itemCount: 4,
+                          itemBuilder: (context, index) => const Padding(
+                            padding: EdgeInsets.only(bottom: 16.0),
+                            child: ShimmerEffect(
+                              width: double.infinity,
+                              height: 90,
+                              borderRadius: 12,
                             ),
-                    ),
-                  ),
-                ],
-              );
-            },
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.only(bottom: 100),
+                          itemCount: _alerts.length,
+                          itemBuilder: (context, index) {
+                            final alert = _alerts[index];
+                            final isWarning = (alert.valorRegistrado ?? 0) > 10;
+                            final hora = alert.criadoEm != null ? '${alert.criadoEm!.hour}:${alert.criadoEm!.minute}' : '12:00';
+
+                            bool showTimeText = false;
+                            if (index == 0) {
+                              showTimeText = true;
+                            } else {
+                              final prevAlert = _alerts[index - 1];
+                              final prevHora = prevAlert.criadoEm != null ? '${prevAlert.criadoEm!.hour}:${prevAlert.criadoEm!.minute}' : '12:00';
+                              if (prevHora != hora) showTimeText = true;
+                            }
+
+                            return AnimatedListItem(
+                              index: index,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (showTimeText)
+                                    _buildTimeText('Hoje - $hora'),
+                                  TimelineCard(
+                                    title: alert.tipo ?? 'Evento',
+                                    location: 'Localização atualizada',
+                                    time: hora,
+                                    isAlert: isWarning,
+                                    extraInfo: alert.status,
+                                    icon: isWarning ? Icons.warning_amber_rounded : Icons.info_outline,
+                                    iconColor: isWarning ? const Color(0xFFC23147) : const Color(0xFF8DB600),
+                                    iconBgColor: isWarning ? const Color(0xFFFFE5E5) : const Color(0xFFE5F5C9),
+                                  ),
+                                  if (index < _alerts.length - 1)
+                                    _buildArrow(),
+                                  if (index == _alerts.length - 1)
+                                    const SizedBox(height: 24),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ),
+            ],
           ),
         ),
         ),
@@ -137,7 +158,7 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
             borderRadius: BorderRadius.circular(12),
           ),
           child: Text(
-            AppRepository.instance.currentUser?.role.toUpperCase() ?? 'OPERADOR',
+            _userRole.toUpperCase(),
             style: const TextStyle(
               color: Colors.white,
               fontSize: 12,
@@ -153,9 +174,10 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
               width: 40,
               height: 40,
               child: Image.asset(
-                'nutriguard1/web/icons/1.png',
-                errorBuilder: (ctx, error, stackTrace) =>
-                    const Icon(Icons.apple, color: Color(0xFFC23147), size: 32),
+                'assets/images/logo.png',
+                color: const Color(0xFFC23147),
+                width: 32,
+                height: 32,
               ),
             ),
           ),

@@ -2,7 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../widgets/custom_end_drawer.dart';
-import '../../repository/app_repository.dart';
+import '../../services/supabase_service.dart';
 import '../../models/models.dart';
 import '../../widgets/animated_components.dart';
 import '../../widgets/custom_bottom_nav_bar.dart';
@@ -16,18 +16,57 @@ class ListarFrotasScreen extends StatefulWidget {
 }
 
 class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
+  final SupabaseService _supabase = SupabaseService();
   bool _isLoading = true;
+  List<FrotaModel> _frotas = [];
+  Map<String, String> _gerentesNomes = {};
+  Map<String, int> _deviceCounts = {};
+  String _userRole = 'ADM';
 
   @override
   void initState() {
     super.initState();
-    _simulateLoading();
+    _fetchData();
   }
 
-  Future<void> _simulateLoading() async {
+  Future<void> _fetchData() async {
     setState(() => _isLoading = true);
-    await Future.delayed(const Duration(milliseconds: 1500));
-    if (mounted) setState(() => _isLoading = false);
+    
+    try {
+      final frotas = await _supabase.getFrotas();
+      final dispositivos = await _supabase.getDispositivos();
+      
+      final currentUserId = _supabase.currentUser?.id;
+      if (currentUserId != null) {
+        final perfil = await _supabase.getUsuarioPerfil(currentUserId);
+        if (perfil != null) _userRole = perfil.cargo ?? 'ADM';
+      }
+
+      Map<String, String> gerentesMap = {};
+      Map<String, int> countsMap = {};
+
+      for (var f in frotas) {
+        if (f.idGerente != null) {
+          final g = await _supabase.getUsuarioPerfil(f.idGerente!);
+          gerentesMap[f.id] = g?.nome ?? 'Sem Gerente';
+        } else {
+          gerentesMap[f.id] = 'Sem Gerente';
+        }
+        countsMap[f.id] = dispositivos.where((d) => d.idFrota == f.id).length;
+      }
+
+      if (mounted) {
+        setState(() {
+          _frotas = frotas;
+          _gerentesNomes = gerentesMap;
+          _deviceCounts = countsMap;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao buscar frotas: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -41,147 +80,141 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.only(left: 16.0, top: 16.0, right: 16.0),
-            child: ListenableBuilder(
-              listenable: AppRepository.instance,
-              builder: (context, child) {
-                final fleets = AppRepository.instance.fleets;
-
-                return Column(
+            child: Column(
+              children: [
+                // 1. CABEÇALHO
+                Row(
                   children: [
-                    // 1. CABEÇALHO
-                    Row(
-                      children: [
-                        const Text(
-                          'Frotas',
-                          style: TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFFC23147),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFC23147),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            AppRepository.instance.currentUser?.role.toUpperCase() ?? 'ADM',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        const Spacer(),
-                        Builder(
-                          builder: (ctx) => GestureDetector(
-                            onTap: () => CustomEndDrawer.showMenu(context),
-                            child: SizedBox(
-                              width: 40,
-                              height: 40,
-                              child: Image.asset(
-                                'nutriguard1/web/icons/1.png',
-                                errorBuilder: (ctx, error, stackTrace) =>
-                                    const Icon(Icons.apple, color: Color(0xFFC23147), size: 32),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                    const Text(
+                      'Frotas',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFFC23147),
+                      ),
                     ),
-                    const SizedBox(height: 24),
-
-                    // 2. LISTA DE Frotas
-                    Expanded(
-                      child: RefreshIndicator(
+                    const SizedBox(width: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
                         color: const Color(0xFFC23147),
-                        onRefresh: () async {
-                          HapticFeedback.lightImpact();
-                          await _simulateLoading();
-                        },
-                        child: _isLoading
-                            ? ListView.builder(
-                                itemCount: 4,
-                                itemBuilder: (context, index) => const Padding(
-                                  padding: EdgeInsets.only(bottom: 16.0, right: 12),
-                                  child: ShimmerEffect(
-                                    width: double.infinity,
-                                    height: 120,
-                                    borderRadius: 12,
-                                  ),
-                                ),
-                              )
-                            : ListView.builder(
-                                padding: const EdgeInsets.only(bottom: 100),
-                                itemCount: fleets.length,
-                                itemBuilder: (context, index) {
-                                  final fleet = fleets[index];
-                                  final gerente = AppRepository.instance.getUserById(fleet.gerenteId);
-                                  final deviceCount = fleet.deviceIds.length;
-
-                                  return AnimatedListItem(
-                                    index: index,
-                                    child: Dismissible(
-                                      key: Key(fleet.id),
-                                      direction: DismissDirection.horizontal,
-                                      confirmDismiss: (direction) async {
-                                        HapticFeedback.mediumImpact();
-                                        if (direction == DismissDirection.endToStart) {
-                                          return await _showDeleteDialog(context, fleet);
-                                        } else {
-                                          // Edit Action
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(
-                                              content: const Text('Redirecionando para edição...'),
-                                              behavior: SnackBarBehavior.floating,
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                                            ),
-                                          );
-                                          return false;
-                                        }
-                                      },
-                                      background: Container(
-                                        alignment: Alignment.centerLeft,
-                                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                                        margin: const EdgeInsets.only(bottom: 16, right: 12),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFF8DB600),
-                                          borderRadius: BorderRadius.circular(12),
-                                        ),
-                                        child: const Icon(Icons.edit, color: Colors.white),
-                                      ),
-                                      secondaryBackground: Container(
-                                        alignment: Alignment.centerRight,
-                                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                                        margin: const EdgeInsets.only(bottom: 16, right: 12),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFC23147),
-                                          borderRadius: BorderRadius.circular(12),
-                                        ),
-                                        child: const Icon(Icons.delete, color: Colors.white),
-                                      ),
-                                      child: FleetCard(
-                                        fleet: fleet,
-                                        gerenteName: gerente?.nome ?? 'Sem Gerente',
-                                        deviceCount: deviceCount,
-                                        onDelete: () {
-                                          HapticFeedback.mediumImpact();
-                                          _showDeleteDialog(context, fleet);
-                                        },
-                                        onTap: () {},
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        _userRole.toUpperCase(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    Builder(
+                      builder: (ctx) => GestureDetector(
+                        onTap: () => CustomEndDrawer.showMenu(context),
+                        child: SizedBox(
+                          width: 40,
+                          height: 40,
+                          child: Image.asset(
+                            'assets/images/logo.png',
+                            width: 32,
+                            height: 32,
+                            color: const Color(0xFFC23147),
+                          ),
+                        ),
                       ),
                     ),
                   ],
-                );
-              },
+                ),
+                const SizedBox(height: 24),
+
+                // 2. LISTA DE Frotas
+                Expanded(
+                  child: RefreshIndicator(
+                    color: const Color(0xFFC23147),
+                    onRefresh: () async {
+                      HapticFeedback.lightImpact();
+                      await _fetchData();
+                    },
+                    child: _isLoading
+                        ? ListView.builder(
+                            itemCount: 4,
+                            itemBuilder: (context, index) => const Padding(
+                              padding: EdgeInsets.only(bottom: 16.0, right: 12),
+                              child: ShimmerEffect(
+                                width: double.infinity,
+                                height: 120,
+                                borderRadius: 12,
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.only(bottom: 100),
+                            itemCount: _frotas.length,
+                            itemBuilder: (context, index) {
+                              final fleet = _frotas[index];
+                              final gerenteName = _gerentesNomes[fleet.id] ?? 'Sem Gerente';
+                              final deviceCount = _deviceCounts[fleet.id] ?? 0;
+
+                              return AnimatedListItem(
+                                index: index,
+                                child: Dismissible(
+                                  key: Key(fleet.id),
+                                  direction: DismissDirection.horizontal,
+                                  confirmDismiss: (direction) async {
+                                    HapticFeedback.mediumImpact();
+                                    if (direction == DismissDirection.endToStart) {
+                                      return await _showDeleteDialog(context, fleet);
+                                    } else {
+                                      // Edit Action
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: const Text('Redirecionando para edição...'),
+                                          behavior: SnackBarBehavior.floating,
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                                        ),
+                                      );
+                                      return false;
+                                    }
+                                  },
+                                  background: Container(
+                                    alignment: Alignment.centerLeft,
+                                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                                    margin: const EdgeInsets.only(bottom: 16, right: 12),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF8DB600),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Icon(Icons.edit, color: Colors.white),
+                                  ),
+                                  secondaryBackground: Container(
+                                    alignment: Alignment.centerRight,
+                                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                                    margin: const EdgeInsets.only(bottom: 16, right: 12),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFC23147),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Icon(Icons.delete, color: Colors.white),
+                                  ),
+                                  child: FleetCard(
+                                    fleet: fleet,
+                                    gerenteName: gerenteName,
+                                    deviceCount: deviceCount,
+                                    onDelete: () {
+                                      HapticFeedback.mediumImpact();
+                                      _showDeleteDialog(context, fleet);
+                                    },
+                                    onTap: () {},
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -189,7 +222,7 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
     );
   }
 
-  Future<bool?> _showDeleteDialog(BuildContext context, Fleet fleet) {
+  Future<bool?> _showDeleteDialog(BuildContext context, FrotaModel fleet) {
     return showGeneralDialog<bool>(
       context: context,
       barrierColor: Colors.transparent,
@@ -218,18 +251,19 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
                     child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
                   ),
                   TextButton(
-                    onPressed: () {
-                      AppRepository.instance.removeFleet(fleet.id);
+                    onPressed: () async {
+                      // Note: Deletion is not implemented in SupabaseService yet.
                       Navigator.pop(context, true);
                       HapticFeedback.mediumImpact();
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: const Text('Removida com sucesso', style: TextStyle(color: Colors.white)),
+                          content: const Text('Removida com sucesso (simulado)', style: TextStyle(color: Colors.white)),
                           backgroundColor: Colors.red,
                           behavior: SnackBarBehavior.floating,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                         ),
                       );
+                      _fetchData(); // refresh list
                     },
                     child: const Text('Excluir', style: TextStyle(color: Color(0xFFC23147))),
                   ),
@@ -244,7 +278,7 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
 }
 
 class FleetCard extends StatelessWidget {
-  final Fleet fleet;
+  final FrotaModel fleet;
   final String gerenteName;
   final int deviceCount;
   final VoidCallback onDelete;
@@ -304,7 +338,7 @@ class FleetCard extends StatelessWidget {
                   child: Material(
                     color: Colors.transparent,
                     child: Text(
-                      fleet.nome,
+                      fleet.nome ?? 'Sem Nome',
                       style: const TextStyle(
                         color: Colors.black,
                         fontWeight: FontWeight.w800,

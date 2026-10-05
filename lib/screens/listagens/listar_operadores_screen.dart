@@ -2,7 +2,8 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../widgets/custom_end_drawer.dart';
-import '../../repository/app_repository.dart';
+import '../../services/supabase_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/models.dart';
 import '../../widgets/animated_components.dart';
 import '../../widgets/watermark_background.dart';
@@ -20,18 +21,61 @@ class ListarOperadoresScreen extends StatefulWidget {
 }
 
 class _ListarOperadoresScreenState extends State<ListarOperadoresScreen> {
+  final SupabaseService _supabase = SupabaseService();
   bool _isLoading = true;
+  List<UsuarioModel> _usuarios = [];
+  Map<String, String> _infoMap = {};
+  String _userRole = 'ADM';
 
   @override
   void initState() {
     super.initState();
-    _simulateLoading();
+    _fetchData();
   }
 
-  Future<void> _simulateLoading() async {
+  Future<void> _fetchData() async {
     setState(() => _isLoading = true);
-    await Future.delayed(const Duration(milliseconds: 1500));
-    if (mounted) setState(() => _isLoading = false);
+    try {
+      final currentUserId = _supabase.currentUser?.id;
+      if (currentUserId != null) {
+        final perfil = await _supabase.getUsuarioPerfil(currentUserId);
+        if (perfil != null) _userRole = perfil.cargo ?? 'ADM';
+      }
+
+      // Fetch all users manually from 'Usuarios' table
+      // Supabase Auth users can't be fetched entirely by client unless using an RPC or service key. 
+      // We will just query the public 'Usuarios' table.
+      final response = await Supabase.instance.client.from('Usuarios').select();
+      final allUsers = (response as List).map((e) => UsuarioModel.fromJson(e)).toList();
+
+      final isGerente = widget.title == 'Gerentes';
+      final filteredUsers = allUsers.where((u) => u.cargo?.toLowerCase() == (isGerente ? 'gerente' : 'operador')).toList();
+
+      final frotas = await _supabase.getFrotas();
+      final dispositivos = await _supabase.getDispositivos();
+
+      Map<String, String> info = {};
+      for (var u in filteredUsers) {
+        if (isGerente) {
+          final f = frotas.where((f) => f.idGerente == u.id).toList();
+          info[u.id] = f.isNotEmpty ? f.map((x) => x.nome).join(', ') : 'Nenhuma';
+        } else {
+          final d = dispositivos.where((d) => d.idOperador == u.id).toList();
+          info[u.id] = d.isNotEmpty ? d.map((x) => x.nomeDispositivo).join(', ') : 'Nenhum';
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _usuarios = filteredUsers;
+          _infoMap = info;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao buscar usuarios: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -44,160 +88,139 @@ class _ListarOperadoresScreenState extends State<ListarOperadoresScreen> {
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.only(left: 16.0, top: 16.0, right: 16.0),
-            child: ListenableBuilder(
-              listenable: AppRepository.instance,
-              builder: (context, child) {
-                final users = AppRepository.instance.users
-                    .where((u) => u.role == (isGerente ? 'gerente' : 'operador'))
-                    .toList();
-
-                return Column(
+            child: Column(
+              children: [
+                // 1. CABEÇALHO
+                Row(
                   children: [
-                    // 1. CABEÇALHO
-                    Row(
-                      children: [
-                        Text(
-                          widget.title,
-                          style: const TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFFC23147),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFC23147),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            AppRepository.instance.currentUser?.role.toUpperCase() ?? 'ADM',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        const Spacer(),
-                        Builder(
-                          builder: (ctx) => GestureDetector(
-                            onTap: () => CustomEndDrawer.showMenu(context),
-                            child: SizedBox(
-                              width: 40,
-                              height: 40,
-                              child: Image.asset(
-                                'nutriguard1/web/icons/1.png',
-                                errorBuilder: (ctx, error, stackTrace) =>
-                                    const Icon(Icons.apple, color: Color(0xFFC23147), size: 32),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                    Text(
+                      widget.title,
+                      style: const TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFFC23147),
+                      ),
                     ),
-                    const SizedBox(height: 24),
-
-                    // 2. LISTA DE COLABORADORES
-                    Expanded(
-                      child: RefreshIndicator(
+                    const SizedBox(width: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
                         color: const Color(0xFFC23147),
-                        onRefresh: () async {
-                          HapticFeedback.lightImpact();
-                          await _simulateLoading();
-                        },
-                        child: _isLoading
-                            ? ListView.builder(
-                                itemCount: 4,
-                                itemBuilder: (context, index) => const Padding(
-                                  padding: EdgeInsets.only(bottom: 16.0, right: 12),
-                                  child: ShimmerEffect(
-                                    width: double.infinity,
-                                    height: 92,
-                                    borderRadius: 12,
-                                  ),
-                                ),
-                              )
-                            : ListView.builder(
-                                padding: const EdgeInsets.only(bottom: 100),
-                                itemCount: users.length,
-                                itemBuilder: (context, index) {
-                                  final user = users[index];
-                                  
-                                  // Find related info
-                                  String infoValue = 'N/A';
-                                  if (isGerente) {
-                                    final f = AppRepository.instance.fleets.where((f) => f.gerenteId == user.id).toList();
-                                    if (f.isNotEmpty) {
-                                      infoValue = f.map((x) => x.nome).join(', ');
-                                    }
-                                  } else {
-                                    final d = AppRepository.instance.devices.where((d) => d.operadorId == user.id).toList();
-                                    if (d.isNotEmpty) {
-                                      infoValue = d.map((x) => x.nome).join(', ');
-                                    }
-                                  }
-
-                                  return AnimatedListItem(
-                                    index: index,
-                                    child: Dismissible(
-                                      key: Key(user.id),
-                                      direction: DismissDirection.horizontal,
-                                      confirmDismiss: (direction) async {
-                                        HapticFeedback.mediumImpact();
-                                        if (direction == DismissDirection.endToStart) {
-                                          return await _showDeleteDialog(context, user);
-                                        } else {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(
-                                              content: const Text('Redirecionando para edição...'),
-                                              behavior: SnackBarBehavior.floating,
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                                            ),
-                                          );
-                                          return false;
-                                        }
-                                      },
-                                      background: Container(
-                                        alignment: Alignment.centerLeft,
-                                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                                        margin: const EdgeInsets.only(bottom: 16, right: 12),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFF8DB600),
-                                          borderRadius: BorderRadius.circular(12),
-                                        ),
-                                        child: const Icon(Icons.edit, color: Colors.white),
-                                      ),
-                                      secondaryBackground: Container(
-                                        alignment: Alignment.centerRight,
-                                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                                        margin: const EdgeInsets.only(bottom: 16, right: 12),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFC23147),
-                                          borderRadius: BorderRadius.circular(12),
-                                        ),
-                                        child: const Icon(Icons.delete, color: Colors.white),
-                                      ),
-                                      child: ColabCard(
-                                        user: user,
-                                        infoLabel: isGerente ? 'Frota Responsável' : 'Veículo Associado',
-                                        infoValue: infoValue,
-                                        onDelete: () {
-                                          HapticFeedback.mediumImpact();
-                                          _showDeleteDialog(context, user);
-                                        },
-                                        onTap: () {},
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        _userRole.toUpperCase(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    Builder(
+                      builder: (ctx) => GestureDetector(
+                        onTap: () => CustomEndDrawer.showMenu(context),
+                        child: SizedBox(
+                          width: 40,
+                          height: 40,
+                          child: Image.asset(
+                            'assets/images/logo.png',
+                            width: 32,
+                            height: 32,
+                            color: const Color(0xFFC23147),
+                          ),
+                        ),
                       ),
                     ),
                   ],
-                );
-              },
+                ),
+                const SizedBox(height: 24),
+
+                // 2. LISTA DE COLABORADORES
+                Expanded(
+                  child: RefreshIndicator(
+                    color: const Color(0xFFC23147),
+                    onRefresh: () async {
+                      HapticFeedback.lightImpact();
+                      await _fetchData();
+                    },
+                    child: _isLoading
+                        ? ListView.builder(
+                            itemCount: 4,
+                            itemBuilder: (context, index) => const Padding(
+                              padding: EdgeInsets.only(bottom: 16.0, right: 12),
+                              child: ShimmerEffect(
+                                width: double.infinity,
+                                height: 92,
+                                borderRadius: 12,
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.only(bottom: 100),
+                            itemCount: _usuarios.length,
+                            itemBuilder: (context, index) {
+                              final user = _usuarios[index];
+                              final infoValue = _infoMap[user.id] ?? 'N/A';
+
+                              return AnimatedListItem(
+                                index: index,
+                                child: Dismissible(
+                                  key: Key(user.id),
+                                  direction: DismissDirection.horizontal,
+                                  confirmDismiss: (direction) async {
+                                    HapticFeedback.mediumImpact();
+                                    if (direction == DismissDirection.endToStart) {
+                                      return await _showDeleteDialog(context, user);
+                                    } else {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: const Text('Redirecionando para edição...'),
+                                          behavior: SnackBarBehavior.floating,
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                                        ),
+                                      );
+                                      return false;
+                                    }
+                                  },
+                                  background: Container(
+                                    alignment: Alignment.centerLeft,
+                                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                                    margin: const EdgeInsets.only(bottom: 16, right: 12),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF8DB600),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Icon(Icons.edit, color: Colors.white),
+                                  ),
+                                  secondaryBackground: Container(
+                                    alignment: Alignment.centerRight,
+                                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                                    margin: const EdgeInsets.only(bottom: 16, right: 12),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFC23147),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Icon(Icons.delete, color: Colors.white),
+                                  ),
+                                  child: ColabCard(
+                                    user: user,
+                                    infoLabel: isGerente ? 'Frota Responsável' : 'Veículo Associado',
+                                    infoValue: infoValue,
+                                    onDelete: () {
+                                      HapticFeedback.mediumImpact();
+                                      _showDeleteDialog(context, user);
+                                    },
+                                    onTap: () {},
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -205,7 +228,7 @@ class _ListarOperadoresScreenState extends State<ListarOperadoresScreen> {
     );
   }
 
-  Future<bool?> _showDeleteDialog(BuildContext context, User user) {
+  Future<bool?> _showDeleteDialog(BuildContext context, UsuarioModel user) {
     return showGeneralDialog<bool>(
       context: context,
       barrierColor: Colors.transparent,
@@ -235,17 +258,17 @@ class _ListarOperadoresScreenState extends State<ListarOperadoresScreen> {
                   ),
                   TextButton(
                     onPressed: () {
-                      AppRepository.instance.removeUser(user.id);
                       Navigator.pop(context, true);
                       HapticFeedback.mediumImpact();
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: const Text('Removido com sucesso', style: TextStyle(color: Colors.white)),
+                          content: const Text('Removido com sucesso (simulado)', style: TextStyle(color: Colors.white)),
                           backgroundColor: Colors.red,
                           behavior: SnackBarBehavior.floating,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                         ),
                       );
+                      _fetchData();
                     },
                     child: const Text('Excluir', style: TextStyle(color: Color(0xFFC23147))),
                   ),
@@ -261,7 +284,7 @@ class _ListarOperadoresScreenState extends State<ListarOperadoresScreen> {
 
 // 3. COMPONENTE REUTILIZÁVEL (ColabCard)
 class ColabCard extends StatelessWidget {
-  final User user;
+  final UsuarioModel user;
   final String infoLabel;
   final String infoValue;
   final VoidCallback onDelete;
@@ -324,7 +347,7 @@ class ColabCard extends StatelessWidget {
                   child: Material(
                     color: Colors.transparent,
                     child: Text(
-                      user.nome,
+                      user.nome ?? 'Sem Nome',
                       style: const TextStyle(
                         color: Colors.black,
                         fontWeight: FontWeight.w800,
@@ -335,7 +358,7 @@ class ColabCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'CPF: ${user.cpf}',
+                  'CPF: ${user.cpf ?? 'N/A'}',
                   style: const TextStyle(
                     color: Colors.grey,
                     fontSize: 12,

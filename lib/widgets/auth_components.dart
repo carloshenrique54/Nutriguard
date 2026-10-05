@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class CustomTextField extends StatelessWidget {
   final IconData prefixIcon;
   final String hintText;
   final bool obscureText;
   final TextEditingController? controller;
+  final List<TextInputFormatter>? inputFormatters;
+  final TextInputType? keyboardType;
 
   const CustomTextField({
     super.key,
@@ -12,6 +15,8 @@ class CustomTextField extends StatelessWidget {
     required this.hintText,
     this.obscureText = false,
     this.controller,
+    this.inputFormatters,
+    this.keyboardType,
   });
 
   @override
@@ -25,6 +30,8 @@ class CustomTextField extends StatelessWidget {
       child: TextField(
         controller: controller,
         obscureText: obscureText,
+        inputFormatters: inputFormatters,
+        keyboardType: keyboardType,
         decoration: InputDecoration(
           prefixIcon: Icon(prefixIcon, color: Colors.grey),
           hintText: hintText,
@@ -133,12 +140,8 @@ class TopSection extends StatelessWidget {
           width: 120,
           height: 120,
           child: Image.asset(
-            'nutriguard1/web/icons/1.png',
-            errorBuilder: (context, error, stackTrace) => const Icon(
-              Icons.apple, // Fallback visual se a imagem não for encontrada
-              size: 80,
-              color: Color(0xFFAD2C3F),
-            ),
+            'assets/images/logo.png',
+            fit: BoxFit.contain,
           ),
         ),
         const SizedBox(height: 16),
