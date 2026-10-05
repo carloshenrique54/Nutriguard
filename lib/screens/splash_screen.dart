@@ -162,26 +162,21 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                         // Outline
                         Opacity(
                           opacity: _outlineOpacity.value,
-                          child: Text(
-                            String.fromCharCode(Icons.apple.codePoint),
-                            style: TextStyle(
-                              fontSize: 120,
-                              fontFamily: Icons.apple.fontFamily,
-                              package: Icons.apple.fontPackage,
-                              foreground: Paint()
-                                ..style = PaintingStyle.stroke
-                                ..strokeWidth = 2
-                                ..color = const Color(0xFFC23147),
-                            ),
+                          child: Image.asset(
+                            'web/icons/1.png',
+                            width: 120,
+                            height: 120,
+                            color: const Color(0xFFC23147).withOpacity(0.5),
+                            colorBlendMode: BlendMode.srcATop,
                           ),
                         ),
                         // Fill
                         Opacity(
                           opacity: _fillOpacity.value,
-                          child: const Icon(
-                            Icons.apple,
-                            color: Color(0xFFC23147),
-                            size: 120,
+                          child: Image.asset(
+                            'web/icons/1.png',
+                            width: 120,
+                            height: 120,
                           ),
                         ),
                       ],

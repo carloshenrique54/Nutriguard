@@ -18,10 +18,10 @@ class DashboardVazioScreen extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.only(right: 16.0),
                 child: Image.asset(
-                  'nutriguard1/web/icons/1.png',
+                  'web/icons/1.png',
                   width: 32,
                   height: 32,
-                  errorBuilder: (ctx, err, stack) => const Icon(Icons.apple, color: Color(0xFFC23147), size: 32),
+                  errorBuilder: (ctx, err, stack) => Image.asset('web/icons/1.png', width: 32, height: 32),
                 ),
               ),
             ),

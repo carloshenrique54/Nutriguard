@@ -133,11 +133,12 @@ class TopSection extends StatelessWidget {
           width: 120,
           height: 120,
           child: Image.asset(
-            'nutriguard1/web/icons/1.png',
-            errorBuilder: (context, error, stackTrace) => const Icon(
-              Icons.apple, // Fallback visual se a imagem não for encontrada
-              size: 80,
-              color: Color(0xFFAD2C3F),
+            'web/icons/1.png',
+            errorBuilder: (context, error, stackTrace) => Image.asset(
+              'web/icons/1.png', // Fallback visual se a imagem não for encontrada
+              width: 80,
+              height: 80,
+              color: const Color(0xFFAD2C3F),
             ),
           ),
         ),

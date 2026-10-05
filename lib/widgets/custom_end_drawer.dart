@@ -102,11 +102,11 @@ class _MenuContent extends StatelessWidget {
                     child: Padding(
                       padding: const EdgeInsets.only(top: 16, right: 16),
                       child: Image.asset(
-                        'nutriguard1/web/icons/1.png',
+                        'web/icons/1.png',
                         height: 40,
                         width: 40,
                         errorBuilder: (context, error, stackTrace) =>
-                            const Icon(Icons.apple, color: Color(0xFFC23147), size: 40),
+                            Image.asset('web/icons/1.png', width: 40, height: 40),
                       ),
                     ),
                   ),
