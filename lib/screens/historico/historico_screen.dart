@@ -8,11 +8,13 @@ import '../../widgets/animated_components.dart';
 import '../../widgets/watermark_background.dart';
 
 class HistoricoScreen extends StatefulWidget {
-  final String userRole;
+  final bool isVehicleContext;
+  final String? userRole;
 
   const HistoricoScreen({
     super.key,
-    this.userRole = 'Operador',
+    this.isVehicleContext = false,
+    this.userRole,
   });
 
   @override
@@ -24,128 +26,276 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
   bool _isLoading = true;
   List<OcorrenciaModel> _alerts = [];
   String _userRole = '';
+  
+  List<DispositivoModel> _dispositivos = [];
+  List<FrotaModel> _frotas = [];
+  FrotaModel? _selectedFrota;
+  DispositivoModel? _selectedDevice;
 
   @override
   void initState() {
     super.initState();
-    _fetchData();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkAccessAndFetch();
+    });
   }
 
-  Future<void> _fetchData() async {
+  Future<void> _checkAccessAndFetch() async {
     setState(() => _isLoading = true);
     try {
       final currentUserId = _supabase.currentUser?.id;
-      if (currentUserId != null) {
-        final perfil = await _supabase.getUsuarioPerfil(currentUserId);
-        if (perfil != null) _userRole = perfil.cargo ?? '';
+      if (currentUserId == null) {
+        if (mounted) Navigator.pushReplacementNamed(context, '/login');
+        return;
       }
 
-      final ocorrencias = await _supabase.getOcorrencias();
-      ocorrencias.sort((a, b) => (b.criadoEm ?? DateTime.now()).compareTo(a.criadoEm ?? DateTime.now()));
-      _alerts = ocorrencias;
+      final perfil = await _supabase.getUsuarioPerfil(currentUserId);
+      _userRole = perfil?.role ?? '';
 
-      if (mounted) setState(() => _isLoading = false);
+      // Regra de permissão: Operador não acessa Histórico de Frota
+      if (!widget.isVehicleContext && _userRole == 'operador') {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Acesso negado para seu perfil. Redirecionando para Veículo.', style: TextStyle(color: Colors.white)),
+              backgroundColor: Colors.red,
+            ),
+          );
+          Navigator.pushReplacementNamed(context, '/historico-veiculo');
+        }
+        return;
+      }
+
+      // Argumento de rota
+      final routeArg = ModalRoute.of(context)?.settings.arguments;
+      DispositivoModel? argDevice;
+      if (routeArg is DispositivoModel) {
+        argDevice = routeArg;
+      }
+
+      List<FrotaModel> frotas = [];
+      List<DispositivoModel> devs = [];
+
+      if (_userRole == 'admin') {
+        frotas = await _supabase.getFrotas();
+        devs = await _supabase.getDispositivos();
+      } else if (_userRole == 'gerente') {
+        frotas = await _supabase.getFrotasByGerente(currentUserId);
+        for (var f in frotas) {
+          final fDevs = await _supabase.getDispositivosByFrota(f.id);
+          devs.addAll(fDevs);
+        }
+      } else {
+        // Operador
+        devs = await _supabase.getDispositivosByOperador(currentUserId);
+      }
+
+      _frotas = frotas;
+      _dispositivos = devs;
+
+      if (widget.isVehicleContext) {
+        if (argDevice != null && devs.any((d) => d.id == argDevice.id)) {
+          _selectedDevice = devs.firstWhere((d) => d.id == argDevice.id);
+        } else if (devs.isNotEmpty) {
+          _selectedDevice = devs.first;
+        }
+      } else {
+        if (frotas.isNotEmpty) {
+          _selectedFrota = frotas.first;
+        }
+      }
+
+      await _fetchHistory();
     } catch (e) {
-      debugPrint('Erro: $e');
+      debugPrint('Erro ao carregar histórico: $e');
+    } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
+  Future<void> _fetchHistory() async {
+    List<String> targetIds = [];
+    if (widget.isVehicleContext) {
+      if (_selectedDevice != null) {
+        targetIds = [_selectedDevice!.id];
+      } else {
+        targetIds = _dispositivos.map((d) => d.id).toList();
+      }
+    } else {
+      if (_selectedFrota != null) {
+        targetIds = _dispositivos.where((d) => d.idFrota == _selectedFrota!.id).map((d) => d.id).toList();
+      } else {
+        targetIds = _dispositivos.map((d) => d.id).toList();
+      }
+    }
+
+    if (targetIds.isEmpty) {
+      if (mounted) setState(() => _alerts = []);
+      return;
+    }
+
+    DateTime agora = DateTime.now();
+    DateTime inicio = agora.subtract(const Duration(days: 30));
+
+    final ocorrencias = await _supabase.getOcorrenciasFiltro(targetIds, inicio, agora);
+    ocorrencias.sort((a, b) => (b.criadoEm ?? agora).compareTo(a.criadoEm ?? agora));
+
+    if (mounted) {
+      setState(() {
+        _alerts = ocorrencias;
+      });
+    }
+  }
+
+  void _onSwitchFrota(FrotaModel f) async {
+    setState(() {
+      _selectedFrota = f;
+      _isLoading = true;
+    });
+    await _fetchHistory();
+    if (mounted) setState(() => _isLoading = false);
+  }
+
+  void _onSwitchDevice(DispositivoModel d) async {
+    setState(() {
+      _selectedDevice = d;
+      _isLoading = true;
+    });
+    await _fetchHistory();
+    if (mounted) setState(() => _isLoading = false);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final String title = widget.isVehicleContext ? 'Histórico — Veículo' : 'Histórico — Frota';
+
     return Scaffold(
       extendBody: true,
       backgroundColor: const Color(0xFFFFF2E0),
-      
-      bottomNavigationBar: const CustomBottomNavBar(selectedIndex: 3),
+      bottomNavigationBar: CustomBottomNavBar(
+        selectedIndex: 3,
+        isVehicleContext: widget.isVehicleContext,
+        currentDevice: _selectedDevice,
+      ),
       body: WatermarkBackground(
         child: SafeArea(
           child: Padding(
-          padding: const EdgeInsets.only(left: 16.0, top: 16.0, right: 16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildHeader(context),
-              const SizedBox(height: 24),
-              Expanded(
-                child: RefreshIndicator(
-                  color: const Color(0xFFC23147),
-                  onRefresh: () async {
-                    HapticFeedback.lightImpact();
-                    await _fetchData();
-                  },
-                  child: _isLoading
-                      ? ListView.builder(
-                          itemCount: 4,
-                          itemBuilder: (context, index) => const Padding(
-                            padding: EdgeInsets.only(bottom: 16.0),
-                            child: ShimmerEffect(
-                              width: double.infinity,
-                              height: 90,
-                              borderRadius: 12,
-                            ),
-                          ),
-                        )
-                      : ListView.builder(
-                          padding: const EdgeInsets.only(bottom: 100),
-                          itemCount: _alerts.length,
-                          itemBuilder: (context, index) {
-                            final alert = _alerts[index];
-                            final isWarning = (alert.valorRegistrado ?? 0) > 10;
-                            final hora = alert.criadoEm != null ? '${alert.criadoEm!.hour}:${alert.criadoEm!.minute}' : '12:00';
-
-                            bool showTimeText = false;
-                            if (index == 0) {
-                              showTimeText = true;
-                            } else {
-                              final prevAlert = _alerts[index - 1];
-                              final prevHora = prevAlert.criadoEm != null ? '${prevAlert.criadoEm!.hour}:${prevAlert.criadoEm!.minute}' : '12:00';
-                              if (prevHora != hora) showTimeText = true;
-                            }
-
-                            return AnimatedListItem(
-                              index: index,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (showTimeText)
-                                    _buildTimeText('Hoje - $hora'),
-                                  TimelineCard(
-                                    title: alert.tipo ?? 'Evento',
-                                    location: 'Localização atualizada',
-                                    time: hora,
-                                    isAlert: isWarning,
-                                    extraInfo: alert.status,
-                                    icon: isWarning ? Icons.warning_amber_rounded : Icons.info_outline,
-                                    iconColor: isWarning ? const Color(0xFFC23147) : const Color(0xFF8DB600),
-                                    iconBgColor: isWarning ? const Color(0xFFFFE5E5) : const Color(0xFFE5F5C9),
-                                  ),
-                                  if (index < _alerts.length - 1)
-                                    _buildArrow(),
-                                  if (index == _alerts.length - 1)
-                                    const SizedBox(height: 24),
-                                ],
+            padding: const EdgeInsets.only(left: 16.0, top: 16.0, right: 16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildHeader(context, title),
+                const SizedBox(height: 12),
+                _buildContextFilter(),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: RefreshIndicator(
+                    color: const Color(0xFFC23147),
+                    onRefresh: () async {
+                      HapticFeedback.lightImpact();
+                      await _fetchHistory();
+                    },
+                    child: _isLoading
+                        ? ListView.builder(
+                            itemCount: 4,
+                            itemBuilder: (context, index) => const Padding(
+                              padding: EdgeInsets.only(bottom: 16.0),
+                              child: ShimmerEffect(
+                                width: double.infinity,
+                                height: 90,
+                                borderRadius: 12,
                               ),
-                            );
-                          },
-                        ),
+                            ),
+                          )
+                        : _alerts.isEmpty
+                            ? Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(32.0),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(Icons.history_toggle_off_outlined, size: 56, color: Color(0xFFC23147)),
+                                      const SizedBox(height: 12),
+                                      const Text(
+                                        'Nenhum evento registrado no histórico recente.',
+                                        style: TextStyle(fontSize: 15, color: Colors.black54),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                            : ListView.builder(
+                                padding: const EdgeInsets.only(bottom: 100),
+                                itemCount: _alerts.length,
+                                itemBuilder: (context, index) {
+                                  final alert = _alerts[index];
+                                  final isWarning = (alert.valorRegistrado ?? 0) > 10;
+                                  final hora = alert.criadoEm != null
+                                      ? '${alert.criadoEm!.day}/${alert.criadoEm!.month} ${alert.criadoEm!.hour}:${alert.criadoEm!.minute.toString().padLeft(2, '0')}'
+                                      : 'Hoje';
+
+                                  bool showTimeText = false;
+                                  if (index == 0) {
+                                    showTimeText = true;
+                                  } else {
+                                    final prevAlert = _alerts[index - 1];
+                                    final prevDay = prevAlert.criadoEm?.day;
+                                    if (prevDay != alert.criadoEm?.day) showTimeText = true;
+                                  }
+
+                                  return AnimatedListItem(
+                                    index: index,
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        if (showTimeText)
+                                          _buildTimeText(hora),
+                                        TimelineCard(
+                                          title: alert.tipo ?? 'Evento Registrado',
+                                          location: 'Dispositivo: ${alert.idDispositivo?.substring(0, 8) ?? "N/D"}',
+                                          time: hora,
+                                          isAlert: isWarning,
+                                          extraInfo: alert.status ?? 'Normal',
+                                          icon: isWarning ? Icons.warning_amber_rounded : Icons.info_outline,
+                                          iconColor: isWarning ? const Color(0xFFC23147) : const Color(0xFF8DB600),
+                                          iconBgColor: isWarning ? const Color(0xFFFFE5E5) : const Color(0xFFE5F5C9),
+                                        ),
+                                        if (index < _alerts.length - 1)
+                                          _buildArrow(),
+                                        if (index == _alerts.length - 1)
+                                          const SizedBox(height: 24),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
         ),
       ),
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
+  Widget _buildHeader(BuildContext context, String title) {
     return Row(
       children: [
-        const Text(
-          'Histórico',
-          style: TextStyle(
-            fontSize: 28,
+        GestureDetector(
+          onTap: () => Navigator.pop(context),
+          child: const Icon(
+            Icons.arrow_back,
+            color: Color(0xFFC23147),
+            size: 28,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 22,
             fontWeight: FontWeight.bold,
             color: Color(0xFFC23147),
           ),
@@ -155,13 +305,13 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
             color: const Color(0xFFC23147),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
           ),
           child: Text(
             _userRole.toUpperCase(),
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 12,
+              fontSize: 10,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -171,18 +321,111 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
           builder: (context) => GestureDetector(
             onTap: () => CustomEndDrawer.showMenu(context),
             child: SizedBox(
-              width: 52,
-              height: 52,
+              width: 44,
+              height: 44,
               child: Image.asset(
                 'assets/images/logo.png',
                 color: const Color(0xFFC23147),
-                width: 44,
-                height: 44,
+                width: 36,
+                height: 36,
               ),
             ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildContextFilter() {
+    if (widget.isVehicleContext) {
+      if (_dispositivos.length <= 1) {
+        final d = _selectedDevice;
+        final name = d != null ? (d.placaVeiculo ?? d.nomeDispositivo ?? 'Veículo') : 'Nenhum veículo';
+        return _buildBadge('Veículo: $name');
+      }
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.black12),
+        ),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<DispositivoModel>(
+            value: _selectedDevice,
+            isExpanded: true,
+            hint: const Text('Selecione o Veículo'),
+            items: _dispositivos.map((d) {
+              return DropdownMenuItem(
+                value: d,
+                child: Text(
+                  '${d.placaVeiculo ?? d.nomeDispositivo ?? "Veículo"} (${d.modeloVeiculo ?? "Dispositivo"})',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+              );
+            }).toList(),
+            onChanged: (val) {
+              if (val != null) _onSwitchDevice(val);
+            },
+          ),
+        ),
+      );
+    } else {
+      // Frota
+      if (_frotas.length <= 1) {
+        final f = _selectedFrota;
+        final name = f != null ? f.nome : 'Todas as Frotas';
+        return _buildBadge('Frota: $name (${_dispositivos.length} veículos)');
+      }
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.black12),
+        ),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<FrotaModel>(
+            value: _selectedFrota,
+            isExpanded: true,
+            hint: const Text('Selecione a Frota'),
+            items: _frotas.map((f) {
+              final count = _dispositivos.where((d) => d.idFrota == f.id).length;
+              return DropdownMenuItem(
+                value: f,
+                child: Text(
+                  '${f.nome} ($count veículos)',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+              );
+            }).toList(),
+            onChanged: (val) {
+              if (val != null) _onSwitchFrota(val);
+            },
+          ),
+        ),
+      );
+    }
+  }
+
+  Widget _buildBadge(String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFC8E569),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.remove_red_eye_outlined, size: 16, color: Colors.black87),
+          const SizedBox(width: 8),
+          Text(
+            text,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          ),
+        ],
+      ),
     );
   }
 
@@ -193,7 +436,7 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
         text,
         style: const TextStyle(
           color: Colors.black54,
-          fontSize: 14,
+          fontSize: 13,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -239,23 +482,19 @@ class TimelineCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: isAlert 
-            ? const Border(left: BorderSide(color: Color(0xFFC23147), width: 4))
-            : null,
+        borderRadius: BorderRadius.circular(14),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x0D000000), // diffuse
-            blurRadius: 20,
+            color: Color(0x0D000000),
+            blurRadius: 15,
             offset: Offset(0, 4),
           ),
         ],
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             padding: const EdgeInsets.all(10),
@@ -263,13 +502,9 @@ class TimelineCard extends StatelessWidget {
               color: iconBgColor,
               shape: BoxShape.circle,
             ),
-            child: Icon(
-              icon,
-              color: iconColor,
-              size: 20,
-            ),
+            child: Icon(icon, color: iconColor, size: 24),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -283,44 +518,33 @@ class TimelineCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 4),
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.location_on,
-                      color: Color(0xFFC23147),
-                      size: 12,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      location,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.black54,
-                      ),
-                    ),
-                  ],
+                Text(
+                  location,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.black54,
+                  ),
                 ),
-                if (extraInfo != null && extraInfo!.isNotEmpty) ...[
+                if (extraInfo != null) ...[
                   const SizedBox(height: 4),
                   Text(
-                    extraInfo!,
-                    style: const TextStyle(
-                      color: Color(0xFFC23147),
-                      fontSize: 12,
+                    'Status: $extraInfo',
+                    style: TextStyle(
+                      fontSize: 11,
                       fontWeight: FontWeight.w600,
+                      color: isAlert ? const Color(0xFFC23147) : const Color(0xFF8DB600),
                     ),
                   ),
                 ],
               ],
             ),
           ),
-          const SizedBox(width: 8),
           Text(
             time,
             style: const TextStyle(
-              fontSize: 12,
-              color: Colors.black54,
-              fontWeight: FontWeight.bold,
+              fontSize: 11,
+              color: Colors.black45,
+              fontWeight: FontWeight.w500,
             ),
           ),
         ],

@@ -8,11 +8,11 @@ import '../../widgets/custom_bottom_nav_bar.dart';
 import '../../widgets/custom_end_drawer.dart';
 
 class GpsScreen extends StatefulWidget {
-  final String userRole;
+  final DispositivoModel? initialDevice;
 
   const GpsScreen({
     super.key,
-    this.userRole = 'Operador',
+    this.initialDevice,
   });
 
   @override
@@ -23,6 +23,7 @@ class _GpsScreenState extends State<GpsScreen> {
   bool _isPanelExpanded = false;
   final SupabaseService _supabase = SupabaseService();
   bool _isLoading = true;
+  String _userRole = '';
   
   List<DispositivoModel> _dispositivos = [];
   Map<String, MedicaoModel> _latestMedicoes = {};
@@ -33,8 +34,10 @@ class _GpsScreenState extends State<GpsScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchData();
-    _timer = Timer.periodic(const Duration(seconds: 30), (timer) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchData();
+    });
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) {
       _refreshLocations();
     });
   }
@@ -49,24 +52,64 @@ class _GpsScreenState extends State<GpsScreen> {
     setState(() => _isLoading = true);
     try {
       final user = _supabase.currentUser;
-      if (user != null) {
-        final perfil = await _supabase.getUsuarioPerfil(user.id);
-        if (perfil != null) {
-          if (perfil.role == 'admin' || perfil.role == 'gerente') {
-            List<FrotaModel> frotas = perfil.role == 'admin' 
-              ? await _supabase.getFrotas()
-              : await _supabase.getFrotasByGerente(perfil.id);
-            for (var f in frotas) {
-              final devs = await _supabase.getDispositivosByFrota(f.id);
-              _dispositivos.addAll(devs);
-            }
-          } else {
-            _dispositivos = await _supabase.getDispositivosByOperador(perfil.id);
-          }
+      if (user == null) {
+        if (mounted) Navigator.pushReplacementNamed(context, '/login');
+        return;
+      }
+
+      final perfil = await _supabase.getUsuarioPerfil(user.id);
+      _userRole = perfil?.role ?? '';
+
+      // Obter argumento de rota se houver
+      final routeArg = ModalRoute.of(context)?.settings.arguments;
+      DispositivoModel? argDevice;
+      if (routeArg is DispositivoModel) {
+        argDevice = routeArg;
+      } else if (widget.initialDevice != null) {
+        argDevice = widget.initialDevice;
+      }
+
+      // Buscar veículos de acordo com a matriz de permissões
+      List<DispositivoModel> devs = [];
+      if (_userRole == 'admin') {
+        devs = await _supabase.getDispositivos();
+      } else if (_userRole == 'gerente') {
+        final frotas = await _supabase.getFrotasByGerente(user.id);
+        for (var f in frotas) {
+          final fleetDevs = await _supabase.getDispositivosByFrota(f.id);
+          devs.addAll(fleetDevs);
+        }
+      } else {
+        // Operador
+        devs = await _supabase.getDispositivosByOperador(user.id);
+      }
+
+      _dispositivos = devs;
+
+      // Definir o veículo selecionado
+      if (argDevice != null && devs.any((d) => d.id == argDevice.id)) {
+        _selectedDevice = devs.firstWhere((d) => d.id == argDevice.id);
+      } else if (_userRole == 'operador' && devs.isNotEmpty) {
+        // Operador tem acesso apenas ao seu próprio veículo
+        _selectedDevice = devs.first;
+      } else if (devs.length == 1) {
+        _selectedDevice = devs.first;
+      } else {
+        // Múltiplos veículos e nenhum selecionado previamente
+        _selectedDevice = null;
+      }
+
+      await _refreshLocations();
+
+      // Se temos um veículo selecionado com posição, focar nele no mapa
+      if (_selectedDevice != null && _latestMedicoes.containsKey(_selectedDevice!.id)) {
+        final m = _latestMedicoes[_selectedDevice!.id]!;
+        if (m.latitude != null && m.longitude != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _mapController.move(LatLng(m.latitude!.toDouble(), m.longitude!.toDouble()), 15.0);
+          });
         }
       }
-      
-      await _refreshLocations();
     } catch (e) {
       debugPrint('Erro GPS: $e');
     } finally {
@@ -106,6 +149,19 @@ class _GpsScreenState extends State<GpsScreen> {
     }
   }
 
+  void _onSelectVehicle(DispositivoModel device) {
+    setState(() {
+      _selectedDevice = device;
+      _isPanelExpanded = true;
+    });
+
+    if (_latestMedicoes.containsKey(device.id)) {
+      final m = _latestMedicoes[device.id]!;
+      if (m.latitude != null && m.longitude != null) {
+        _mapController.move(LatLng(m.latitude!.toDouble(), m.longitude!.toDouble()), 16.0);
+      }
+    }
+  }
 
   void _togglePanel() {
     setState(() {
@@ -115,11 +171,16 @@ class _GpsScreenState extends State<GpsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isOperador = _userRole == 'operador';
+
     return Scaffold(
       extendBody: true,
       backgroundColor: const Color(0xFFFFF2E0),
-      
-      bottomNavigationBar: const CustomBottomNavBar(selectedIndex: 4),
+      bottomNavigationBar: CustomBottomNavBar(
+        selectedIndex: 4,
+        isVehicleContext: true,
+        currentDevice: _selectedDevice,
+      ),
       body: SafeArea(
         child: Column(
           children: [
@@ -127,63 +188,211 @@ class _GpsScreenState extends State<GpsScreen> {
               padding: const EdgeInsets.all(16.0),
               child: _buildHeader(context),
             ),
+            if (_selectedDevice != null && _dispositivos.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                child: _buildVehicleSelector(),
+              ),
             Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(left: 16.0, right: 16.0, bottom: 90.0),
-                child: Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: const Color(0xFFC8E569), width: 4),
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFFC8E569).withAlpha(40),
-                        blurRadius: 15,
-                        spreadRadius: 2,
-                      )
-                    ],
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: _isLoading
-                      ? const Center(child: CircularProgressIndicator(color: Color(0xFFC23147)))
-                      : Stack(
-                    children: [
-                      // Camada 1: O Mapa Interativo
-                      _buildMapBackground(),
-                      
-                      // Camada 2: Barra de Pesquisa (Topo)
-                      Positioned(
-                        top: 16,
-                        left: 16,
-                        right: 70, // Espaço para os botões da direita
-                        child: _buildSearchBar(),
-                      ),
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator(color: Color(0xFFC23147)))
+                  : _dispositivos.isEmpty
+                      ? _buildEmptyState()
+                      : _selectedDevice == null
+                          ? _buildSelectVehicleState()
+                          : Padding(
+                              padding: const EdgeInsets.only(left: 16.0, right: 16.0, bottom: 90.0, top: 8.0),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: const Color(0xFFC8E569), width: 3),
+                                  borderRadius: BorderRadius.circular(24),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFFC8E569).withAlpha(40),
+                                      blurRadius: 15,
+                                      spreadRadius: 2,
+                                    )
+                                  ],
+                                ),
+                                clipBehavior: Clip.antiAlias,
+                                child: Stack(
+                                  children: [
+                                    // Camada 1: O Mapa
+                                    _buildMapBackground(),
+                                    
+                                    // Camada 2: Botões Flutuantes
+                                    Positioned(
+                                      top: 16,
+                                      right: 16,
+                                      child: _buildMapActionButtons(),
+                                    ),
 
-                      // Camada 3: Botões Flutuantes
-                      Positioned(
-                        top: 16,
-                        right: 16,
-                        child: _buildMapActionButtons(),
-                      ),
-                      AnimatedPositioned(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeInOut,
-                        bottom: _isPanelExpanded ? 240 : 120, // Move dinamicamente
-                        right: 16,
-                        child: _buildFullscreenButton(),
-                      ),
+                                    // Camada 3: Painel Inferior do Veículo
+                                    Positioned(
+                                      bottom: 0,
+                                      left: 0,
+                                      right: 0,
+                                      child: _buildBottomPanel(),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
-                      // Camada 4: Painel Inferior Premium
-                      Positioned(
-                        bottom: 0,
-                        left: 0,
-                        right: 0,
-                        child: _buildBottomPanel(),
-                      ),
-                    ],
+  Widget _buildSelectVehicleState() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFC8E569), width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              children: const [
+                Icon(Icons.location_searching, size: 56, color: Color(0xFFC23147)),
+                SizedBox(height: 12),
+                Text(
+                  'Nenhum veículo selecionado',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
+                  textAlign: TextAlign.center,
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'A tela de GPS está vinculada a um veículo específico para exibir sua localização e telemetria em tempo real. Escolha um dos veículos autorizados abaixo para rastrear no mapa:',
+                  style: TextStyle(fontSize: 13, color: Colors.black54),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'Selecione um veículo:',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black87),
+          ),
+          const SizedBox(height: 12),
+          ..._dispositivos.map((d) {
+            final hasLocation = _latestMedicoes.containsKey(d.id) &&
+                _latestMedicoes[d.id]?.latitude != null &&
+                _latestMedicoes[d.id]?.longitude != null;
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
                   ),
+                ],
+              ),
+              child: ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: Color(0xFFC8E569),
+                  child: Icon(Icons.directions_car, color: Colors.black87),
+                ),
+                title: Text(
+                  d.placaVeiculo ?? d.nomeDispositivo ?? 'Veículo',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                subtitle: Text(
+                  '${d.modeloVeiculo ?? "Dispositivo"} • ${hasLocation ? "Sinal GPS ativo" : "Sem sinal recente"}',
+                  style: TextStyle(fontSize: 12, color: hasLocation ? Colors.green[700] : Colors.black54),
+                ),
+                trailing: ElevatedButton.icon(
+                  onPressed: () => _onSelectVehicle(d),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFC23147),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  icon: const Icon(Icons.map, size: 16, color: Colors.white),
+                  label: const Text('Rastrear', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
                 ),
               ),
+            );
+          }),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: () => Navigator.pushReplacementNamed(context, '/dashboard-veiculo'),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              side: const BorderSide(color: Color(0xFFC23147)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
+            icon: const Icon(Icons.dashboard_outlined, color: Color(0xFFC23147)),
+            label: const Text('Ir para Dashboard de Veículos', style: TextStyle(color: Color(0xFFC23147), fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(height: 80),
+        ],
+      ),
+  }
+
+  Widget _buildEmptyState() {
+    final bool isAdmin = _userRole == 'admin';
+    final bool isGerente = _userRole == 'gerente';
+
+    String title;
+    String desc;
+
+    if (isAdmin) {
+      title = 'Nenhum veículo cadastrado';
+      desc = 'Não há veículos cadastrados para exibição no GPS.';
+    } else if (isGerente) {
+      title = 'Nenhum veículo na frota';
+      desc = 'Sua frota não possui veículos associados no momento. A configuração depende do Administrador.';
+    } else {
+      title = 'Nenhum veículo associado';
+      desc = 'Você não possui nenhum veículo associado ao seu usuário de operador. A configuração depende do Administrador.';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(24.0),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.location_off_outlined, size: 64, color: Color(0xFFC23147)),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(desc, style: const TextStyle(fontSize: 13, color: Colors.black54), textAlign: TextAlign.center),
+            const SizedBox(height: 20),
+            if (isAdmin)
+              ElevatedButton.icon(
+                onPressed: () => Navigator.pushNamed(context, '/cadastrar-dispositivo').then((_) => _fetchData()),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFC23147),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                icon: const Icon(Icons.add, color: Colors.white),
+                label: const Text('Cadastrar dispositivo', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
           ],
         ),
       ),
@@ -194,25 +403,25 @@ class _GpsScreenState extends State<GpsScreen> {
     return Row(
       children: [
         const Text(
-          'GPS',
+          'GPS — Veículo',
           style: TextStyle(
-            fontSize: 28,
+            fontSize: 24,
             fontWeight: FontWeight.bold,
             color: Color(0xFFC23147),
           ),
         ),
         const SizedBox(width: 8),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
             color: const Color(0xFFC23147),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Text(
-            widget.userRole,
+            _userRole.toUpperCase(),
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 12,
+              fontSize: 11,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -222,17 +431,80 @@ class _GpsScreenState extends State<GpsScreen> {
           builder: (ctx) => GestureDetector(
             onTap: () => CustomEndDrawer.showMenu(context),
             child: SizedBox(
-              width: 40,
-              height: 40,
+              width: 44,
+              height: 44,
               child: Image.asset(
                 'assets/images/logo.png',
-                errorBuilder: (ctx, error, stackTrace) =>
-                    const Icon(Icons.local_shipping_outlined, color: Color(0xFFC23147), size: 32),
+                color: const Color(0xFFC23147),
+                width: 36,
+                height: 36,
               ),
             ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildVehicleSelector() {
+    if (_dispositivos.length <= 1) {
+      final d = _dispositivos.first;
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.black12),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.directions_car, color: Color(0xFF8DB600), size: 18),
+            const SizedBox(width: 8),
+            Text(
+              'Veículo selecionado: ${d.placaVeiculo ?? d.nomeDispositivo ?? "Dispositivo"}',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<DispositivoModel>(
+          value: _selectedDevice,
+          isExpanded: true,
+          icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFFC23147)),
+          items: _dispositivos.map((d) {
+            return DropdownMenuItem<DispositivoModel>(
+              value: d,
+              child: Row(
+                children: [
+                  const Icon(Icons.directions_car, color: Color(0xFF8DB600), size: 18),
+                  const SizedBox(width: 8),
+                  Text(
+                    d.placaVeiculo ?? d.nomeDispositivo ?? 'Veículo',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                  if (d.modeloVeiculo != null) ...[
+                    const SizedBox(width: 6),
+                    Text('(${d.modeloVeiculo})', style: const TextStyle(color: Colors.black54, fontSize: 11)),
+                  ],
+                ],
+              ),
+            );
+          }).toList(),
+          onChanged: (val) {
+            if (val != null) _onSelectVehicle(val);
+          },
+        ),
+      ),
     );
   }
 
@@ -248,13 +520,7 @@ class _GpsScreenState extends State<GpsScreen> {
             width: 80,
             height: 80,
             child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _selectedDevice = d;
-                  _isPanelExpanded = true;
-                });
-                _mapController.move(LatLng(m.latitude!.toDouble(), m.longitude!.toDouble()), 16.0);
-              },
+              onTap: () => _onSelectVehicle(d),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -273,9 +539,9 @@ class _GpsScreenState extends State<GpsScreen> {
                       ],
                     ),
                     child: Icon(
-                      Icons.local_shipping, 
-                      color: isSelected ? Colors.white : Colors.black87, 
-                      size: isSelected ? 24 : 20
+                      Icons.local_shipping,
+                      color: isSelected ? Colors.white : Colors.black87,
+                      size: isSelected ? 24 : 20,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -284,13 +550,15 @@ class _GpsScreenState extends State<GpsScreen> {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(8),
-                      boxShadow: [
-                        BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 4)
-                      ]
+                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 4)],
                     ),
                     child: Text(
-                      d.placaVeiculo ?? d.nomeDispositivo ?? 'Veículo', 
-                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: isSelected ? const Color(0xFFC23147) : Colors.black87),
+                      d.placaVeiculo ?? d.nomeDispositivo ?? 'Veículo',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: isSelected ? const Color(0xFFC23147) : Colors.black87,
+                      ),
                       overflow: TextOverflow.ellipsis,
                     ),
                   )
@@ -302,17 +570,20 @@ class _GpsScreenState extends State<GpsScreen> {
       }
     }
 
+    // Posição inicial: se tiver veículo selecionado com medição, centraliza nele, senão default
+    LatLng initialPos = const LatLng(-23.2237, -45.9009);
+    if (_selectedDevice != null && _latestMedicoes.containsKey(_selectedDevice!.id)) {
+      final m = _latestMedicoes[_selectedDevice!.id]!;
+      if (m.latitude != null && m.longitude != null) {
+        initialPos = LatLng(m.latitude!.toDouble(), m.longitude!.toDouble());
+      }
+    }
+
     return FlutterMap(
       mapController: _mapController,
       options: MapOptions(
-        initialCenter: const LatLng(-23.2237, -45.9009),
-        initialZoom: 12.0,
-        onTap: (tapPosition, point) {
-          setState(() {
-            _selectedDevice = null;
-            _isPanelExpanded = false;
-          });
-        },
+        initialCenter: initialPos,
+        initialZoom: 13.0,
       ),
       children: [
         TileLayer(
@@ -321,53 +592,6 @@ class _GpsScreenState extends State<GpsScreen> {
         ),
         MarkerLayer(markers: markers),
       ],
-    );
-  }
-
-  Widget _buildSearchBar() {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () {},
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withAlpha(20),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.search, color: Color(0xFFC23147), size: 22),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Pesquisar rotas, veículos...',
-                  style: TextStyle(
-                    color: Colors.grey.shade500,
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.mic, color: Colors.black54, size: 18),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 
@@ -395,14 +619,13 @@ class _GpsScreenState extends State<GpsScreen> {
           ),
           Divider(color: Colors.grey.shade200, height: 1, indent: 8, endIndent: 8),
           IconButton(
-            icon: const Icon(Icons.near_me_outlined, color: Colors.black87, size: 22),
+            icon: const Icon(Icons.my_location, color: Color(0xFFC23147), size: 22),
             onPressed: () {
               if (_selectedDevice != null && _latestMedicoes.containsKey(_selectedDevice!.id)) {
                 var m = _latestMedicoes[_selectedDevice!.id]!;
-                _mapController.move(LatLng(m.latitude!.toDouble(), m.longitude!.toDouble()), 16.0);
-              } else if (_latestMedicoes.isNotEmpty) {
-                var m = _latestMedicoes.values.first;
-                _mapController.move(LatLng(m.latitude!.toDouble(), m.longitude!.toDouble()), 12.0);
+                if (m.latitude != null && m.longitude != null) {
+                  _mapController.move(LatLng(m.latitude!.toDouble(), m.longitude!.toDouble()), 16.0);
+                }
               }
             },
             constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
@@ -413,65 +636,22 @@ class _GpsScreenState extends State<GpsScreen> {
     );
   }
 
-  Widget _buildFullscreenButton() {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () {},
-        borderRadius: BorderRadius.circular(24),
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: const Color(0xFFC23147),
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFFC23147).withAlpha(80),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: const Icon(Icons.crop_free, color: Colors.white, size: 24),
-        ),
-      ),
-    );
-  }
-
   Widget _buildBottomPanel() {
     if (_selectedDevice == null) {
-      return AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 15, offset: const Offset(0, -3))],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 16),
-            const Text("Selecione um veículo no mapa", style: TextStyle(color: Colors.black54, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-          ],
-        ),
-      );
+      return const SizedBox.shrink();
     }
 
     var m = _latestMedicoes[_selectedDevice!.id];
-    String statusStr = 'Desconhecido';
+    String statusStr = 'Sem sinal';
     Color statusColor = Colors.grey;
     String lastUpdateStr = '--';
     String tempStr = '--';
     
     if (m != null && m.registradoEm != null) {
       bool isRecent = DateTime.now().difference(m.registradoEm!).inHours < 2;
-      statusStr = isRecent ? 'Em Trânsito' : 'Offline / Parado';
+      statusStr = isRecent ? 'Em trânsito' : 'Parado / Offline';
       statusColor = isRecent ? const Color(0xFFC23147) : Colors.black45;
-      lastUpdateStr = '${m.registradoEm!.day}/${m.registradoEm!.month} ${m.registradoEm!.hour}:${m.registradoEm!.minute.toString().padLeft(2,'0')}';
+      lastUpdateStr = '${m.registradoEm!.day}/${m.registradoEm!.month} ${m.registradoEm!.hour}:${m.registradoEm!.minute.toString().padLeft(2, '0')}';
       if (m.temperatura != null) {
         tempStr = '${m.temperatura!.toStringAsFixed(1)}°C';
       }
@@ -488,7 +668,7 @@ class _GpsScreenState extends State<GpsScreen> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -507,7 +687,7 @@ class _GpsScreenState extends State<GpsScreen> {
               onTap: _togglePanel,
               behavior: HitTestBehavior.opaque,
               child: Padding(
-                padding: const EdgeInsets.only(bottom: 12.0),
+                padding: const EdgeInsets.only(bottom: 10.0),
                 child: Container(
                   width: 40,
                   height: 4,
@@ -515,110 +695,116 @@ class _GpsScreenState extends State<GpsScreen> {
                 ),
               ),
             ),
-          
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFC8E569).withValues(alpha: 0.3),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.local_shipping, color: Color(0xFF8DC63F), size: 20),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _selectedDevice!.placaVeiculo ?? _selectedDevice!.nomeDispositivo ?? 'Dispositivo',
-                      style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 16),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        const Icon(Icons.access_time, color: Colors.black54, size: 12),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Último sinal: $lastUpdateStr',
-                          style: const TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                decoration: BoxDecoration(
-                  color: statusColor,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  statusStr,
-                  style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
-                ),
-              ),
-            ],
-          ),
-          
-          AnimatedCrossFade(
-            duration: const Duration(milliseconds: 300),
-            crossFadeState: _isPanelExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-            firstChild: const SizedBox(width: double.infinity, height: 0),
-            secondChild: Column(
-              mainAxisSize: MainAxisSize.min,
+            
+            Row(
               children: [
-                const SizedBox(height: 12),
                 Container(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.shade200),
+                    color: const Color(0xFFC8E569).withValues(alpha: 0.3),
+                    shape: BoxShape.circle,
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  child: const Icon(Icons.local_shipping, color: Color(0xFF8DC63F), size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildQuickMetric(Icons.thermostat, 'Temp', tempStr),
-                      Container(width: 1, height: 24, color: Colors.grey.shade300),
-                      _buildQuickMetric(Icons.battery_charging_full, 'Bateria', m?.bateria != null ? '${m!.bateria}%' : '--'),
-                      Container(width: 1, height: 24, color: Colors.grey.shade300),
-                      _buildQuickMetric(Icons.door_front_door_outlined, 'Porta', m?.portaAberta == true ? 'Aberta' : (m?.portaAberta == false ? 'Fechada' : '--')),
+                      Text(
+                        _selectedDevice!.placaVeiculo ?? _selectedDevice!.nomeDispositivo ?? 'Veículo',
+                        style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 15),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          const Icon(Icons.access_time, color: Colors.black54, size: 12),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Último sinal: $lastUpdateStr',
+                            style: const TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildActionButton(
-                        icon: Icons.history,
-                        label: 'Histórico',
-                        color: Colors.grey.shade100,
-                        textColor: Colors.black87,
-                        iconColor: Colors.black54,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _buildActionButton(
-                        icon: Icons.assignment_outlined,
-                        label: 'Relatório',
-                        color: const Color(0xFFC8E569),
-                        textColor: Colors.black87,
-                        iconColor: Colors.black87,
-                      ),
-                    ),
-                  ],
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: statusColor,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    statusStr,
+                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                  ),
                 ),
               ],
             ),
-          ),
-        ],
-      ),
+            
+            AnimatedCrossFade(
+              duration: const Duration(milliseconds: 300),
+              crossFadeState: _isPanelExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+              firstChild: const SizedBox(width: double.infinity, height: 0),
+              secondChild: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _buildQuickMetric(Icons.thermostat, 'Temp', tempStr),
+                        Container(width: 1, height: 24, color: Colors.grey.shade300),
+                        _buildQuickMetric(Icons.battery_charging_full, 'Bateria', m?.bateria != null ? '${m!.bateria}%' : '--'),
+                        Container(width: 1, height: 24, color: Colors.grey.shade300),
+                        _buildQuickMetric(Icons.door_front_door_outlined, 'Porta', m?.portaAberta == true ? 'Aberta' : (m?.portaAberta == false ? 'Fechada' : '--')),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildActionButton(
+                          icon: Icons.dashboard_outlined,
+                          label: 'Ver no Dashboard',
+                          color: const Color(0xFFC8E569),
+                          textColor: Colors.black87,
+                          iconColor: Colors.black87,
+                          onTap: () {
+                            Navigator.pushNamed(context, '/dashboard-veiculo', arguments: _selectedDevice);
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildActionButton(
+                          icon: Icons.description_outlined,
+                          label: 'Relatório',
+                          color: Colors.grey.shade100,
+                          textColor: Colors.black87,
+                          iconColor: Colors.black54,
+                          onTap: () {
+                            Navigator.pushNamed(context, '/relatorios-veiculo');
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -628,22 +814,9 @@ class _GpsScreenState extends State<GpsScreen> {
       children: [
         Icon(icon, color: Colors.grey.shade400, size: 16),
         const SizedBox(height: 4),
-        Text(
-          value,
-          style: const TextStyle(
-            color: Colors.black87,
-            fontWeight: FontWeight.bold,
-            fontSize: 12,
-          ),
-        ),
+        Text(value, style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 12)),
         const SizedBox(height: 2),
-        Text(
-          label,
-          style: const TextStyle(
-            color: Colors.black54,
-            fontSize: 10,
-          ),
-        ),
+        Text(label, style: const TextStyle(color: Colors.black54, fontSize: 10)),
       ],
     );
   }
@@ -654,12 +827,13 @@ class _GpsScreenState extends State<GpsScreen> {
     required Color color,
     required Color textColor,
     required Color iconColor,
+    required VoidCallback onTap,
   }) {
     return Material(
       color: color,
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
-        onTap: () {},
+        onTap: onTap,
         borderRadius: BorderRadius.circular(10),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 10),

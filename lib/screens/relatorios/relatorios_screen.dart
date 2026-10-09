@@ -31,11 +31,13 @@ class ViagemData {
 }
 
 class RelatoriosScreen extends StatefulWidget {
-  final String userRole;
+  final bool isVehicleContext;
+  final String? userRole;
 
   const RelatoriosScreen({
     super.key,
-    this.userRole = 'Operador',
+    this.isVehicleContext = false,
+    this.userRole,
   });
 
   @override
@@ -68,7 +70,9 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
   @override
   void initState() {
     super.initState();
-    _loadInitialData();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadInitialData();
+    });
   }
 
   Future<void> _loadInitialData() async {
@@ -78,13 +82,27 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
       if (user != null) {
         _perfil = await _supabase.getUsuarioPerfil(user.id);
         if (_perfil != null) {
-          if (_perfil!.role == 'admin' || _perfil!.role == 'gerente') {
-            _frotas = await _supabase.getFrotasByGerente(_perfil!.id);
-          } else {
-            _frotas = await _supabase.getFrotasByOperador(_perfil!.id);
+          final role = _perfil!.role;
+
+          // Operador não tem permissão para Relatórios de Frota
+          if (!widget.isVehicleContext && role == 'operador') {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Acesso negado para seu perfil. Redirecionando para Veículo.', style: TextStyle(color: Colors.white)),
+                  backgroundColor: Colors.red,
+                ),
+              );
+              Navigator.pushReplacementNamed(context, '/relatorios-veiculo');
+            }
+            return;
           }
 
-          if (_perfil!.role == 'admin' || _perfil!.role == 'gerente') {
+          if (role == 'admin') {
+            _frotas = await _supabase.getFrotas();
+            _dispositivos = await _supabase.getDispositivos();
+          } else if (role == 'gerente') {
+            _frotas = await _supabase.getFrotasByGerente(_perfil!.id);
             List<DispositivoModel> allDevices = [];
             for (var frota in _frotas) {
               final devs = await _supabase.getDispositivosByFrota(frota.id);
@@ -92,7 +110,21 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
             }
             _dispositivos = allDevices;
           } else {
+            // Operador
+            _frotas = await _supabase.getFrotasByOperador(_perfil!.id);
             _dispositivos = await _supabase.getDispositivosByOperador(_perfil!.id);
+          }
+
+          // Checar se veio veículo por argumento de rota
+          final routeArg = ModalRoute.of(context)?.settings.arguments;
+          if (routeArg is DispositivoModel) {
+            _selectedDispositivoId = routeArg.id;
+          } else if (widget.isVehicleContext && _dispositivos.isNotEmpty) {
+            _selectedDispositivoId ??= _dispositivos.first.id;
+          }
+
+          if (!widget.isVehicleContext && _frotas.isNotEmpty) {
+            _selectedFrotaId ??= _frotas.first.id;
           }
           
           await _loadReportData();
@@ -269,7 +301,10 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
     return Scaffold(
       extendBody: true,
       backgroundColor: const Color(0xFFFFF2E0),
-      bottomNavigationBar: const CustomBottomNavBar(selectedIndex: 1),
+      bottomNavigationBar: CustomBottomNavBar(
+        selectedIndex: 1,
+        isVehicleContext: widget.isVehicleContext,
+      ),
       body: WatermarkBackground(
         child: SafeArea(
           child: _isLoading 
@@ -321,11 +356,11 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Relatório',
-                style: TextStyle(
+              Text(
+                widget.isVehicleContext ? 'Relatório — Veículo' : 'Relatório — Frota',
+                style: const TextStyle(
                   color: Color(0xFFC23147),
-                  fontSize: 24,
+                  fontSize: 22,
                   fontWeight: FontWeight.bold,
                 ),
               ),

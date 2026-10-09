@@ -1,4 +1,4 @@
-﻿import 'dart:ui';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/supabase_service.dart';
@@ -92,6 +92,21 @@ class _MenuContentState extends State<_MenuContent> {
     }
   }
 
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 4),
+      child: Text(
+        title,
+        style: const TextStyle(
+          color: Color(0xFFC23147),
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1.1,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -136,83 +151,141 @@ class _MenuContentState extends State<_MenuContent> {
               // Menu Items
               Expanded(
                 child: ListView(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
                   children: [
-                    if (_userRole == 'admin') ...[
+                    // --- DASHBOARDS ---
+                    _buildSectionHeader('DASHBOARDS'),
+                    if (_userRole == 'admin' || _userRole == 'gerente')
                       const MenuListItem(
-                        icon: Icons.person_add_alt_1_outlined,
-                        title: 'Cadastrar funcionário',
-                        routeName: '/cadastrar-funcionario',
+                        icon: Icons.dashboard_outlined,
+                        title: 'Dashboard — Frota',
+                        routeName: '/dashboard-frota',
                       ),
-                      const MenuListItem(
-                        icon: Icons.add_box_outlined,
-                        title: 'Cadastrar dispositivo',
-                        routeName: '/cadastrar-dispositivo',
-                      ),
-                      const MenuListItem(
-                        icon: Icons.local_shipping_outlined,
-                        title: 'Criar frotas',
-                        routeName: '/criar-frota',
-                      ),
-                      const MenuListItem(
-                        icon: Icons.person_outline,
-                        title: 'Perfil',
-                        routeName: '/perfil-adm',
-                      ),
-                      const MenuListItem(
-                        icon: Icons.receipt_long_outlined,
-                        title: 'Lista de dispositivos',
-                        routeName: '/listar-dispositivos',
-                      ),
-                      const MenuListItem(
-                        icon: Icons.people_alt_outlined,
-                        title: 'Lista de operadores',
-                        routeName: '/listar-operadores',
-                      ),
-                      const MenuListItem(
-                        icon: Icons.people_alt_outlined,
-                        title: 'Lista de gerentes',
-                        routeName: '/listar-gerentes',
-                      ),
+                    const MenuListItem(
+                      icon: Icons.local_shipping_outlined,
+                      title: 'Dashboard — Veículo',
+                      routeName: '/dashboard-veiculo',
+                    ),
+
+                    // --- CADASTROS E GERENCIAMENTO ---
+                    if (_userRole == 'admin' || _userRole == 'gerente') ...[
+                      const SizedBox(height: 12),
+                      _buildSectionHeader('GERENCIAMENTO'),
                       const MenuListItem(
                         icon: Icons.fire_truck_outlined,
-                        title: 'Lista de frotas',
+                        title: 'Listar frotas',
                         routeName: '/listar-frotas',
                       ),
-                    ] else if (_userRole == 'gerente') ...[
+                      if (_userRole == 'admin')
+                        const MenuListItem(
+                          icon: Icons.add_business_outlined,
+                          title: 'Criar frota',
+                          routeName: '/criar-frota',
+                        ),
                       const MenuListItem(
-                        icon: Icons.person_outline,
-                        title: 'Perfil',
-                        routeName: '/perfil-gerente',
-                      ),
-                      const MenuListItem(
-                        icon: Icons.receipt_long_outlined,
-                        title: 'Lista de dispositivos',
+                        icon: Icons.devices_other_outlined,
+                        title: 'Listar dispositivos',
                         routeName: '/listar-dispositivos',
                       ),
+                      if (_userRole == 'admin')
+                        const MenuListItem(
+                          icon: Icons.add_box_outlined,
+                          title: 'Cadastrar dispositivo',
+                          routeName: '/cadastrar-dispositivo',
+                        ),
                       const MenuListItem(
                         icon: Icons.people_alt_outlined,
-                        title: 'Lista de operadores',
+                        title: 'Listar operadores',
                         routeName: '/listar-operadores',
                       ),
-                    ] else if (_userRole == 'operador') ...[
+                      if (_userRole == 'admin') ...[
+                        const MenuListItem(
+                          icon: Icons.badge_outlined,
+                          title: 'Listar gerentes',
+                          routeName: '/listar-gerentes',
+                        ),
+                        const MenuListItem(
+                          icon: Icons.person_add_alt_1_outlined,
+                          title: 'Cadastrar funcionário',
+                          routeName: '/cadastrar-funcionario',
+                        ),
+                      ],
+                    ],
+
+                    // --- ALERTAS ---
+                    const SizedBox(height: 12),
+                    _buildSectionHeader('ALERTAS'),
+                    if (_userRole == 'admin' || _userRole == 'gerente')
                       const MenuListItem(
-                        icon: Icons.person_outline,
-                        title: 'Perfil',
-                        routeName: '/perfil-operador',
+                        icon: Icons.notifications_none,
+                        title: 'Alertas — Frota',
+                        routeName: '/alertas-frota',
                       ),
+                    const MenuListItem(
+                      icon: Icons.notification_important_outlined,
+                      title: 'Alertas — Veículo',
+                      routeName: '/alertas-veiculo',
+                    ),
+
+                    // --- LOCALIZAÇÃO ---
+                    const SizedBox(height: 12),
+                    _buildSectionHeader('LOCALIZAÇÃO'),
+                    const MenuListItem(
+                      icon: Icons.location_on_outlined,
+                      title: 'GPS — Veículo',
+                      routeName: '/gps',
+                    ),
+
+                    // --- HISTÓRICO ---
+                    const SizedBox(height: 12),
+                    _buildSectionHeader('HISTÓRICO'),
+                    if (_userRole == 'admin' || _userRole == 'gerente')
+                      const MenuListItem(
+                        icon: Icons.history,
+                        title: 'Histórico — Frota',
+                        routeName: '/historico-frota',
+                      ),
+                    const MenuListItem(
+                      icon: Icons.manage_history_outlined,
+                      title: 'Histórico — Veículo',
+                      routeName: '/historico-veiculo',
+                    ),
+
+                    // --- RELATÓRIOS ---
+                    const SizedBox(height: 12),
+                    _buildSectionHeader('RELATÓRIOS'),
+                    if (_userRole == 'admin' || _userRole == 'gerente')
+                      const MenuListItem(
+                        icon: Icons.description_outlined,
+                        title: 'Relatório — Frota',
+                        routeName: '/relatorios-frota',
+                      ),
+                    const MenuListItem(
+                      icon: Icons.assessment_outlined,
+                      title: 'Relatório — Veículo',
+                      routeName: '/relatorios-veiculo',
+                    ),
+
+                    // --- CONTA ---
+                    const SizedBox(height: 12),
+                    _buildSectionHeader('CONTA'),
+                    const MenuListItem(
+                      icon: Icons.person_outline,
+                      title: 'Perfil',
+                      routeName: '/perfil',
+                    ),
+                    if (_userRole == 'operador')
                       MenuListItem(
                         icon: Icons.stop_circle_outlined,
                         title: 'Parar viagem',
                         onTapAction: () {
-                          // TODO: Implementar lógica de parar viagem
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text('Viagem parada com sucesso!')),
                           );
                         },
                       ),
-                    ],
-],
+                    const SizedBox(height: 16),
+                  ],
                 ),
               ),
               

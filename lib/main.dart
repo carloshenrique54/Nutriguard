@@ -3,17 +3,13 @@ import 'package:flutter/material.dart';
 import 'screens/splash_screen.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/cadastro_screen.dart';
-import 'screens/dashboard/dashboard_vazio_screen.dart';
-import 'screens/dashboard/dashboard_adm_frota_screen.dart';
+import 'screens/dashboard/dashboard_frota_screen.dart';
 import 'screens/dashboard/dashboard_veiculo_screen.dart';
-import 'screens/dashboard/dashboard_operador_screen.dart';
 import 'screens/alertas/alertas_screen.dart';
 import 'screens/relatorios/relatorios_screen.dart';
 import 'screens/historico/historico_screen.dart';
 import 'screens/gps/gps_screen.dart';
-import 'screens/perfil/perfil_adm_screen.dart';
-import 'screens/perfil/perfil_gerente_screen.dart';
-import 'screens/perfil/perfil_operador_screen.dart';
+import 'screens/perfil/perfil_screen.dart';
 import 'screens/cadastros/cadastrar_funcionario_screen.dart';
 import 'screens/cadastros/cadastrar_dispositivo_screen.dart';
 import 'screens/cadastros/criar_frota_screen.dart';
@@ -54,52 +50,37 @@ class NutriGuardApp extends StatelessWidget {
         '/cadastro': (context) => const CadastroScreen(),
 
         // Dashboards
-        '/dashboard-vazio': (context) => const DashboardVazioScreen(),
-        '/dashboard-adm-frota': (context) => const DashboardAdmFrotaScreen(),
+        '/dashboard-frota': (context) => const DashboardFrotaScreen(),
         '/dashboard-veiculo': (context) => const DashboardVeiculoScreen(),
-        '/dashboard-operador': (context) => const DashboardOperadorScreen(),
 
         // Alertas
-        '/alertas-frota': (context) => const AlertasScreen(
-              userRole: 'ADM',
-              viewContext: 'Vendo: Frota Sul (6 veículos)',
-              
-            ),
-        '/alertas-veiculo': (context) => const AlertasScreen(
-              userRole: 'Operador',
-              viewContext: 'Vendo: Volvo FH 540',
-              
-            ),
+        '/alertas-frota': (context) => const AlertasScreen(isVehicleContext: false),
+        '/alertas-veiculo': (context) => const AlertasScreen(isVehicleContext: true),
 
         // Relatórios
-        '/relatorios-frota': (context) => const RelatoriosScreen(userRole: 'ADM'),
-        '/relatorios-veiculo': (context) => const RelatoriosScreen(userRole: 'Operador'),
+        '/relatorios-frota': (context) => const RelatoriosScreen(isVehicleContext: false),
+        '/relatorios-veiculo': (context) => const RelatoriosScreen(isVehicleContext: true),
 
         // Histórico
-        '/historico-frota': (context) => const HistoricoScreen(userRole: 'ADM'),
-        '/historico-veiculo': (context) => const HistoricoScreen(userRole: 'Operador'),
+        '/historico-frota': (context) => const HistoricoScreen(isVehicleContext: false),
+        '/historico-veiculo': (context) => const HistoricoScreen(isVehicleContext: true),
 
         // GPS
         '/gps': (context) => const GpsScreen(),
 
         // Perfis
-        '/perfil': (context) => const PerfilAdmScreen(),
-        '/perfil-adm': (context) => const PerfilAdmScreen(),
-        '/perfil-gerente': (context) => const PerfilGerenteScreen(),
-        '/perfil-operador': (context) => const PerfilOperadorScreen(),
+        '/perfil': (context) => const PerfilScreen(),
 
         // Cadastros e Listagens
-        '/cadastrar-funcionario': (context) =>
-            const CadastrarFuncionarioScreen(),
-        '/cadastrar-dispositivo': (context) =>
-            const CadastrarDispositivoScreen(),
+        '/cadastrar-funcionario': (context) => const CadastrarFuncionarioScreen(),
+        '/cadastrar-dispositivo': (context) => const CadastrarDispositivoScreen(),
         '/criar-frota': (context) => const CriarFrotaScreen(),
         '/listar-dispositivos': (context) => const ListarDispositivosScreen(),
         '/listar-gerentes': (context) => const ListarOperadoresScreen(title: 'Gerentes'),
         '/listar-operadores': (context) => const ListarOperadoresScreen(title: 'Operadores'),
         '/iniciar-viagem': (context) => const IniciarViagemScreen(),
 
-        // Rotas extras solicitadas no Drawer
+        // Listagens e Ações extras
         '/listar-frotas': (context) => const ListarFrotasScreen(),
         '/configuracoes': (context) => const ConfiguracoesScreen(),
       },

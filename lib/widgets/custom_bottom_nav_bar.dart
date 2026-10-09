@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../services/supabase_service.dart';
 
 class CustomBottomNavBar extends StatefulWidget {
   final int? selectedIndex;
+  final bool? isVehicleContext;
+  final Object? currentDevice;
 
   const CustomBottomNavBar({
     super.key,
     required this.selectedIndex,
+    this.isVehicleContext,
+    this.currentDevice,
   });
 
   @override
@@ -14,11 +19,14 @@ class CustomBottomNavBar extends StatefulWidget {
 }
 
 class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
+  final SupabaseService _supabase = SupabaseService();
   bool _isInit = false;
+  bool _isVehicle = false;
 
   @override
   void initState() {
     super.initState();
+    _resolveContext();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         setState(() {
@@ -28,8 +36,30 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
     });
   }
 
+  Future<void> _resolveContext() async {
+    if (widget.isVehicleContext != null) {
+      if (mounted) setState(() => _isVehicle = widget.isVehicleContext!);
+      return;
+    }
+    final user = _supabase.currentUser;
+    if (user != null) {
+      final perfil = await _supabase.getUsuarioPerfil(user.id);
+      if (mounted) {
+        setState(() {
+          _isVehicle = perfil?.role == 'operador';
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final String alertasRoute = _isVehicle ? '/alertas-veiculo' : '/alertas-frota';
+    final String relatoriosRoute = _isVehicle ? '/relatorios-veiculo' : '/relatorios-frota';
+    final String dashboardRoute = _isVehicle ? '/dashboard-veiculo' : '/dashboard-frota';
+    final String historicoRoute = _isVehicle ? '/historico-veiculo' : '/historico-frota';
+    const String gpsRoute = '/gps';
+
     return Container(
       height: 75,
       width: double.infinity,
@@ -44,11 +74,11 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              _buildNavItem(context, 0, Icons.notifications_none, 'Alertas', '/alertas-frota'),
-              _buildNavItem(context, 1, Icons.description_outlined, 'Relatórios', '/relatorios-frota'),
-              _buildNavItem(context, 2, Icons.dashboard_rounded, 'Dashboard', '/dashboard-adm-frota'),
-              _buildNavItem(context, 3, Icons.access_time, 'Histórico', '/historico-frota'),
-              _buildNavItem(context, 4, Icons.location_on_outlined, 'GPS', '/gps'),
+              _buildNavItem(context, 0, Icons.notifications_none, 'Alertas', alertasRoute),
+              _buildNavItem(context, 1, Icons.description_outlined, 'Relatórios', relatoriosRoute),
+              _buildNavItem(context, 2, Icons.dashboard_rounded, 'Dashboard', dashboardRoute),
+              _buildNavItem(context, 3, Icons.access_time, 'Histórico', historicoRoute),
+              _buildNavItem(context, 4, Icons.location_on_outlined, 'GPS', gpsRoute),
             ],
           ),
           
@@ -112,7 +142,11 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
       onTap: () {
         HapticFeedback.lightImpact();
         if (!isActive) {
-          Navigator.pushReplacementNamed(context, routeName);
+          if (routeName == '/gps' && widget.currentDevice != null) {
+            Navigator.pushReplacementNamed(context, routeName, arguments: widget.currentDevice);
+          } else {
+            Navigator.pushReplacementNamed(context, routeName);
+          }
         }
       },
       behavior: HitTestBehavior.opaque,

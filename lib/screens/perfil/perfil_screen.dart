@@ -9,9 +9,9 @@ import '../../models/models.dart';
 enum UserRole { adm, gerente, operador }
 
 class PerfilScreen extends StatefulWidget {
-  final UserRole role;
+  final UserRole? role;
 
-  const PerfilScreen({super.key, required this.role});
+  const PerfilScreen({super.key, this.role});
 
   @override
   State<PerfilScreen> createState() => _PerfilScreenState();
@@ -237,8 +237,12 @@ class _PerfilScreenState extends State<PerfilScreen> {
 
   Widget _buildHeader() {
     String roleText = 'Operador';
-    if (widget.role == UserRole.adm) roleText = 'ADM';
-    if (widget.role == UserRole.gerente) roleText = 'Gerente';
+    final roleStr = _perfil?.role.toLowerCase() ?? '';
+    if (widget.role == UserRole.adm || roleStr == 'admin') {
+      roleText = 'ADM';
+    } else if (widget.role == UserRole.gerente || roleStr == 'gerente') {
+      roleText = 'Gerente';
+    }
 
     return Row(
       children: [

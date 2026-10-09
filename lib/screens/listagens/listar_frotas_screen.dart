@@ -34,14 +34,16 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
     setState(() => _isLoading = true);
     
     try {
-      final frotas = await _supabase.getFrotas();
-      final dispositivos = await _supabase.getDispositivos();
-      
       final currentUserId = _supabase.currentUser?.id;
       if (currentUserId != null) {
         final perfil = await _supabase.getUsuarioPerfil(currentUserId);
-        if (perfil != null) _userRole = perfil.cargo ?? '';
+        if (perfil != null) _userRole = perfil.role;
       }
+
+      final frotas = _userRole == 'gerente' && currentUserId != null
+          ? await _supabase.getFrotasByGerente(currentUserId)
+          : await _supabase.getFrotas();
+      final dispositivos = await _supabase.getDispositivos();
 
       Map<String, String> gerentesMap = {};
       Map<String, int> countsMap = {};
@@ -79,14 +81,14 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
     final perfil = await _supabase.getUsuarioPerfil(currentUserId);
     final role = perfil?.role ?? '';
     
-    List<String> allowedRoles = ['admin'];
+    List<String> allowedRoles = ['admin', 'gerente'];
 
     if (!allowedRoles.contains(role)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Acesso negado para seu perfil', style: TextStyle(color: Colors.white)), backgroundColor: Colors.red),
         );
-        Navigator.pushReplacementNamed(context, '/login');
+        Navigator.pushReplacementNamed(context, '/dashboard-veiculo');
       }
     }
   }
@@ -228,7 +230,9 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
                                       HapticFeedback.mediumImpact();
                                       _showDeleteDialog(context, fleet);
                                     },
-                                    onTap: () {},
+                                    onTap: () {
+                                      Navigator.pushNamed(context, '/dashboard-frota', arguments: fleet.id);
+                                    },
                                   ),
                                 ),
                               );
@@ -274,18 +278,34 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
                   ),
                   TextButton(
                     onPressed: () async {
-                      // Note: Deletion is not implemented in SupabaseService yet.
-                      Navigator.pop(context, true);
-                      HapticFeedback.mediumImpact();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: const Text('Removida com sucesso (simulado)', style: TextStyle(color: Colors.white)),
-                          backgroundColor: Colors.red,
-                          behavior: SnackBarBehavior.floating,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                        ),
-                      );
-                      _fetchData(); // refresh list
+                      try {
+                        await _supabase.deleteFrota(fleet.id);
+                        if (context.mounted) {
+                          Navigator.pop(context, true);
+                          HapticFeedback.mediumImpact();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: const Text('Frota removida com sucesso!', style: TextStyle(color: Colors.white)),
+                              backgroundColor: Colors.green,
+                              behavior: SnackBarBehavior.floating,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                            ),
+                          );
+                          _fetchData();
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          Navigator.pop(context, false);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Erro ao excluir: $e', style: const TextStyle(color: Colors.white)),
+                              backgroundColor: Colors.red,
+                              behavior: SnackBarBehavior.floating,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                            ),
+                          );
+                        }
+                      }
                     },
                     child: const Text('Excluir', style: TextStyle(color: Color(0xFFC23147))),
                   ),
