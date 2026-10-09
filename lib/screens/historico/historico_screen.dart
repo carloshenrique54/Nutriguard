@@ -23,7 +23,7 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
   final SupabaseService _supabase = SupabaseService();
   bool _isLoading = true;
   List<OcorrenciaModel> _alerts = [];
-  String _userRole = 'OPERADOR';
+  String _userRole = '';
 
   @override
   void initState() {
@@ -37,7 +37,7 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
       final currentUserId = _supabase.currentUser?.id;
       if (currentUserId != null) {
         final perfil = await _supabase.getUsuarioPerfil(currentUserId);
-        if (perfil != null) _userRole = perfil.cargo ?? 'OPERADOR';
+        if (perfil != null) _userRole = perfil.cargo ?? '';
       }
 
       final ocorrencias = await _supabase.getOcorrencias();
@@ -168,16 +168,16 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
         ),
         const Spacer(),
         Builder(
-          builder: (ctx) => GestureDetector(
+          builder: (context) => GestureDetector(
             onTap: () => CustomEndDrawer.showMenu(context),
             child: SizedBox(
-              width: 40,
-              height: 40,
+              width: 52,
+              height: 52,
               child: Image.asset(
                 'assets/images/logo.png',
                 color: const Color(0xFFC23147),
-                width: 32,
-                height: 32,
+                width: 44,
+                height: 44,
               ),
             ),
           ),

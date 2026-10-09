@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../widgets/custom_end_drawer.dart';
 import '../../widgets/auth_components.dart';
 import '../../services/supabase_service.dart';
 
@@ -31,8 +30,8 @@ class _LoginScreenState extends State<LoginScreen> {
       HapticFeedback.mediumImpact();
       if (!mounted) return;
       
-      final role = perfil?.cargo?.toLowerCase();
-      if (role == 'adm' || role == 'gerente') {
+      final role = perfil?.role ?? '';
+      if (role == 'admin' || role == 'gerente') {
         Navigator.pushReplacementNamed(context, '/dashboard-adm-frota');
       } else if (role == 'operador') {
         Navigator.pushReplacementNamed(context, '/dashboard-veiculo');

@@ -17,7 +17,7 @@ class _DashboardAdmFrotaScreenState extends State<DashboardAdmFrotaScreen> {
   final SupabaseService _supabase = SupabaseService();
   bool _isLoading = true;
   String _userName = 'Admin';
-  String _userRole = 'ADM';
+  String _userRole = '';
   int _devicesCount = 0;
   List<FrotaModel> _frotas = [];
   Map<String, int> _frotaDeviceCounts = {};
@@ -26,6 +26,7 @@ class _DashboardAdmFrotaScreenState extends State<DashboardAdmFrotaScreen> {
   @override
   void initState() {
     super.initState();
+    _checkAccess();
     _fetchData();
   }
 
@@ -33,35 +34,73 @@ class _DashboardAdmFrotaScreenState extends State<DashboardAdmFrotaScreen> {
     setState(() => _isLoading = true);
     try {
       final currentUserId = _supabase.currentUser?.id;
-      if (currentUserId != null) {
-        final perfil = await _supabase.getUsuarioPerfil(currentUserId);
-        if (perfil != null) {
-          _userName = perfil.nome ?? 'Admin';
-          _userRole = perfil.cargo ?? 'ADM';
-        }
+      if (currentUserId == null) return;
+      
+      final perfil = await _supabase.getUsuarioPerfil(currentUserId);
+      if (perfil != null) {
+        _userName = perfil.nome ?? 'Admin';
+        _userRole = perfil.cargo ?? '';
       }
 
-      final frotas = await _supabase.getFrotas();
-      final dispositivos = await _supabase.getDispositivos();
-      final ocorrencias = await _supabase.getOcorrencias();
+      List<FrotaModel> frotas = [];
+      if (perfil?.role == 'admin') {
+        frotas = await _supabase.getFrotas();
+      } else {
+        frotas = await _supabase.getFrotasByGerente(currentUserId);
+      }
+      
+      List<DispositivoModel> allDevices = [];
+      for (var f in frotas) {
+        final devs = await _supabase.getDispositivosByFrota(f.id);
+        allDevices.addAll(devs);
+      }
+      
+      List<String> deviceIds = allDevices.map((d) => d.id).toList();
+      
+      // Fetch ocorrencias just for these devices (using our new filter method for the last 30 days)
+      DateTime agora = DateTime.now();
+      DateTime inicio = agora.subtract(const Duration(days: 30));
+      List<OcorrenciaModel> ocorrencias = await _supabase.getOcorrenciasFiltro(deviceIds, inicio, agora);
+      
+      // Sort desc
+      ocorrencias.sort((a, b) => (b.criadoEm ?? DateTime.now()).compareTo(a.criadoEm ?? DateTime.now()));
 
       _frotas = frotas;
-      _devicesCount = dispositivos.length;
+      _devicesCount = allDevices.length;
 
       Map<String, int> counts = {};
       for (var f in frotas) {
-        counts[f.id] = dispositivos.where((d) => d.idFrota == f.id).length;
+        counts[f.id] = allDevices.where((d) => d.idFrota == f.id).length;
       }
       _frotaDeviceCounts = counts;
 
-      // Pegar as 5 ultimas ocorrencias (simulado)
-      ocorrencias.sort((a, b) => (b.criadoEm ?? DateTime.now()).compareTo(a.criadoEm ?? DateTime.now()));
       _alerts = ocorrencias.take(5).toList();
 
       if (mounted) setState(() => _isLoading = false);
     } catch (e) {
       debugPrint('Erro no dashboard adm: $e');
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _checkAccess() async {
+    final currentUserId = _supabase.currentUser?.id;
+    if (currentUserId == null) {
+      if (mounted) Navigator.pushReplacementNamed(context, '/login');
+      return;
+    }
+    final perfil = await _supabase.getUsuarioPerfil(currentUserId);
+    final role = perfil?.role ?? '';
+    
+    List<String> allowedRoles = ['admin', 'gerente'];
+
+    if (!allowedRoles.contains(role)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Acesso negado para seu perfil', style: TextStyle(color: Colors.white)), backgroundColor: Colors.red),
+        );
+        Navigator.pushReplacementNamed(context, '/login');
+      }
     }
   }
 
@@ -130,20 +169,20 @@ class _DashboardAdmFrotaScreenState extends State<DashboardAdmFrotaScreen> {
             ),
             const Spacer(),
             Builder(
-              builder: (ctx) => GestureDetector(
-                onTap: () => CustomEndDrawer.showMenu(context),
-                child: SizedBox(
-                  width: 40,
-                  height: 40,
-                  child: Image.asset(
-                    'assets/images/logo.png',
-                    color: const Color(0xFFC23147),
-                    width: 32,
-                    height: 32,
-                  ),
-                ),
+          builder: (context) => GestureDetector(
+            onTap: () => CustomEndDrawer.showMenu(context),
+            child: SizedBox(
+              width: 52,
+              height: 52,
+              child: Image.asset(
+                'assets/images/logo.png',
+                color: const Color(0xFFC23147),
+                width: 44,
+                height: 44,
               ),
             ),
+          ),
+        ),
           ],
         ),
         const SizedBox(height: 8),
@@ -152,7 +191,7 @@ class _DashboardAdmFrotaScreenState extends State<DashboardAdmFrotaScreen> {
             Container(
               padding: const EdgeInsets.all(4),
               decoration: BoxDecoration(
-                color: const Color(0xFFC8E569).withOpacity(0.3),
+                color: const Color(0xFFC8E569).withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Icon(
@@ -307,41 +346,43 @@ class _DashboardAdmFrotaScreenState extends State<DashboardAdmFrotaScreen> {
               ),
             ),
             GestureDetector(
-              onTap: () {},
+              onTap: () => Navigator.pushNamed(context, '/listar-frotas'),
               child: const Text(
-                'Ver todas >',
+                'Ver todas',
                 style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
                   color: Color(0xFFC23147),
+                  fontWeight: FontWeight.bold,
                 ),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
         Container(
-          padding: const EdgeInsets.symmetric(vertical: 8),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            boxShadow: const [
+            boxShadow: [
               BoxShadow(
-                color: Color(0x0D000000),
-                blurRadius: 20,
-                offset: Offset(0, 4),
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
               ),
             ],
           ),
           child: Column(
-            children: _frotas.map((f) {
-              final dCount = _frotaDeviceCounts[f.id] ?? 0;
-              return Column(
-                children: [
-                  _buildFleetRow(f.nome ?? 'Sem Nome', '$dCount Veículos', dCount, 0, 0),
-                  const Divider(height: 1, color: Colors.black12),
-                ],
-              );
+            children: _frotas.isEmpty 
+              ? [const Padding(padding: EdgeInsets.all(16.0), child: Text("Nenhuma frota atribuída", style: TextStyle(color: Colors.black54)))]
+              : _frotas.map((f) {
+                int devs = _frotaDeviceCounts[f.id] ?? 0;
+                // Here we just mock the green/yellow/red counts based on devices for now since there's no complex status API yet
+                int green = devs > 0 ? devs : 0;
+                return Column(
+                  children: [
+                    _buildFleetRow(f.nome ?? 'Sem nome', '$devs dispositivos associados', green, 0, 0),
+                    if (f != _frotas.last) const Divider(height: 1, indent: 16, endIndent: 16),
+                  ],
+                );
             }).toList(),
           ),
         ),
@@ -398,9 +439,9 @@ class _DashboardAdmFrotaScreenState extends State<DashboardAdmFrotaScreen> {
       width: 24,
       height: 24,
       decoration: BoxDecoration(
-        color: color.withOpacity(0.2),
+        color: color.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withOpacity(0.5)),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
       ),
       alignment: Alignment.center,
       child: Text(
@@ -430,50 +471,48 @@ class _DashboardAdmFrotaScreenState extends State<DashboardAdmFrotaScreen> {
               ),
             ),
             GestureDetector(
-              onTap: () {},
+              onTap: () => Navigator.pushNamed(context, '/alertas-frota'),
               child: const Text(
-                'Ver todos >',
+                'Ver todos',
                 style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
                   color: Color(0xFFC23147),
+                  fontWeight: FontWeight.bold,
                 ),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            boxShadow: const [
+            boxShadow: [
               BoxShadow(
-                color: Color(0x0D000000),
-                blurRadius: 20,
-                offset: Offset(0, 4),
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
               ),
             ],
           ),
-          child: Column(
-            children: _alerts.map((alert) {
-              return Column(
-                children: [
-                  _buildEventRow(
-                    icon: (alert.valorRegistrado ?? 0) > 10 ? Icons.warning : Icons.info_outline,
-                    title: alert.tipo ?? 'Evento',
-                    subtitle: alert.status ?? 'Registrado',
-                    time: alert.criadoEm != null ? '${alert.criadoEm!.hour}:${alert.criadoEm!.minute}' : '12:00',
-                  ),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8.0),
-                    child: Divider(height: 1, color: Colors.black12),
-                  ),
-                ],
-              );
-            }).toList(),
-          ),
+          child: _alerts.isEmpty 
+            ? const Center(child: Text("Nenhum evento recente", style: TextStyle(color: Colors.black54)))
+            : Column(
+                children: _alerts.map((alerta) {
+                  return Column(
+                    children: [
+                      _buildEventRow(
+                        icon: Icons.warning_amber_rounded,
+                        title: alerta.tipo ?? 'Alerta',
+                        subtitle: 'Valor: ${alerta.valorRegistrado ?? '-'}',
+                        time: alerta.criadoEm != null ? '${alerta.criadoEm!.day}/${alerta.criadoEm!.month} ${alerta.criadoEm!.hour}:${alerta.criadoEm!.minute.toString().padLeft(2, '0')}' : '',
+                      ),
+                      if (alerta != _alerts.last) const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider(height: 1)),
+                    ],
+                  );
+                }).toList(),
+              ),
         ),
       ],
     );
@@ -489,7 +528,7 @@ class _DashboardAdmFrotaScreenState extends State<DashboardAdmFrotaScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         CircleAvatar(
-          backgroundColor: const Color(0xFFC8E569).withOpacity(0.3),
+          backgroundColor: const Color(0xFFC8E569).withValues(alpha: 0.3),
           radius: 20,
           child: Icon(icon, color: Colors.green, size: 20),
         ),

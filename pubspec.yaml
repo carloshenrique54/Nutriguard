@@ -38,7 +38,11 @@ dependencies:
   latlong2: ^0.10.1
   supabase_flutter: ^2.18.0
   mask_text_input_formatter: ^2.9.0
-
+  image_picker: ^1.2.4
+  fl_chart: ^1.2.0
+  pdf: ^3.13.1
+  printing: ^5.15.1
+  intl: ^0.20.3
 dev_dependencies:
   flutter_test:
     sdk: flutter

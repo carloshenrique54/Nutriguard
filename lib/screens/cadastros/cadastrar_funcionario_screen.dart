@@ -35,6 +35,34 @@ class _CadastrarFuncionarioScreenState extends State<CadastrarFuncionarioScreen>
       type: MaskAutoCompletionType.lazy
   );
 
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAccess();
+  }
+  
+  Future<void> _checkAccess() async {
+    final currentUserId = _supabase.currentUser?.id;
+    if (currentUserId == null) {
+      if (mounted) Navigator.pushReplacementNamed(context, '/login');
+      return;
+    }
+    final perfil = await _supabase.getUsuarioPerfil(currentUserId);
+    final role = perfil?.role ?? '';
+    
+    List<String> allowedRoles = ['admin'];
+
+    if (!allowedRoles.contains(role)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Acesso negado para seu perfil', style: TextStyle(color: Colors.white)), backgroundColor: Colors.red),
+        );
+        Navigator.pushReplacementNamed(context, '/login');
+      }
+    }
+  }
+
   void _cadastrar() async {
     HapticFeedback.lightImpact();
     if (_nomeCtrl.text.isEmpty || _cpfCtrl.text.isEmpty || _emailCtrl.text.isEmpty) {

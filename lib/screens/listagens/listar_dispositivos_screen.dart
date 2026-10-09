@@ -20,11 +20,12 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
   bool _isLoading = true;
   List<DispositivoModel> _dispositivos = [];
   Map<String, String> _operadoresNomes = {};
-  String _userRole = 'ADM';
+  String _userRole = '';
 
   @override
   void initState() {
     super.initState();
+    _checkAccess();
     _fetchData();
   }
 
@@ -36,7 +37,7 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
       final currentUserId = _supabase.currentUser?.id;
       if (currentUserId != null) {
         final perfil = await _supabase.getUsuarioPerfil(currentUserId);
-        if (perfil != null) _userRole = perfil.cargo ?? 'ADM';
+        if (perfil != null) _userRole = perfil.cargo ?? '';
       }
 
       Map<String, String> opsMap = {};
@@ -59,6 +60,27 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
     } catch (e) {
       debugPrint('Erro ao buscar dispositivos: $e');
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _checkAccess() async {
+    final currentUserId = _supabase.currentUser?.id;
+    if (currentUserId == null) {
+      if (mounted) Navigator.pushReplacementNamed(context, '/login');
+      return;
+    }
+    final perfil = await _supabase.getUsuarioPerfil(currentUserId);
+    final role = perfil?.role ?? '';
+    
+    List<String> allowedRoles = ['admin', 'gerente'];
+
+    if (!allowedRoles.contains(role)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Acesso negado para seu perfil', style: TextStyle(color: Colors.white)), backgroundColor: Colors.red),
+        );
+        Navigator.pushReplacementNamed(context, '/login');
+      }
     }
   }
 

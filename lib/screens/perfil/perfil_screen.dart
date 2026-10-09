@@ -1,51 +1,244 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../widgets/custom_bottom_nav_bar.dart';
 import '../../widgets/custom_end_drawer.dart';
 import '../../widgets/watermark_background.dart';
+import '../../services/supabase_service.dart';
+import '../../models/models.dart';
 
 enum UserRole { adm, gerente, operador }
 
-class PerfilScreen extends StatelessWidget {
+class PerfilScreen extends StatefulWidget {
   final UserRole role;
 
   const PerfilScreen({super.key, required this.role});
 
   @override
+  State<PerfilScreen> createState() => _PerfilScreenState();
+}
+
+class _PerfilScreenState extends State<PerfilScreen> {
+  final SupabaseService _supabase = SupabaseService();
+  UsuarioModel? _perfil;
+  bool _isLoading = true;
+  String _errorMessage = '';
+  List<FrotaModel> _minhasFrotas = [];
+  bool _isLoadingFrotas = true;
+  String _frotasErrorMessage = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    setState(() { _isLoading = true; _errorMessage = ''; });
+    try {
+      final user = _supabase.currentUser;
+      if (user != null) {
+        final perfil = await _supabase.getUsuarioPerfil(user.id);
+        setState(() { _perfil = perfil; });
+        if (perfil != null) {
+          _loadFrotas(perfil);
+        }
+      } else {
+        setState(() { _errorMessage = 'Usuário não autenticado'; });
+      }
+    } catch (e) {
+      setState(() { _errorMessage = 'Erro ao carregar perfil: $e'; });
+    } finally {
+      setState(() { _isLoading = false; });
+    }
+  }
+
+  Future<void> _loadFrotas(UsuarioModel perfil) async {
+    setState(() { _isLoadingFrotas = true; _frotasErrorMessage = ''; });
+    try {
+      List<FrotaModel> frotas = [];
+      if (perfil.role == 'admin' || perfil.role == 'gerente') {
+        frotas = await _supabase.getFrotasByGerente(perfil.id);
+      } else if (perfil.role == 'operador') {
+        frotas = await _supabase.getFrotasByOperador(perfil.id);
+      }
+      if (mounted) setState(() { _minhasFrotas = frotas; });
+    } catch (e) {
+      if (mounted) setState(() { _frotasErrorMessage = 'Erro ao carregar frotas: $e'; });
+    } finally {
+      if (mounted) setState(() { _isLoadingFrotas = false; });
+    }
+  }
+
+  Future<void> _pickAndUploadImage() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+    if (pickedFile != null) {
+      setState(() { _isLoading = true; });
+      try {
+        final bytes = await pickedFile.readAsBytes();
+        final ext = pickedFile.name.split('.').last.toLowerCase() == 'png' ? 'png' : 'jpg';
+        await _supabase.uploadProfilePicture(_perfil!.id, bytes, ext);
+        await _loadProfile(); 
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Foto atualizada!')));
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao atualizar foto: $e')));
+      } finally {
+        setState(() { _isLoading = false; });
+      }
+    }
+  }
+
+  Future<void> _editProfile() async {
+    if (_perfil == null) return;
+    final nameController = TextEditingController(text: _perfil!.nome);
+    final phoneController = TextEditingController(text: _perfil!.telefone);
+    
+    await showDialog(context: context, barrierDismissible: false, builder: (context) {
+      bool isSaving = false;
+      return StatefulBuilder(builder: (context, setDialogState) {
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          backgroundColor: const Color(0xFFFFF2E0),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24.0),
+            child: isSaving 
+                ? const SizedBox(height: 150, child: Center(child: CircularProgressIndicator(color: Color(0xFFC23147))))
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Editar Perfil',
+                        style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 24),
+                      TextField(
+                        controller: nameController,
+                        decoration: InputDecoration(
+                          labelText: 'Nome completo',
+                          labelStyle: const TextStyle(color: Color(0xFFC23147)),
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFC23147), width: 2)),
+                          prefixIcon: const Icon(Icons.person, color: Color(0xFFC23147)),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: phoneController,
+                        decoration: InputDecoration(
+                          labelText: 'Telefone',
+                          labelStyle: const TextStyle(color: Color(0xFFC23147)),
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFC23147), width: 2)),
+                          prefixIcon: const Icon(Icons.phone, color: Color(0xFFC23147)),
+                        ),
+                      ),
+                      const SizedBox(height: 32),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.pop(context),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFFC23147),
+                                side: const BorderSide(color: Color(0xFFC23147)),
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              child: const Text('Cancelar'),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () async {
+                                if (nameController.text.trim().isEmpty) {
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nome não pode ser vazio')));
+                                  return;
+                                }
+                                setDialogState(() { isSaving = true; });
+                                try {
+                                  await _supabase.updateUsuario(_perfil!.id, {
+                                    'nome': nameController.text.trim(),
+                                    'telefone': phoneController.text.trim(),
+                                  });
+                                  if (context.mounted) {
+                                    Navigator.pop(context);
+                                    _loadProfile();
+                                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Perfil atualizado!')));
+                                  }
+                                } catch (e) {
+                                  setDialogState(() { isSaving = false; });
+                                  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao salvar: $e')));
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFC23147),
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              child: const Text('Salvar', style: TextStyle(color: Colors.white)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+          ),
+        );
+      });
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       extendBody: true,
-      
       backgroundColor: const Color(0xFFFFF2E0),
       bottomNavigationBar: const CustomBottomNavBar(selectedIndex: -1),
-
       body: WatermarkBackground(
         child: SafeArea(
-          child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildHeader(),
-              const SizedBox(height: 24),
-              _buildProfileCard(),
-              const SizedBox(height: 24),
-              _buildActionButtons(),
-              const SizedBox(height: 24),
-              _buildListSection(),
-            ],
-          ),
-        ),
+          child: _isLoading 
+            ? const Center(child: CircularProgressIndicator())
+            : _errorMessage.isNotEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(_errorMessage, style: const TextStyle(color: Colors.red)),
+                      ElevatedButton(onPressed: _loadProfile, child: const Text('Tentar Novamente'))
+                    ],
+                  ),
+                )
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildHeader(),
+                      const SizedBox(height: 24),
+                      _buildProfileCard(),
+                      const SizedBox(height: 24),
+                      _buildActionButtons(),
+                      const SizedBox(height: 24),
+                      _buildListSection(),
+                    ],
+                  ),
+                ),
         ),
       ),
     );
   }
 
-
-
   Widget _buildHeader() {
     String roleText = 'Operador';
-    if (role == UserRole.adm) roleText = 'ADM';
-    if (role == UserRole.gerente) roleText = 'Gerente';
+    if (widget.role == UserRole.adm) roleText = 'ADM';
+    if (widget.role == UserRole.gerente) roleText = 'Gerente';
 
     return Row(
       children: [
@@ -97,10 +290,24 @@ class PerfilScreen extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       child: Row(
         children: [
-          const CircleAvatar(
-            radius: 40,
-            backgroundColor: Colors.white,
-            child: Icon(Icons.person_outline, size: 50, color: Colors.grey),
+          GestureDetector(
+            onTap: _pickAndUploadImage,
+            child: Stack(
+              alignment: Alignment.bottomRight,
+              children: [
+                CircleAvatar(
+                  radius: 40,
+                  backgroundColor: Colors.white,
+                  backgroundImage: _perfil?.fotoUrl != null ? NetworkImage(_perfil!.fotoUrl!) : null,
+                  child: _perfil?.fotoUrl == null ? const Icon(Icons.person_outline, size: 50, color: Colors.grey) : null,
+                ),
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                  child: const Icon(Icons.camera_alt, size: 16, color: Color(0xFFC23147)),
+                ),
+              ],
+            ),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -122,10 +329,10 @@ class PerfilScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  _buildProfileInfoRow(Icons.person, 'João Silva'),
-                  _buildProfileInfoRow(Icons.calendar_today, '01/01/1980'),
-                  _buildProfileInfoRow(Icons.mail, 'joao@nutriguard.com'),
-                  _buildProfileInfoRow(Icons.phone, '(11) 99999-9999'),
+                  _buildProfileInfoRow(Icons.person, _perfil?.nome ?? 'Sem nome'),
+                  _buildProfileInfoRow(Icons.mail, _perfil?.email ?? 'Sem email'),
+                  _buildProfileInfoRow(Icons.phone, _perfil?.telefone ?? 'Sem telefone'),
+                  if (_perfil?.cargo != null) _buildProfileInfoRow(Icons.work, _perfil!.cargo!),
                 ],
               ),
             ),
@@ -155,11 +362,11 @@ class PerfilScreen extends StatelessWidget {
   }
 
   Widget _buildActionButtons() {
-    if (role == UserRole.operador) {
+    if (widget.role == UserRole.operador) {
       return SizedBox(
         width: double.infinity,
         child: ElevatedButton(
-          onPressed: () {},
+          onPressed: _editProfile,
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFFC23147),
             padding: const EdgeInsets.symmetric(vertical: 14),
@@ -173,7 +380,7 @@ class PerfilScreen extends StatelessWidget {
         children: [
           Expanded(
             child: ElevatedButton(
-              onPressed: () {},
+              onPressed: _editProfile,
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFC23147),
                 padding: const EdgeInsets.symmetric(vertical: 14),
@@ -200,8 +407,6 @@ class PerfilScreen extends StatelessWidget {
   }
 
   Widget _buildListSection() {
-    String title = role == UserRole.operador ? 'Historico de viagens >' : 'Frota responsavel >';
-
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -211,107 +416,102 @@ class PerfilScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: const TextStyle(color: Color(0xFFC23147), fontSize: 16, fontWeight: FontWeight.bold),
+          const Text(
+            'Minhas frotas >',
+            style: TextStyle(color: Color(0xFFC23147), fontSize: 16, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 16),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Scrollbar track (visual placeholder)
-              Container(
-                width: 4,
-                height: 250,
-                margin: const EdgeInsets.only(right: 12, top: 4),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-                alignment: Alignment.topCenter,
-                child: Container(
-                  width: 4,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFC23147),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
+          if (_isLoadingFrotas)
+            const Center(child: Padding(padding: EdgeInsets.all(16.0), child: CircularProgressIndicator(color: Color(0xFFC23147))))
+          else if (_frotasErrorMessage.isNotEmpty)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  children: [
+                    Text(_frotasErrorMessage, style: const TextStyle(color: Colors.red)),
+                    TextButton(onPressed: () => _loadFrotas(_perfil!), child: const Text('Tentar novamente')),
+                  ],
                 ),
               ),
-              Expanded(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: 3,
-                  itemBuilder: (context, index) {
-                    return const VehicleCard();
-                  },
-                ),
+            )
+          else if (_minhasFrotas.isEmpty)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Text('Nenhuma frota atribuída a este usuário.', style: TextStyle(color: Colors.black54)),
               ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class VehicleCard extends StatelessWidget {
-  const VehicleCard({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8F5E9), // Cor verde clara
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(Icons.local_shipping, color: Colors.black54, size: 30),
-          ),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Column(
+            )
+          else
+            Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Volvo FH 540',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                Container(
+                  width: 4,
+                  height: 100,
+                  margin: const EdgeInsets.only(right: 12, top: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white54,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                  alignment: Alignment.topCenter,
+                  child: Container(
+                    width: 4,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFC23147),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
                 ),
-                Text(
-                  'Operador: José Santos',
-                  style: TextStyle(fontSize: 12, color: Colors.black54),
+                Expanded(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: _minhasFrotas.length,
+                    itemBuilder: (context, index) {
+                      final frota = _minhasFrotas[index];
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE8F5E9),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(Icons.directions_car, color: Colors.black54, size: 30),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    frota.nome ?? 'Frota sem nome',
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                  ),
+                                  Text(
+                                    'ID: ${frota.id.length > 8 ? '${frota.id.substring(0, 8)}...' : frota.id}',
+                                    style: const TextStyle(fontSize: 12, color: Colors.black54),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                 ),
               ],
             ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              const Text('Carga monitorada', style: TextStyle(fontSize: 10, color: Colors.black54)),
-              const Text('Legumes', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              ElevatedButton(
-                onPressed: () {},
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFC23147),
-                  minimumSize: const Size(60, 24),
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                ),
-                child: const Text('Ver mais', style: TextStyle(color: Colors.white, fontSize: 10)),
-              ),
-            ],
-          )
         ],
       ),
     );

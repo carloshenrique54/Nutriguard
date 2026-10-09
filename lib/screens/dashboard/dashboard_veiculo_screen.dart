@@ -15,12 +15,13 @@ class DashboardVeiculoScreen extends StatefulWidget {
 class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
   final SupabaseService _supabase = SupabaseService();
   bool _isLoading = true;
-  String _userRole = 'GERENTE';
+  String _userRole = '';
   List<OcorrenciaModel> _alerts = [];
 
   @override
   void initState() {
     super.initState();
+    _checkAccess();
     _fetchData();
   }
 
@@ -30,7 +31,7 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
       final currentUserId = _supabase.currentUser?.id;
       if (currentUserId != null) {
         final perfil = await _supabase.getUsuarioPerfil(currentUserId);
-        if (perfil != null) _userRole = perfil.cargo ?? 'GERENTE';
+        if (perfil != null) _userRole = perfil.cargo ?? '';
       }
 
       final ocorrencias = await _supabase.getOcorrencias();
@@ -41,6 +42,27 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
     } catch (e) {
       debugPrint('Erro: $e');
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _checkAccess() async {
+    final currentUserId = _supabase.currentUser?.id;
+    if (currentUserId == null) {
+      if (mounted) Navigator.pushReplacementNamed(context, '/login');
+      return;
+    }
+    final perfil = await _supabase.getUsuarioPerfil(currentUserId);
+    final role = perfil?.role ?? '';
+    
+    List<String> allowedRoles = ['operador'];
+
+    if (!allowedRoles.contains(role)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Acesso negado para seu perfil', style: TextStyle(color: Colors.white)), backgroundColor: Colors.red),
+        );
+        Navigator.pushReplacementNamed(context, '/login');
+      }
     }
   }
 
@@ -111,13 +133,13 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
           builder: (context) => GestureDetector(
             onTap: () => CustomEndDrawer.showMenu(context),
             child: SizedBox(
-              width: 40,
-              height: 40,
+              width: 52,
+              height: 52,
               child: Image.asset(
                 'assets/images/logo.png',
                 color: const Color(0xFFC23147),
-                width: 32,
-                height: 32,
+                width: 44,
+                height: 44,
               ),
             ),
           ),
@@ -142,7 +164,7 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
             Container(
               padding: const EdgeInsets.all(4),
               decoration: BoxDecoration(
-                color: const Color(0xFFC8E569).withOpacity(0.3),
+                color: const Color(0xFFC8E569).withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Icon(
@@ -492,7 +514,7 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         CircleAvatar(
-          backgroundColor: const Color(0xFFC8E569).withOpacity(0.3),
+          backgroundColor: const Color(0xFFC8E569).withValues(alpha: 0.3),
           radius: 20,
           child: Icon(icon, color: Colors.green, size: 20),
         ),
@@ -574,7 +596,7 @@ class InfoCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: const Color(0xFFC23147).withOpacity(0.1),
+              color: const Color(0xFFC23147).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(icon, color: const Color(0xFFC23147), size: 20),
@@ -599,7 +621,7 @@ class InfoCard extends StatelessWidget {
               ),
             ),
           ],
-          if (bottomWidget != null) bottomWidget!,
+          ?bottomWidget,
         ],
       ),
     );

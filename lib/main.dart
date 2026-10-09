@@ -30,7 +30,7 @@ void main() async {
   
   await Supabase.initialize(
     url: 'https://tlcsqlemhpxftatpivac.supabase.co',
-    anonKey: 'sb_publishable_RkyrNG8clRlnHWJFvmOEPQ_DIRp4SKV',
+    publishableKey: 'sb_publishable_RkyrNG8clRlnHWJFvmOEPQ_DIRp4SKV',
   );
 
   runApp(const NutriGuardApp());
@@ -63,12 +63,12 @@ class NutriGuardApp extends StatelessWidget {
         '/alertas-frota': (context) => const AlertasScreen(
               userRole: 'ADM',
               viewContext: 'Vendo: Frota Sul (6 veículos)',
-              hasAlerts: true,
+              
             ),
         '/alertas-veiculo': (context) => const AlertasScreen(
               userRole: 'Operador',
               viewContext: 'Vendo: Volvo FH 540',
-              hasAlerts: false,
+              
             ),
 
         // Relatórios
