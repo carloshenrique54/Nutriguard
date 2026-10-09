@@ -2,7 +2,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/supabase_service.dart';
-import '../models/models.dart';
 
 class CustomEndDrawer {
   static void showMenu(BuildContext context) {
@@ -73,7 +72,7 @@ class _MenuContent extends StatefulWidget {
 
 class _MenuContentState extends State<_MenuContent> {
   final SupabaseService _supabase = SupabaseService();
-  String _userRole = 'adm';
+  String _userRole = '';
 
   @override
   void initState() {
@@ -87,7 +86,7 @@ class _MenuContentState extends State<_MenuContent> {
       final perfil = await _supabase.getUsuarioPerfil(currentUserId);
       if (perfil != null && mounted) {
         setState(() {
-          _userRole = perfil.cargo?.toLowerCase() ?? 'adm';
+          _userRole = perfil.role;
         });
       }
     }
@@ -139,54 +138,81 @@ class _MenuContentState extends State<_MenuContent> {
                 child: ListView(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   children: [
-                    if (_userRole == 'adm' || _userRole == 'gerente')
+                    if (_userRole == 'admin') ...[
                       const MenuListItem(
                         icon: Icons.person_add_alt_1_outlined,
-                        title: 'Cadastrar funcionario',
+                        title: 'Cadastrar funcionário',
                         routeName: '/cadastrar-funcionario',
                       ),
-                    if (_userRole == 'adm' || _userRole == 'gerente')
                       const MenuListItem(
                         icon: Icons.add_box_outlined,
                         title: 'Cadastrar dispositivo',
                         routeName: '/cadastrar-dispositivo',
                       ),
-                    if (_userRole == 'adm')
                       const MenuListItem(
                         icon: Icons.local_shipping_outlined,
                         title: 'Criar frotas',
                         routeName: '/criar-frota',
                       ),
-                    const MenuListItem(
-                      icon: Icons.person_outline,
-                      title: 'Perfil',
-                      routeName: '/perfil',
-                    ),
-                    if (_userRole == 'adm' || _userRole == 'gerente')
+                      const MenuListItem(
+                        icon: Icons.person_outline,
+                        title: 'Perfil',
+                        routeName: '/perfil-adm',
+                      ),
                       const MenuListItem(
                         icon: Icons.receipt_long_outlined,
                         title: 'Lista de dispositivos',
                         routeName: '/listar-dispositivos',
                       ),
-                    if (_userRole == 'adm' || _userRole == 'gerente')
                       const MenuListItem(
                         icon: Icons.people_alt_outlined,
                         title: 'Lista de operadores',
                         routeName: '/listar-operadores',
                       ),
-                    if (_userRole == 'adm')
                       const MenuListItem(
                         icon: Icons.people_alt_outlined,
                         title: 'Lista de gerentes',
                         routeName: '/listar-gerentes',
                       ),
-                    if (_userRole == 'adm' || _userRole == 'gerente')
                       const MenuListItem(
                         icon: Icons.fire_truck_outlined,
                         title: 'Lista de frotas',
                         routeName: '/listar-frotas',
                       ),
-                  ],
+                    ] else if (_userRole == 'gerente') ...[
+                      const MenuListItem(
+                        icon: Icons.person_outline,
+                        title: 'Perfil',
+                        routeName: '/perfil-gerente',
+                      ),
+                      const MenuListItem(
+                        icon: Icons.receipt_long_outlined,
+                        title: 'Lista de dispositivos',
+                        routeName: '/listar-dispositivos',
+                      ),
+                      const MenuListItem(
+                        icon: Icons.people_alt_outlined,
+                        title: 'Lista de operadores',
+                        routeName: '/listar-operadores',
+                      ),
+                    ] else if (_userRole == 'operador') ...[
+                      const MenuListItem(
+                        icon: Icons.person_outline,
+                        title: 'Perfil',
+                        routeName: '/perfil-operador',
+                      ),
+                      MenuListItem(
+                        icon: Icons.stop_circle_outlined,
+                        title: 'Parar viagem',
+                        onTapAction: () {
+                          // TODO: Implementar lógica de parar viagem
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Viagem parada com sucesso!')),
+                          );
+                        },
+                      ),
+                    ],
+],
                 ),
               ),
               
@@ -231,13 +257,15 @@ class _MenuContentState extends State<_MenuContent> {
 class MenuListItem extends StatelessWidget {
   final IconData icon;
   final String title;
-  final String routeName;
+  final String? routeName;
+  final VoidCallback? onTapAction;
 
   const MenuListItem({
     super.key,
     required this.icon,
     required this.title,
-    required this.routeName,
+    this.routeName,
+    this.onTapAction,
   });
 
   @override
@@ -246,7 +274,11 @@ class MenuListItem extends StatelessWidget {
       onTap: () {
         HapticFeedback.lightImpact();
         Navigator.pop(context);
-        Navigator.pushNamed(context, routeName);
+        if (onTapAction != null) {
+          onTapAction!();
+        } else if (routeName != null) {
+          Navigator.pushNamed(context, routeName!);
+        }
       },
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 12.0),

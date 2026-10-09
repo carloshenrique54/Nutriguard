@@ -20,6 +20,7 @@ class CadastrarDispositivoScreen extends StatefulWidget {
 }
 
 class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen> {
+  final SupabaseService _supabase = SupabaseService();
   final _nomeCtrl = TextEditingController();
   final _numSerieCtrl = TextEditingController();
   final _modeloDispCtrl = TextEditingController();
@@ -39,6 +40,7 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
   @override
   void initState() {
     super.initState();
+    _checkAccess();
     _fetchOperadores();
   }
 
@@ -131,6 +133,27 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
     _limiteVibracaoCtrl.dispose();
     _intervaloCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _checkAccess() async {
+    final currentUserId = _supabase.currentUser?.id;
+    if (currentUserId == null) {
+      if (mounted) Navigator.pushReplacementNamed(context, '/login');
+      return;
+    }
+    final perfil = await _supabase.getUsuarioPerfil(currentUserId);
+    final role = perfil?.role ?? '';
+    
+    List<String> allowedRoles = ['admin'];
+
+    if (!allowedRoles.contains(role)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Acesso negado para seu perfil', style: TextStyle(color: Colors.white)), backgroundColor: Colors.red),
+        );
+        Navigator.pushReplacementNamed(context, '/login');
+      }
+    }
   }
 
   @override
@@ -292,7 +315,7 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<String>(
                           value: _selectedOperadorId,
-                          hint: const Text('Selecione...'),
+                          hint: Text(_isLoading ? 'Carregando...' : 'Selecione...'),
                           isExpanded: true,
                           icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFFC23147)),
                           items: _operadores

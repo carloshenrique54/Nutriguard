@@ -1,5 +1,6 @@
 class UsuarioModel {
   final String id;
+  final String? fotoUrl;
   final String? nome;
   final String? email;
   final String? cpf;
@@ -13,6 +14,7 @@ class UsuarioModel {
 
   UsuarioModel({
     required this.id,
+    this.fotoUrl,
     this.nome,
     this.email,
     this.cpf,
@@ -28,6 +30,7 @@ class UsuarioModel {
   factory UsuarioModel.fromJson(Map<String, dynamic> json) {
     return UsuarioModel(
       id: json['id'],
+      fotoUrl: json['foto_url'] ?? json['avatar_url'],
       nome: json['nome'],
       email: json['email'],
       cpf: json['cpf'],
@@ -44,6 +47,7 @@ class UsuarioModel {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      if (fotoUrl != null) 'foto_url': fotoUrl,
       if (nome != null) 'nome': nome,
       if (email != null) 'email': email,
       if (cpf != null) 'cpf': cpf,
@@ -54,10 +58,20 @@ class UsuarioModel {
       if (validadeCnh != null) 'validade_cnh': validadeCnh!.toIso8601String().split('T').first,
     };
   }
+
+  /// Cargo normalizado do usuario: 'admin', 'gerente', 'operador' ou '' (desconhecido).
+  String get role {
+    final c = (cargo ?? '').trim().toLowerCase();
+    if (c == 'admin' || c == 'adm' || c == 'administrador') return 'admin';
+    if (c == 'gerente') return 'gerente';
+    if (c == 'operador') return 'operador';
+    return '';
+  }
 }
 
 class FrotaModel {
   final String id;
+  final String? fotoUrl;
   final String? idGerente;
   final String? nome;
   final DateTime? createdAt;
@@ -65,6 +79,7 @@ class FrotaModel {
 
   FrotaModel({
     required this.id,
+    this.fotoUrl,
     this.idGerente,
     this.nome,
     this.createdAt,
@@ -74,6 +89,7 @@ class FrotaModel {
   factory FrotaModel.fromJson(Map<String, dynamic> json) {
     return FrotaModel(
       id: json['id'],
+      fotoUrl: json['foto_url'] ?? json['avatar_url'],
       idGerente: json['id_gerente'],
       nome: json['nome'],
       createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at']) : null,
@@ -84,6 +100,7 @@ class FrotaModel {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      if (fotoUrl != null) 'foto_url': fotoUrl,
       if (idGerente != null) 'id_gerente': idGerente,
       if (nome != null) 'nome': nome,
     };
@@ -92,6 +109,7 @@ class FrotaModel {
 
 class DispositivoModel {
   final String id;
+  final String? fotoUrl;
   final String? idOperador;
   final String? idFrota;
   final String? nomeDispositivo;
@@ -112,6 +130,7 @@ class DispositivoModel {
 
   DispositivoModel({
     required this.id,
+    this.fotoUrl,
     this.idOperador,
     this.idFrota,
     this.nomeDispositivo,
@@ -134,6 +153,7 @@ class DispositivoModel {
   factory DispositivoModel.fromJson(Map<String, dynamic> json) {
     return DispositivoModel(
       id: json['id'],
+      fotoUrl: json['foto_url'] ?? json['avatar_url'],
       idOperador: json['id_operador'],
       idFrota: json['id_frota'],
       nomeDispositivo: json['nome_dispositivo'],
@@ -157,6 +177,7 @@ class DispositivoModel {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      if (fotoUrl != null) 'foto_url': fotoUrl,
       if (idOperador != null) 'id_operador': idOperador,
       if (idFrota != null) 'id_frota': idFrota,
       if (nomeDispositivo != null) 'nome_dispositivo': nomeDispositivo,
@@ -178,6 +199,7 @@ class DispositivoModel {
 
 class MedicaoModel {
   final String id;
+  final String? fotoUrl;
   final String? idDispositivo;
   final num? temperatura;
   final num? umidade;
@@ -190,6 +212,7 @@ class MedicaoModel {
 
   MedicaoModel({
     required this.id,
+    this.fotoUrl,
     this.idDispositivo,
     this.temperatura,
     this.umidade,
@@ -204,6 +227,7 @@ class MedicaoModel {
   factory MedicaoModel.fromJson(Map<String, dynamic> json) {
     return MedicaoModel(
       id: json['id'],
+      fotoUrl: json['foto_url'] ?? json['avatar_url'],
       idDispositivo: json['id_dispositivo'],
       temperatura: json['temperatura'],
       umidade: json['umidade'],
@@ -219,6 +243,7 @@ class MedicaoModel {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      if (fotoUrl != null) 'foto_url': fotoUrl,
       if (idDispositivo != null) 'id_dispositivo': idDispositivo,
       if (temperatura != null) 'temperatura': temperatura,
       if (umidade != null) 'umidade': umidade,
@@ -233,6 +258,7 @@ class MedicaoModel {
 
 class OcorrenciaModel {
   final String id;
+  final String? fotoUrl;
   final String? idDispositivo;
   final String? idMedicao;
   final String? tipo;
@@ -243,6 +269,7 @@ class OcorrenciaModel {
 
   OcorrenciaModel({
     required this.id,
+    this.fotoUrl,
     this.idDispositivo,
     this.idMedicao,
     this.tipo,
@@ -255,6 +282,7 @@ class OcorrenciaModel {
   factory OcorrenciaModel.fromJson(Map<String, dynamic> json) {
     return OcorrenciaModel(
       id: json['id'],
+      fotoUrl: json['foto_url'] ?? json['avatar_url'],
       idDispositivo: json['id_dispositivo'],
       idMedicao: json['id_medicao'],
       tipo: json['tipo'],
@@ -268,6 +296,7 @@ class OcorrenciaModel {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      if (fotoUrl != null) 'foto_url': fotoUrl,
       if (idDispositivo != null) 'id_dispositivo': idDispositivo,
       if (idMedicao != null) 'id_medicao': idMedicao,
       if (tipo != null) 'tipo': tipo,

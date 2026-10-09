@@ -15,12 +15,17 @@ class DashboardOperadorScreen extends StatefulWidget {
 class _DashboardOperadorScreenState extends State<DashboardOperadorScreen> {
   final SupabaseService _supabase = SupabaseService();
   bool _isLoading = true;
-  String _userRole = 'OPERADOR';
+  String _userRole = '';
   List<OcorrenciaModel> _alerts = [];
+
+  double _currentTemp = 0.0;
+  bool _hasActiveTrip = false;
+  String _activeTripDuration = '0h 0m';
 
   @override
   void initState() {
     super.initState();
+    _checkAccess();
     _fetchData();
   }
 
@@ -28,19 +33,62 @@ class _DashboardOperadorScreenState extends State<DashboardOperadorScreen> {
     setState(() => _isLoading = true);
     try {
       final currentUserId = _supabase.currentUser?.id;
-      if (currentUserId != null) {
-        final perfil = await _supabase.getUsuarioPerfil(currentUserId);
-        if (perfil != null) _userRole = perfil.cargo ?? 'OPERADOR';
-      }
+      if (currentUserId == null) return;
+      
+      final perfil = await _supabase.getUsuarioPerfil(currentUserId);
+      if (perfil != null) _userRole = perfil.cargo ?? '';
 
-      final ocorrencias = await _supabase.getOcorrencias();
+      final dispositivos = await _supabase.getDispositivosByOperador(currentUserId);
+      List<String> deviceIds = dispositivos.map((d) => d.id).toList();
+
+      DateTime agora = DateTime.now();
+      DateTime inicio = agora.subtract(const Duration(days: 30));
+      
+      final ocorrencias = await _supabase.getOcorrenciasFiltro(deviceIds, inicio, agora);
       ocorrencias.sort((a, b) => (b.criadoEm ?? DateTime.now()).compareTo(a.criadoEm ?? DateTime.now()));
       _alerts = ocorrencias.take(5).toList();
+
+      final medicoes = await _supabase.getMedicoesFiltro(deviceIds, inicio, agora);
+      
+      if (medicoes.isNotEmpty) {
+        medicoes.sort((a, b) => a.registradoEm!.compareTo(b.registradoEm!));
+        final last = medicoes.last;
+        _currentTemp = last.temperatura?.toDouble() ?? 0.0;
+        
+        DateTime first = medicoes.first.registradoEm!;
+        bool ativa = agora.difference(last.registradoEm!).inHours < 2;
+        _hasActiveTrip = ativa;
+        if (ativa) {
+          int duracao = agora.difference(first).inMinutes;
+          _activeTripDuration = '${duracao ~/ 60}h ${duracao % 60}m';
+        }
+      }
 
       if (mounted) setState(() => _isLoading = false);
     } catch (e) {
       debugPrint('Erro: $e');
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _checkAccess() async {
+    final currentUserId = _supabase.currentUser?.id;
+    if (currentUserId == null) {
+      if (mounted) Navigator.pushReplacementNamed(context, '/login');
+      return;
+    }
+    final perfil = await _supabase.getUsuarioPerfil(currentUserId);
+    final role = perfil?.role ?? '';
+    
+    List<String> allowedRoles = ['operador'];
+
+    if (!allowedRoles.contains(role)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Acesso negado para seu perfil', style: TextStyle(color: Colors.white)), backgroundColor: Colors.red),
+        );
+        Navigator.pushReplacementNamed(context, '/login');
+      }
     }
   }
 
@@ -109,13 +157,13 @@ class _DashboardOperadorScreenState extends State<DashboardOperadorScreen> {
           builder: (context) => GestureDetector(
             onTap: () => CustomEndDrawer.showMenu(context),
             child: SizedBox(
-              width: 40,
-              height: 40,
+              width: 52,
+              height: 52,
               child: Image.asset(
                 'assets/images/logo.png',
                 color: const Color(0xFFC23147),
-                width: 32,
-                height: 32,
+                width: 44,
+                height: 44,
               ),
             ),
           ),
@@ -156,9 +204,7 @@ class _DashboardOperadorScreenState extends State<DashboardOperadorScreen> {
                       'Temperatura',
                       style: TextStyle(color: Colors.black87, fontSize: 16),
                     ),
-                    const Text(
-                      '5,4°C',
-                      style: TextStyle(
+                    Text('${_currentTemp.toStringAsFixed(1)}°C', style: const TextStyle(
                         color: Colors.black,
                         fontSize: 32,
                         fontWeight: FontWeight.bold,
@@ -207,124 +253,68 @@ class _DashboardOperadorScreenState extends State<DashboardOperadorScreen> {
     );
   }
 
+  Widget _buildInfoCard({
+    required IconData icon,
+    required String title,
+    required String value,
+    required String subtitle,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: color, size: 24),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(title, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
+          const SizedBox(height: 4),
+          Text(subtitle, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+        ],
+      ),
+    );
+  }
+
   Widget _buildInfoGrid() {
-    return Column(
+    return GridView.count(
+      crossAxisCount: 2,
+      crossAxisSpacing: 16,
+      mainAxisSpacing: 16,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       children: [
-        Row(
-          children: [
-            const Expanded(
-              child: InfoCard(
-                icon: Icons.shield_outlined,
-                title: 'Limite definido',
-                value: '8°C',
-              ),
-            ),
-            const SizedBox(width: 16),
-            const Expanded(
-              child: InfoCard(
-                icon: Icons.access_time,
-                title: 'Última atualização',
-                value: '1 minuto(s) atrás',
-                valueSize: 16,
-              ),
-            ),
-          ],
+        _buildInfoCard(
+          icon: Icons.access_time,
+          title: 'Tempo de rota',
+          value: _activeTripDuration,
+          subtitle: 'Viagem atual',
+          color: Colors.blue,
         ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: InfoCard(
-                icon: Icons.water_drop_outlined,
-                title: 'Nivel de umidade',
-                value: '32%',
-                bottomWidget: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFC8E569),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: const Text(
-                        'Dentro do limite',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    const Text(
-                      'Limite definido: 40%',
-                      style: TextStyle(fontSize: 10, color: Colors.black54),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(width: 16),
-            const Expanded(
-              child: InfoCard(
-                icon: Icons.widgets_outlined,
-                title: 'Nivel de vibração',
-                value: '',
-                bottomWidget: Padding(
-                  padding: EdgeInsets.only(top: 8.0),
-                  child: Icon(
-                    Icons.stacked_line_chart,
-                    color: Color(0xFFC23147),
-                    size: 40,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: InfoCard(
-                icon: Icons.door_front_door_outlined,
-                title: 'Compartimento',
-                value: '',
-                bottomWidget: Padding(
-                  padding: const EdgeInsets.only(top: 8.0),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFC8E569),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Text(
-                      'Fechado',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 16),
-            const Expanded(
-              child: InfoCard(
-                icon: Icons.battery_charging_full,
-                title: 'Bateria',
-                value: '78%',
-              ),
-            ),
-          ],
+        _buildInfoCard(
+          icon: Icons.directions_car,
+          title: 'Status do veículo',
+          value: _hasActiveTrip ? 'Em andamento' : 'Parado',
+          subtitle: _hasActiveTrip ? 'Em trânsito' : 'Finalizado',
+          color: Colors.orange,
         ),
       ],
     );
@@ -380,57 +370,41 @@ class _DashboardOperadorScreenState extends State<DashboardOperadorScreen> {
           children: [
             const Text(
               'Eventos recentes',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
-              ),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
             ),
             GestureDetector(
-              onTap: () {},
-              child: const Text(
-                'Ver todos >',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFFC23147),
-                ),
-              ),
+              onTap: () => Navigator.pushNamed(context, '/alertas-veiculo'),
+              child: const Text('Ver todos', style: TextStyle(color: Color(0xFFC23147), fontWeight: FontWeight.bold)),
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x0D000000),
-                blurRadius: 20,
-                offset: Offset(0, 4),
-              ),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4)),
             ],
           ),
-          child: Column(
-            children: _alerts.map((alert) {
-              return Column(
-                children: [
-                  _buildEventRow(
-                    icon: (alert.valorRegistrado ?? 0) > 10 ? Icons.warning : Icons.info_outline,
-                    title: alert.tipo ?? 'Evento',
-                    subtitle: alert.status ?? 'Registrado',
-                    time: alert.criadoEm != null ? '${alert.criadoEm!.hour}:${alert.criadoEm!.minute}' : '12:00',
-                  ),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8.0),
-                    child: Divider(height: 1, color: Colors.black12),
-                  ),
-                ],
-              );
-            }).toList(),
-          ),
+          child: _alerts.isEmpty 
+            ? const Center(child: Text("Nenhum evento recente", style: TextStyle(color: Colors.black54)))
+            : Column(
+                children: _alerts.map((alerta) {
+                  return Column(
+                    children: [
+                      _buildEventRow(
+                        icon: Icons.warning_amber_rounded,
+                        title: alerta.tipo ?? 'Alerta',
+                        subtitle: 'Valor: ${alerta.valorRegistrado ?? '-'}',
+                        time: alerta.criadoEm != null ? '${alerta.criadoEm!.day}/${alerta.criadoEm!.month} ${alerta.criadoEm!.hour}:${alerta.criadoEm!.minute.toString().padLeft(2, '0')}' : '',
+                      ),
+                      if (alerta != _alerts.last) const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider(height: 1)),
+                    ],
+                  );
+                }).toList(),
+              ),
         ),
       ],
     );
@@ -446,7 +420,7 @@ class _DashboardOperadorScreenState extends State<DashboardOperadorScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         CircleAvatar(
-          backgroundColor: const Color(0xFFC8E569).withOpacity(0.3),
+          backgroundColor: const Color(0xFFC8E569).withValues(alpha: 0.3),
           radius: 20,
           child: Icon(icon, color: Colors.green, size: 20),
         ),
@@ -528,7 +502,7 @@ class InfoCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: const Color(0xFFC23147).withOpacity(0.1),
+              color: const Color(0xFFC23147).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(icon, color: const Color(0xFFC23147), size: 20),
@@ -553,7 +527,7 @@ class InfoCard extends StatelessWidget {
               ),
             ),
           ],
-          if (bottomWidget != null) bottomWidget!,
+          ?bottomWidget,
         ],
       ),
     );

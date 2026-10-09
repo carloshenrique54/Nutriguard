@@ -25,11 +25,12 @@ class _ListarOperadoresScreenState extends State<ListarOperadoresScreen> {
   bool _isLoading = true;
   List<UsuarioModel> _usuarios = [];
   Map<String, String> _infoMap = {};
-  String _userRole = 'ADM';
+  String _userRole = '';
 
   @override
   void initState() {
     super.initState();
+    _checkAccess();
     _fetchData();
   }
 
@@ -39,7 +40,7 @@ class _ListarOperadoresScreenState extends State<ListarOperadoresScreen> {
       final currentUserId = _supabase.currentUser?.id;
       if (currentUserId != null) {
         final perfil = await _supabase.getUsuarioPerfil(currentUserId);
-        if (perfil != null) _userRole = perfil.cargo ?? 'ADM';
+        if (perfil != null) _userRole = perfil.cargo ?? '';
       }
 
       // Fetch all users manually from 'Usuarios' table
@@ -75,6 +76,30 @@ class _ListarOperadoresScreenState extends State<ListarOperadoresScreen> {
     } catch (e) {
       debugPrint('Erro ao buscar usuarios: $e');
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _checkAccess() async {
+    final currentUserId = _supabase.currentUser?.id;
+    if (currentUserId == null) {
+      if (mounted) Navigator.pushReplacementNamed(context, '/login');
+      return;
+    }
+    final perfil = await _supabase.getUsuarioPerfil(currentUserId);
+    final role = perfil?.role ?? '';
+    
+    List<String> allowedRoles = ['admin', 'gerente'];
+    if (widget.title == 'Gerentes' && role == 'gerente') {
+      allowedRoles = ['admin'];
+    }
+
+    if (!allowedRoles.contains(role)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Acesso negado para seu perfil', style: TextStyle(color: Colors.white)), backgroundColor: Colors.red),
+        );
+        Navigator.pushReplacementNamed(context, '/login');
+      }
     }
   }
 
