@@ -61,6 +61,7 @@ class _GpsScreenState extends State<GpsScreen> {
       _userRole = perfil?.role ?? '';
 
       // Obter argumento de rota se houver
+      if (!mounted) return;
       final routeArg = ModalRoute.of(context)?.settings.arguments;
       DispositivoModel? argDevice;
       if (routeArg is DispositivoModel) {
@@ -87,8 +88,9 @@ class _GpsScreenState extends State<GpsScreen> {
       _dispositivos = devs;
 
       // Definir o veículo selecionado
-      if (argDevice != null && devs.any((d) => d.id == argDevice.id)) {
-        _selectedDevice = devs.firstWhere((d) => d.id == argDevice.id);
+      final target = argDevice;
+      if (target != null && devs.any((d) => d.id == target.id)) {
+        _selectedDevice = devs.firstWhere((d) => d.id == target.id);
       } else if (_userRole == 'operador' && devs.isNotEmpty) {
         // Operador tem acesso apenas ao seu próprio veículo
         _selectedDevice = devs.first;
@@ -171,8 +173,6 @@ class _GpsScreenState extends State<GpsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bool isOperador = _userRole == 'operador';
-
     return Scaffold(
       extendBody: true,
       backgroundColor: const Color(0xFFFFF2E0),
@@ -346,6 +346,7 @@ class _GpsScreenState extends State<GpsScreen> {
           const SizedBox(height: 80),
         ],
       ),
+    );
   }
 
   Widget _buildEmptyState() {
@@ -447,8 +448,10 @@ class _GpsScreenState extends State<GpsScreen> {
   }
 
   Widget _buildVehicleSelector() {
-    if (_dispositivos.length <= 1) {
-      final d = _dispositivos.first;
+    // Operador: acesso estrito ao próprio veículo, sem seletor.
+    final bool isOperador = _userRole == 'operador';
+    if (isOperador || _dispositivos.length <= 1) {
+      final d = _selectedDevice ?? _dispositivos.first;
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(

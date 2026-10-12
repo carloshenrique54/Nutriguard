@@ -91,6 +91,7 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
 
       // Definir frota selecionada (se passada por argumento ou a primeira da lista)
       FrotaModel? selected;
+      if (!mounted) return;
       final routeArg = ModalRoute.of(context)?.settings.arguments;
       final argId = (routeArg is String ? routeArg : null) ?? widget.initialFrotaId;
       if (argId != null) {
@@ -180,8 +181,8 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
   }
 
   Widget _buildContent(BuildContext context) {
-    // 1. Caso: Não há dispositivos cadastrados no sistema
-    if (_totalSystemDevices == 0) {
+    // 1. Caso: Não há dispositivos cadastrados no sistema (fluxo do ADM)
+    if (_totalSystemDevices == 0 && _userRole == 'admin') {
       return _buildEmptySystemDevices();
     }
 

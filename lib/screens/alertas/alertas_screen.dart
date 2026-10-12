@@ -69,6 +69,7 @@ class _AlertasScreenState extends State<AlertasScreen> {
       }
 
       // Checar argumento de rota para veículo inicial
+      if (!mounted) return;
       final routeArg = ModalRoute.of(context)?.settings.arguments;
       DispositivoModel? argDevice;
       if (routeArg is DispositivoModel) {
@@ -97,8 +98,9 @@ class _AlertasScreenState extends State<AlertasScreen> {
       _dispositivos = devs;
 
       if (widget.isVehicleContext) {
-        if (argDevice != null && devs.any((d) => d.id == argDevice.id)) {
-          _selectedDevice = devs.firstWhere((d) => d.id == argDevice.id);
+        final target = argDevice;
+        if (target != null && devs.any((d) => d.id == target.id)) {
+          _selectedDevice = devs.firstWhere((d) => d.id == target.id);
         } else if (devs.isNotEmpty) {
           _selectedDevice = devs.first;
         }

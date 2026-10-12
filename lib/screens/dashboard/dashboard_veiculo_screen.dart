@@ -21,7 +21,6 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
   final SupabaseService _supabase = SupabaseService();
   bool _isLoading = true;
   String _userRole = '';
-  String _currentUserId = '';
 
   List<DispositivoModel> _accessibleDevices = [];
   DispositivoModel? _selectedDevice;
@@ -47,13 +46,12 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
         if (mounted) Navigator.pushReplacementNamed(context, '/login');
         return;
       }
-      _currentUserId = user.id;
-
       final perfil = await _supabase.getUsuarioPerfil(user.id);
       final role = perfil?.role ?? '';
       _userRole = role;
 
       // Obter argumento de rota se houver
+      if (!mounted) return;
       final routeArg = ModalRoute.of(context)?.settings.arguments;
       DispositivoModel? argDevice;
       if (routeArg is DispositivoModel) {
@@ -83,8 +81,9 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
       _accessibleDevices = devices;
 
       // 2. Determinar o veículo selecionado
-      if (argDevice != null && devices.any((d) => d.id == argDevice.id)) {
-        _selectedDevice = devices.firstWhere((d) => d.id == argDevice.id);
+      final target = argDevice;
+      if (target != null && devices.any((d) => d.id == target.id)) {
+        _selectedDevice = devices.firstWhere((d) => d.id == target.id);
       } else if (devices.isNotEmpty) {
         _selectedDevice = devices.first;
       } else {

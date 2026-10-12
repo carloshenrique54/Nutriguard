@@ -142,7 +142,7 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
       onTap: () {
         HapticFeedback.lightImpact();
         if (!isActive) {
-          if (routeName == '/gps' && widget.currentDevice != null) {
+          if (widget.currentDevice != null && (_isVehicle || routeName == '/gps')) {
             Navigator.pushReplacementNamed(context, routeName, arguments: widget.currentDevice);
           } else {
             Navigator.pushReplacementNamed(context, routeName);

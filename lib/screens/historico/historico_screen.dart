@@ -67,6 +67,7 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
       }
 
       // Argumento de rota
+      if (!mounted) return;
       final routeArg = ModalRoute.of(context)?.settings.arguments;
       DispositivoModel? argDevice;
       if (routeArg is DispositivoModel) {
@@ -94,8 +95,9 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
       _dispositivos = devs;
 
       if (widget.isVehicleContext) {
-        if (argDevice != null && devs.any((d) => d.id == argDevice.id)) {
-          _selectedDevice = devs.firstWhere((d) => d.id == argDevice.id);
+        final target = argDevice;
+        if (target != null && devs.any((d) => d.id == target.id)) {
+          _selectedDevice = devs.firstWhere((d) => d.id == target.id);
         } else if (devs.isNotEmpty) {
           _selectedDevice = devs.first;
         }

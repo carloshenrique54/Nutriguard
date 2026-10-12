@@ -34,6 +34,9 @@ class _LoginScreenState extends State<LoginScreen> {
       if (role == 'admin') {
         final devices = await _supabaseService.getDispositivos();
         final frotas = await _supabaseService.getFrotas();
+        if (!mounted) return;
+        // Sem dispositivos ou sem frotas: o Dashboard — Frota exibe o estado
+        // vazio com botão para /cadastrar-dispositivo ou /criar-frota.
         if (devices.isEmpty || frotas.isEmpty) {
           Navigator.pushReplacementNamed(context, '/dashboard-frota');
         } else {

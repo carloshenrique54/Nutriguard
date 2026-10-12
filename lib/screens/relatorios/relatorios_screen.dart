@@ -116,9 +116,11 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
           }
 
           // Checar se veio veículo por argumento de rota
+          if (!mounted) return;
           final routeArg = ModalRoute.of(context)?.settings.arguments;
-          if (routeArg is DispositivoModel) {
-            _selectedDispositivoId = routeArg.id;
+          final target = routeArg is DispositivoModel ? routeArg : null;
+          if (target != null && _dispositivos.any((d) => d.id == target.id)) {
+            _selectedDispositivoId = target.id;
           } else if (widget.isVehicleContext && _dispositivos.isNotEmpty) {
             _selectedDispositivoId ??= _dispositivos.first.id;
           }
@@ -304,6 +306,9 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
       bottomNavigationBar: CustomBottomNavBar(
         selectedIndex: 1,
         isVehicleContext: widget.isVehicleContext,
+        currentDevice: widget.isVehicleContext
+            ? _dispositivos.where((d) => d.id == _selectedDispositivoId).firstOrNull
+            : null,
       ),
       body: WatermarkBackground(
         child: SafeArea(
