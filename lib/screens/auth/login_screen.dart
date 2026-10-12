@@ -31,12 +31,23 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       
       final role = perfil?.role ?? '';
-      if (role == 'admin' || role == 'gerente') {
-        Navigator.pushReplacementNamed(context, '/dashboard-adm-frota');
+      if (role == 'admin') {
+        final devices = await _supabaseService.getDispositivos();
+        final frotas = await _supabaseService.getFrotas();
+        if (!mounted) return;
+        // Sem dispositivos ou sem frotas: o Dashboard — Frota exibe o estado
+        // vazio com botão para /cadastrar-dispositivo ou /criar-frota.
+        if (devices.isEmpty || frotas.isEmpty) {
+          Navigator.pushReplacementNamed(context, '/dashboard-frota');
+        } else {
+          Navigator.pushReplacementNamed(context, '/listar-frotas');
+        }
+      } else if (role == 'gerente') {
+        Navigator.pushReplacementNamed(context, '/dashboard-frota');
       } else if (role == 'operador') {
         Navigator.pushReplacementNamed(context, '/dashboard-veiculo');
       } else {
-        Navigator.pushReplacementNamed(context, '/dashboard-vazio');
+        Navigator.pushReplacementNamed(context, '/dashboard-frota');
       }
     } catch (e) {
       if (!mounted) return;

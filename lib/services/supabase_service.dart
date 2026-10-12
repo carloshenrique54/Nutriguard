@@ -164,10 +164,30 @@ class SupabaseService {
     return frotas;
   }
 
+  Future<FrotaModel?> getFrotaById(String id) async {
+    final data = await _client.from('Frotas').select().eq('id', id).maybeSingle();
+    return data != null ? FrotaModel.fromJson(data) : null;
+  }
+
+  Future<void> deleteFrota(String id) async {
+    // Desvincular dispositivos da frota antes de deletar
+    await _client.from('Dispositivos').update({'id_frota': null}).eq('id_frota', id);
+    await _client.from('Frotas').delete().eq('id', id);
+  }
+
   // --- Dispositivos ---
   Future<List<DispositivoModel>> getDispositivos() async {
     final data = await _client.from('Dispositivos').select();
     return (data as List).map((e) => DispositivoModel.fromJson(e)).toList();
+  }
+
+  Future<DispositivoModel?> getDispositivoById(String id) async {
+    final data = await _client.from('Dispositivos').select().eq('id', id).maybeSingle();
+    return data != null ? DispositivoModel.fromJson(data) : null;
+  }
+
+  Future<void> deleteDispositivo(String id) async {
+    await _client.from('Dispositivos').delete().eq('id', id);
   }
 
   Future<List<DispositivoModel>> getDispositivosByFrota(String frotaId) async {

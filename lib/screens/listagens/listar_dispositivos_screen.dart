@@ -220,7 +220,9 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
                                       HapticFeedback.mediumImpact();
                                       _showDeleteDialog(context, device);
                                     },
-                                    onTap: () {},
+                                    onTap: () {
+                                      Navigator.pushNamed(context, '/dashboard-veiculo', arguments: device);
+                                    },
                                   ),
                                 ),
                               );
@@ -266,17 +268,34 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
                   ),
                   TextButton(
                     onPressed: () async {
-                      Navigator.pop(context, true);
-                      HapticFeedback.mediumImpact();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: const Text('Removido com sucesso (simulado)', style: TextStyle(color: Colors.white)),
-                          backgroundColor: Colors.red,
-                          behavior: SnackBarBehavior.floating,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                        ),
-                      );
-                      _fetchData();
+                      try {
+                        await _supabase.deleteDispositivo(device.id);
+                        if (context.mounted) {
+                          Navigator.pop(context, true);
+                          HapticFeedback.mediumImpact();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: const Text('Dispositivo removido com sucesso!', style: TextStyle(color: Colors.white)),
+                              backgroundColor: Colors.green,
+                              behavior: SnackBarBehavior.floating,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                            ),
+                          );
+                          _fetchData();
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          Navigator.pop(context, false);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Erro ao excluir: $e', style: const TextStyle(color: Colors.white)),
+                              backgroundColor: Colors.red,
+                              behavior: SnackBarBehavior.floating,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                            ),
+                          );
+                        }
+                      }
                     },
                     child: const Text('Excluir', style: TextStyle(color: Color(0xFFC23147))),
                   ),

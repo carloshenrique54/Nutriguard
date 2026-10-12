@@ -10,16 +10,8 @@ class AppDrawer extends StatelessWidget {
         children: [
           const DrawerHeader(child: Text('Menu NutriGuard')),
           ListTile(
-            title: const Text('Perfil (ADM)'),
-            onTap: () => Navigator.pushNamed(context, '/perfil-adm'),
-          ),
-          ListTile(
-            title: const Text('Perfil (Gerente)'),
-            onTap: () => Navigator.pushNamed(context, '/perfil-gerente'),
-          ),
-          ListTile(
-            title: const Text('Perfil (Operador)'),
-            onTap: () => Navigator.pushNamed(context, '/perfil-operador'),
+            title: const Text('Perfil'),
+            onTap: () => Navigator.pushNamed(context, '/perfil'),
           ),
           ListTile(
             title: const Text('Cadastrar funcionário'),

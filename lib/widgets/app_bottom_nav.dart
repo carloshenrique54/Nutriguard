@@ -19,7 +19,7 @@ class AppBottomNav extends StatelessWidget {
         if (index == currentIndex) return;
         switch (index) {
           case 0:
-            Navigator.pushNamed(context, entityType == 'veiculo' ? '/dashboard-veiculo' : '/dashboard-adm-frota');
+            Navigator.pushNamed(context, entityType == 'veiculo' ? '/dashboard-veiculo' : '/dashboard-frota');
             break;
           case 1:
             Navigator.pushNamed(context, entityType == 'veiculo' ? '/alertas-veiculo' : '/alertas-frota');
