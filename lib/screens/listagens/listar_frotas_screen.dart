@@ -7,6 +7,7 @@ import '../../models/models.dart';
 import '../../widgets/animated_components.dart';
 import '../../widgets/custom_bottom_nav_bar.dart';
 import '../../widgets/watermark_background.dart';
+import '../../services/admin_context_service.dart';
 
 class ListarFrotasScreen extends StatefulWidget {
   const ListarFrotasScreen({super.key});
@@ -38,6 +39,10 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
       if (currentUserId != null) {
         final perfil = await _supabase.getUsuarioPerfil(currentUserId);
         if (perfil != null) _userRole = perfil.role;
+      }
+
+      if (_userRole == 'admin') {
+        AdminContextService().clearAll();
       }
 
       final frotas = _userRole == 'gerente' && currentUserId != null
@@ -99,7 +104,7 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
       backgroundColor: const Color(0xFFFFF2E0),
       extendBody: true,
       
-      bottomNavigationBar: const CustomBottomNavBar(selectedIndex: 2),
+      bottomNavigationBar: const CustomBottomNavBar(selectedIndex: null),
       body: WatermarkBackground(
         child: SafeArea(
           child: Padding(
@@ -231,7 +236,10 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
                                       _showDeleteDialog(context, fleet);
                                     },
                                     onTap: () {
-                                      Navigator.pushNamed(context, '/dashboard-frota', arguments: fleet.id);
+                                      if (_userRole == 'admin') {
+                                        AdminContextService().setFrota(fleet);
+                                      }
+                                      Navigator.pushNamed(context, '/dashboard-frota', arguments: fleet);
                                     },
                                   ),
                                 ),

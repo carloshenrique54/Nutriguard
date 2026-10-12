@@ -6,6 +6,7 @@ import '../../services/supabase_service.dart';
 import '../../models/models.dart';
 import '../../widgets/animated_components.dart';
 import '../../widgets/watermark_background.dart';
+import '../../services/admin_context_service.dart';
 
 class HistoricoScreen extends StatefulWidget {
   final bool isVehicleContext;
@@ -70,8 +71,19 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
       if (!mounted) return;
       final routeArg = ModalRoute.of(context)?.settings.arguments;
       DispositivoModel? argDevice;
+      FrotaModel? argFrota;
       if (routeArg is DispositivoModel) {
         argDevice = routeArg;
+      } else if (routeArg is FrotaModel) {
+        argFrota = routeArg;
+      }
+
+      if (_userRole == 'admin') {
+        if (widget.isVehicleContext && argDevice == null && AdminContextService().selectedDevice != null) {
+          argDevice = AdminContextService().selectedDevice;
+        } else if (!widget.isVehicleContext && argFrota == null && AdminContextService().selectedFrota != null) {
+          argFrota = AdminContextService().selectedFrota;
+        }
       }
 
       List<FrotaModel> frotas = [];
@@ -79,7 +91,11 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
 
       if (_userRole == 'admin') {
         frotas = await _supabase.getFrotas();
-        devs = await _supabase.getDispositivos();
+        if (widget.isVehicleContext && AdminContextService().selectedFrota != null) {
+          devs = await _supabase.getDispositivosByFrota(AdminContextService().selectedFrota!.id);
+        } else {
+          devs = await _supabase.getDispositivos();
+        }
       } else if (_userRole == 'gerente') {
         frotas = await _supabase.getFrotasByGerente(currentUserId);
         for (var f in frotas) {
@@ -98,12 +114,28 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
         final target = argDevice;
         if (target != null && devs.any((d) => d.id == target.id)) {
           _selectedDevice = devs.firstWhere((d) => d.id == target.id);
-        } else if (devs.isNotEmpty) {
+        } else if (target != null) {
+          _selectedDevice = target;
+        } else if (_userRole != 'admin' && devs.isNotEmpty) {
           _selectedDevice = devs.first;
+        } else {
+          _selectedDevice = null;
+        }
+        if (_userRole == 'admin' && _selectedDevice != null) {
+          AdminContextService().setDevice(_selectedDevice, frota: AdminContextService().selectedFrota);
         }
       } else {
-        if (frotas.isNotEmpty) {
+        if (argFrota != null && frotas.any((f) => f.id == argFrota!.id)) {
+          _selectedFrota = frotas.firstWhere((f) => f.id == argFrota!.id);
+        } else if (argFrota != null) {
+          _selectedFrota = argFrota;
+        } else if (_userRole != 'admin' && frotas.isNotEmpty) {
           _selectedFrota = frotas.first;
+        } else {
+          _selectedFrota = null;
+        }
+        if (_userRole == 'admin' && _selectedFrota != null) {
+          AdminContextService().setFrota(_selectedFrota);
         }
       }
 
@@ -150,6 +182,9 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
   }
 
   void _onSwitchFrota(FrotaModel f) async {
+    if (_userRole == 'admin') {
+      AdminContextService().setFrota(f);
+    }
     setState(() {
       _selectedFrota = f;
       _isLoading = true;
@@ -159,6 +194,9 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
   }
 
   void _onSwitchDevice(DispositivoModel d) async {
+    if (_userRole == 'admin') {
+      AdminContextService().setDevice(d, frota: AdminContextService().selectedFrota);
+    }
     setState(() {
       _selectedDevice = d;
       _isLoading = true;
@@ -181,102 +219,143 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
       ),
       body: WatermarkBackground(
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.only(left: 16.0, top: 16.0, right: 16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildHeader(context, title),
-                const SizedBox(height: 12),
-                _buildContextFilter(),
-                const SizedBox(height: 16),
-                Expanded(
-                  child: RefreshIndicator(
-                    color: const Color(0xFFC23147),
-                    onRefresh: () async {
-                      HapticFeedback.lightImpact();
-                      await _fetchHistory();
-                    },
-                    child: _isLoading
-                        ? ListView.builder(
-                            itemCount: 4,
-                            itemBuilder: (context, index) => const Padding(
-                              padding: EdgeInsets.only(bottom: 16.0),
-                              child: ShimmerEffect(
-                                width: double.infinity,
-                                height: 90,
-                                borderRadius: 12,
-                              ),
-                            ),
-                          )
-                        : _alerts.isEmpty
-                            ? Center(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(32.0),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      const Icon(Icons.history_toggle_off_outlined, size: 56, color: Color(0xFFC23147)),
-                                      const SizedBox(height: 12),
-                                      const Text(
-                                        'Nenhum evento registrado no histórico recente.',
-                                        style: TextStyle(fontSize: 15, color: Colors.black54),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              )
-                            : ListView.builder(
-                                padding: const EdgeInsets.only(bottom: 100),
-                                itemCount: _alerts.length,
-                                itemBuilder: (context, index) {
-                                  final alert = _alerts[index];
-                                  final isWarning = (alert.valorRegistrado ?? 0) > 10;
-                                  final hora = alert.criadoEm != null
-                                      ? '${alert.criadoEm!.day}/${alert.criadoEm!.month} ${alert.criadoEm!.hour}:${alert.criadoEm!.minute.toString().padLeft(2, '0')}'
-                                      : 'Hoje';
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator(color: Color(0xFFC23147)))
+              : (_userRole == 'admin' && !widget.isVehicleContext && _selectedFrota == null)
+                  ? _buildNoContextSelectedState('frota')
+                  : (_userRole == 'admin' && widget.isVehicleContext && _selectedDevice == null)
+                      ? _buildNoContextSelectedState('veículo')
+                      : Padding(
+                          padding: const EdgeInsets.only(left: 16.0, top: 16.0, right: 16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildHeader(context, title),
+                              const SizedBox(height: 12),
+                              _buildContextFilter(),
+                              const SizedBox(height: 16),
+                              Expanded(
+                                child: RefreshIndicator(
+                                  color: const Color(0xFFC23147),
+                                  onRefresh: () async {
+                                    HapticFeedback.lightImpact();
+                                    await _fetchHistory();
+                                  },
+                                  child: _alerts.isEmpty
+                                      ? Center(
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(32.0),
+                                            child: Column(
+                                              mainAxisAlignment: MainAxisAlignment.center,
+                                              children: [
+                                                const Icon(Icons.history_toggle_off_outlined, size: 56, color: Color(0xFFC23147)),
+                                                const SizedBox(height: 12),
+                                                const Text(
+                                                  'Nenhum evento registrado no histórico recente.',
+                                                  style: TextStyle(fontSize: 15, color: Colors.black54),
+                                                  textAlign: TextAlign.center,
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        )
+                                      : ListView.builder(
+                                          padding: const EdgeInsets.only(bottom: 100),
+                                          itemCount: _alerts.length,
+                                          itemBuilder: (context, index) {
+                                            final alert = _alerts[index];
+                                            final isWarning = (alert.valorRegistrado ?? 0) > 10;
+                                            final hora = alert.criadoEm != null
+                                                ? '${alert.criadoEm!.day}/${alert.criadoEm!.month} ${alert.criadoEm!.hour}:${alert.criadoEm!.minute.toString().padLeft(2, '0')}'
+                                                : 'Hoje';
 
-                                  bool showTimeText = false;
-                                  if (index == 0) {
-                                    showTimeText = true;
-                                  } else {
-                                    final prevAlert = _alerts[index - 1];
-                                    final prevDay = prevAlert.criadoEm?.day;
-                                    if (prevDay != alert.criadoEm?.day) showTimeText = true;
-                                  }
+                                            bool showTimeText = false;
+                                            if (index == 0) {
+                                              showTimeText = true;
+                                            } else {
+                                              final prevAlert = _alerts[index - 1];
+                                              final prevDay = prevAlert.criadoEm?.day;
+                                              if (prevDay != alert.criadoEm?.day) showTimeText = true;
+                                            }
 
-                                  return AnimatedListItem(
-                                    index: index,
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        if (showTimeText)
-                                          _buildTimeText(hora),
-                                        TimelineCard(
-                                          title: alert.tipo ?? 'Evento Registrado',
-                                          location: 'Dispositivo: ${alert.idDispositivo?.substring(0, 8) ?? "N/D"}',
-                                          time: hora,
-                                          isAlert: isWarning,
-                                          extraInfo: alert.status ?? 'Normal',
-                                          icon: isWarning ? Icons.warning_amber_rounded : Icons.info_outline,
-                                          iconColor: isWarning ? const Color(0xFFC23147) : const Color(0xFF8DB600),
-                                          iconBgColor: isWarning ? const Color(0xFFFFE5E5) : const Color(0xFFE5F5C9),
+                                            return AnimatedListItem(
+                                              index: index,
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  if (showTimeText)
+                                                    _buildTimeText(hora),
+                                                  TimelineCard(
+                                                    title: alert.tipo ?? 'Evento Registrado',
+                                                    location: 'Dispositivo: ${alert.idDispositivo?.substring(0, 8) ?? "N/D"}',
+                                                    time: hora,
+                                                    isAlert: isWarning,
+                                                    icon: isWarning ? Icons.warning_amber_rounded : Icons.check_circle_outline,
+                                                    iconColor: isWarning ? const Color(0xFFC23147) : const Color(0xFF8DB600),
+                                                    iconBgColor: isWarning ? const Color(0xFFFFECEF) : const Color(0xFFF1F8E9),
+                                                  ),
+                                                  if (index < _alerts.length - 1) _buildArrow(),
+                                                ],
+                                              ),
+                                            );
+                                          },
                                         ),
-                                        if (index < _alerts.length - 1)
-                                          _buildArrow(),
-                                        if (index == _alerts.length - 1)
-                                          const SizedBox(height: 24),
-                                      ],
-                                    ),
-                                  );
-                                },
+                                ),
                               ),
-                  ),
-                ),
-              ],
+                            ],
+                          ),
+                        ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNoContextSelectedState(String tipo) {
+    final bool isFrota = tipo == 'frota';
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(isFrota ? Icons.fire_truck_outlined : Icons.directions_car_outlined, size: 72, color: const Color(0xFFC23147)),
+            const SizedBox(height: 16),
+            Text(
+              isFrota ? 'Nenhuma frota selecionada' : 'Nenhum veículo selecionado',
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
+              textAlign: TextAlign.center,
             ),
-          ),
+            const SizedBox(height: 8),
+            Text(
+              isFrota 
+                ? 'Para visualizar o histórico da frota, selecione uma frota primeiro.'
+                : 'Para visualizar o histórico do veículo, selecione um veículo primeiro.',
+              style: const TextStyle(fontSize: 14, color: Colors.black54),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () {
+                if (isFrota) {
+                  Navigator.pushNamed(context, '/listar-frotas');
+                } else if (AdminContextService().hasFrota) {
+                  Navigator.pushNamed(context, '/listar-dispositivos', arguments: AdminContextService().selectedFrota);
+                } else {
+                  Navigator.pushNamed(context, '/listar-frotas');
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFC23147),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              icon: Icon(isFrota ? Icons.local_shipping : Icons.directions_car, color: Colors.white),
+              label: Text(
+                isFrota ? 'Selecionar frota' : (AdminContextService().hasFrota ? 'Ver veículos da frota' : 'Selecionar frota'),
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -354,7 +433,7 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
         ),
         child: DropdownButtonHideUnderline(
           child: DropdownButton<DispositivoModel>(
-            value: _selectedDevice,
+            value: _dispositivos.any((d) => d.id == _selectedDevice?.id) ? _selectedDevice : null,
             isExpanded: true,
             hint: const Text('Selecione o Veículo'),
             items: _dispositivos.map((d) {
@@ -388,7 +467,7 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
         ),
         child: DropdownButtonHideUnderline(
           child: DropdownButton<FrotaModel>(
-            value: _selectedFrota,
+            value: _frotas.any((f) => f.id == _selectedFrota?.id) ? _selectedFrota : null,
             isExpanded: true,
             hint: const Text('Selecione a Frota'),
             items: _frotas.map((f) {

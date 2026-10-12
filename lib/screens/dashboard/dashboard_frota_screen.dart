@@ -5,6 +5,7 @@ import '../../services/supabase_service.dart';
 import '../../models/models.dart';
 import '../../widgets/animated_components.dart';
 import '../../widgets/watermark_background.dart';
+import '../../services/admin_context_service.dart';
 
 class DashboardFrotaScreen extends StatefulWidget {
   final String? initialFrotaId;
@@ -89,15 +90,27 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
       final allSystemDevices = await _supabase.getDispositivos();
       _totalSystemDevices = allSystemDevices.length;
 
-      // Definir frota selecionada (se passada por argumento ou a primeira da lista)
+      // Definir frota selecionada (se passada por argumento ou contexto do ADM)
       FrotaModel? selected;
       if (!mounted) return;
       final routeArg = ModalRoute.of(context)?.settings.arguments;
-      final argId = (routeArg is String ? routeArg : null) ?? widget.initialFrotaId;
-      if (argId != null) {
-        selected = frotas.where((f) => f.id == argId).firstOrNull;
+      if (routeArg is FrotaModel) {
+        selected = frotas.where((f) => f.id == routeArg.id).firstOrNull ?? routeArg;
+      } else if (routeArg is String) {
+        selected = frotas.where((f) => f.id == routeArg).firstOrNull;
+      } else if (widget.initialFrotaId != null) {
+        selected = frotas.where((f) => f.id == widget.initialFrotaId).firstOrNull;
+      } else if (_userRole == 'admin' && AdminContextService().selectedFrota != null) {
+        final id = AdminContextService().selectedFrota!.id;
+        selected = frotas.where((f) => f.id == id).firstOrNull ?? AdminContextService().selectedFrota;
+      } else if (_userRole != 'admin' && frotas.isNotEmpty) {
+        selected = frotas.first;
       }
-      selected ??= frotas.isNotEmpty ? frotas.first : null;
+
+      if (_userRole == 'admin' && selected != null) {
+        AdminContextService().setFrota(selected);
+        AdminContextService().clearVehicle();
+      }
 
       // Dispositivos da frota selecionada ou de todas as frotas do gerente/admin
       List<DispositivoModel> activeDevices = [];
@@ -140,6 +153,10 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
   }
 
   void _onSelectFrota(FrotaModel f) async {
+    if (_userRole == 'admin') {
+      AdminContextService().setFrota(f);
+      AdminContextService().clearVehicle();
+    }
     setState(() {
       _selectedFrota = f;
       _isLoading = true;
@@ -194,6 +211,11 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
     // 3. Caso: Gerente sem frota associada
     if (_frotas.isEmpty && _userRole == 'gerente') {
       return _buildEmptyFrotaGerente();
+    }
+
+    // 4. Caso: Nenhuma frota selecionada (ADM)
+    if (_selectedFrota == null && _userRole == 'admin') {
+      return _buildNoFrotaSelectedAdmin();
     }
 
     return SingleChildScrollView(
@@ -289,6 +311,43 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
               ),
               icon: const Icon(Icons.add, color: Colors.white),
               label: const Text('Criar frota', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNoFrotaSelectedAdmin() {
+    return Padding(
+      padding: const EdgeInsets.all(24.0),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.fire_truck_outlined, size: 72, color: Color(0xFFC23147)),
+            const SizedBox(height: 16),
+            const Text(
+              'Nenhuma frota selecionada',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Para visualizar métricas, relatórios e veículos no Dashboard, selecione uma frota primeiro.',
+              style: TextStyle(fontSize: 14, color: Colors.black54),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () => Navigator.pushNamed(context, '/listar-frotas'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFC23147),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              icon: const Icon(Icons.format_list_bulleted, color: Colors.white),
+              label: const Text('Selecionar frota', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
           ],
         ),
@@ -584,7 +643,12 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
             ),
             GestureDetector(
-              onTap: () => Navigator.pushNamed(context, '/dashboard-veiculo'),
+              onTap: () {
+                if (_selectedFrota != null && _userRole == 'admin') {
+                  AdminContextService().setFrota(_selectedFrota);
+                }
+                Navigator.pushNamed(context, '/listar-dispositivos', arguments: _selectedFrota);
+              },
               child: const Text(
                 'Ver detalhes >',
                 style: TextStyle(color: Color(0xFFC23147), fontWeight: FontWeight.bold, fontSize: 13),
@@ -618,7 +682,9 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
                 final isLast = d == _dispositivos.last;
                 return Column(
                   children: [
-                    ListTile(
+                    Material(
+                      color: Colors.transparent,
+                      child: ListTile(
                       leading: const CircleAvatar(
                         backgroundColor: Color(0xFFC8E569),
                         child: Icon(Icons.directions_car, color: Colors.black87),
@@ -643,15 +709,22 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
                           IconButton(
                             icon: const Icon(Icons.chevron_right, color: Colors.black45),
                             onPressed: () {
+                              if (_userRole == 'admin') {
+                                AdminContextService().setDevice(d, frota: _selectedFrota);
+                              }
                               Navigator.pushNamed(context, '/dashboard-veiculo', arguments: d);
                             },
                           ),
                         ],
                       ),
                       onTap: () {
+                        if (_userRole == 'admin') {
+                          AdminContextService().setDevice(d, frota: _selectedFrota);
+                        }
                         Navigator.pushNamed(context, '/dashboard-veiculo', arguments: d);
                       },
                     ),
+                  ),
                     if (!isLast) const Divider(height: 1, indent: 16, endIndent: 16),
                   ],
                 );

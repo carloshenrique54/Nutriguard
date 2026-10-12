@@ -306,28 +306,31 @@ class _GpsScreenState extends State<GpsScreen> {
                   ),
                 ],
               ),
-              child: ListTile(
-                leading: const CircleAvatar(
-                  backgroundColor: Color(0xFFC8E569),
-                  child: Icon(Icons.directions_car, color: Colors.black87),
-                ),
-                title: Text(
-                  d.placaVeiculo ?? d.nomeDispositivo ?? 'Veículo',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                ),
-                subtitle: Text(
-                  '${d.modeloVeiculo ?? "Dispositivo"} • ${hasLocation ? "Sinal GPS ativo" : "Sem sinal recente"}',
-                  style: TextStyle(fontSize: 12, color: hasLocation ? Colors.green[700] : Colors.black54),
-                ),
-                trailing: ElevatedButton.icon(
-                  onPressed: () => _onSelectVehicle(d),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFC23147),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              child: Material(
+                color: Colors.transparent,
+                child: ListTile(
+                  leading: const CircleAvatar(
+                    backgroundColor: Color(0xFFC8E569),
+                    child: Icon(Icons.directions_car, color: Colors.black87),
                   ),
-                  icon: const Icon(Icons.map, size: 16, color: Colors.white),
-                  label: const Text('Rastrear', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                  title: Text(
+                    d.placaVeiculo ?? d.nomeDispositivo ?? 'Veículo',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                  subtitle: Text(
+                    '${d.modeloVeiculo ?? "Dispositivo"} • ${hasLocation ? "Sinal GPS ativo" : "Sem sinal recente"}',
+                    style: TextStyle(fontSize: 12, color: hasLocation ? Colors.green[700] : Colors.black54),
+                  ),
+                  trailing: ElevatedButton.icon(
+                    onPressed: () => _onSelectVehicle(d),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFC23147),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: const Icon(Icons.map, size: 16, color: Colors.white),
+                    label: const Text('Rastrear', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                  ),
                 ),
               ),
             );

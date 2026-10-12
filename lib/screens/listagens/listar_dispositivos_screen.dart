@@ -7,6 +7,7 @@ import '../../services/supabase_service.dart';
 import '../../models/models.dart';
 import '../../widgets/animated_components.dart';
 import '../../widgets/watermark_background.dart';
+import '../../services/admin_context_service.dart';
 
 class ListarDispositivosScreen extends StatefulWidget {
   const ListarDispositivosScreen({super.key});
@@ -21,23 +22,60 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
   List<DispositivoModel> _dispositivos = [];
   Map<String, String> _operadoresNomes = {};
   String _userRole = '';
+  FrotaModel? _currentFrota;
 
   @override
   void initState() {
     super.initState();
     _checkAccess();
-    _fetchData();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchData();
+    });
   }
 
   Future<void> _fetchData() async {
     setState(() => _isLoading = true);
     try {
-      final dispositivos = await _supabase.getDispositivos();
-      
       final currentUserId = _supabase.currentUser?.id;
       if (currentUserId != null) {
         final perfil = await _supabase.getUsuarioPerfil(currentUserId);
-        if (perfil != null) _userRole = perfil.cargo ?? '';
+        if (perfil != null) _userRole = perfil.role;
+      }
+
+      if (!mounted) return;
+      final routeArg = ModalRoute.of(context)?.settings.arguments;
+      if (routeArg is FrotaModel) {
+        _currentFrota = routeArg;
+      } else if (routeArg is String) {
+        final frotas = await _supabase.getFrotas();
+        _currentFrota = frotas.where((f) => f.id == routeArg).firstOrNull;
+      } else if (_userRole == 'admin' && AdminContextService().selectedFrota != null) {
+        _currentFrota = AdminContextService().selectedFrota;
+      }
+
+      List<DispositivoModel> dispositivos = [];
+      if (_userRole == 'admin') {
+        if (_currentFrota != null) {
+          AdminContextService().setFrota(_currentFrota);
+          AdminContextService().clearVehicle();
+          dispositivos = await _supabase.getDispositivosByFrota(_currentFrota!.id);
+        } else {
+          dispositivos = [];
+        }
+      } else if (_userRole == 'gerente') {
+        if (_currentFrota != null) {
+          dispositivos = await _supabase.getDispositivosByFrota(_currentFrota!.id);
+        } else if (currentUserId != null) {
+          final frotas = await _supabase.getFrotasByGerente(currentUserId);
+          for (var f in frotas) {
+            final fDevs = await _supabase.getDispositivosByFrota(f.id);
+            dispositivos.addAll(fDevs);
+          }
+        }
+      } else {
+        if (currentUserId != null) {
+          dispositivos = await _supabase.getDispositivosByOperador(currentUserId);
+        }
       }
 
       Map<String, String> opsMap = {};
@@ -90,7 +128,7 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
       backgroundColor: const Color(0xFFFFF2E0),
       extendBody: true,
       
-      bottomNavigationBar: const CustomBottomNavBar(selectedIndex: 2),
+      bottomNavigationBar: const CustomBottomNavBar(selectedIndex: null),
       body: WatermarkBackground(
         child: SafeArea(
           child: Padding(
@@ -100,12 +138,15 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
                 // 1. CABEÇALHO
                 Row(
                   children: [
-                    const Text(
-                      'Dispositivos',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFFC23147),
+                    Expanded(
+                      child: Text(
+                        _currentFrota != null ? 'Veículos — ${_currentFrota!.nome ?? "Frota"}' : 'Dispositivos',
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFFC23147),
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -146,30 +187,44 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
 
                 // 2. LISTA DE DISPOSITIVOS
                 Expanded(
-                  child: RefreshIndicator(
-                    color: const Color(0xFFC23147),
-                    onRefresh: () async {
-                      HapticFeedback.lightImpact();
-                      await _fetchData();
-                    },
-                    child: _isLoading
-                        ? ListView.builder(
-                            itemCount: 4,
-                            itemBuilder: (context, index) => const Padding(
-                              padding: EdgeInsets.only(bottom: 16.0, right: 12),
-                              child: ShimmerEffect(
-                                width: double.infinity,
-                                height: 92,
-                                borderRadius: 12,
-                              ),
-                            ),
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.only(bottom: 100),
-                            itemCount: _dispositivos.length,
-                            itemBuilder: (context, index) {
-                              final device = _dispositivos[index];
-                              final opName = device.idOperador != null ? _operadoresNomes[device.idOperador] ?? 'Sem Operador' : 'Sem Operador';
+                  child: _currentFrota == null && _userRole == 'admin' && !_isLoading
+                      ? _buildNoFrotaSelectedState()
+                      : RefreshIndicator(
+                          color: const Color(0xFFC23147),
+                          onRefresh: () async {
+                            HapticFeedback.lightImpact();
+                            await _fetchData();
+                          },
+                          child: _isLoading
+                              ? ListView.builder(
+                                  itemCount: 4,
+                                  itemBuilder: (context, index) => const Padding(
+                                    padding: EdgeInsets.only(bottom: 16.0, right: 12),
+                                    child: ShimmerEffect(
+                                      width: double.infinity,
+                                      height: 92,
+                                      borderRadius: 12,
+                                    ),
+                                  ),
+                                )
+                              : _dispositivos.isEmpty
+                                  ? Center(
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(24.0),
+                                        child: Text(
+                                          _currentFrota != null
+                                              ? 'Nenhum veículo cadastrado nesta frota.'
+                                              : 'Nenhum veículo encontrado.',
+                                          style: const TextStyle(fontSize: 15, color: Colors.black54),
+                                        ),
+                                      ),
+                                    )
+                                  : ListView.builder(
+                                      padding: const EdgeInsets.only(bottom: 100),
+                                      itemCount: _dispositivos.length,
+                                      itemBuilder: (context, index) {
+                                        final device = _dispositivos[index];
+                                        final opName = device.idOperador != null ? _operadoresNomes[device.idOperador] ?? 'Sem Operador' : 'Sem Operador';
 
                               return AnimatedListItem(
                                 index: index,
@@ -221,6 +276,9 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
                                       _showDeleteDialog(context, device);
                                     },
                                     onTap: () {
+                                      if (_userRole == 'admin') {
+                                        AdminContextService().setDevice(device, frota: _currentFrota);
+                                      }
                                       Navigator.pushNamed(context, '/dashboard-veiculo', arguments: device);
                                     },
                                   ),
@@ -233,6 +291,43 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNoFrotaSelectedState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.fire_truck_outlined, size: 72, color: Color(0xFFC23147)),
+            const SizedBox(height: 16),
+            const Text(
+              'Nenhuma frota selecionada',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Para visualizar a lista de veículos de uma frota, selecione a frota primeiro.',
+              style: TextStyle(fontSize: 14, color: Colors.black54),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () => Navigator.pushNamed(context, '/listar-frotas'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFC23147),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              icon: const Icon(Icons.format_list_bulleted, color: Colors.white),
+              label: const Text('Selecionar frota', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
         ),
       ),
     );
@@ -395,6 +490,25 @@ class DeviceCard extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          ElevatedButton.icon(
+            onPressed: onTap,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFC23147),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              elevation: 0,
+            ),
+            icon: const Icon(Icons.arrow_forward, size: 14, color: Colors.white),
+            label: const Text(
+              'Ver mais',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
             ),
           ),
         ],

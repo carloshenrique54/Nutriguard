@@ -9,6 +9,7 @@ import '../../widgets/custom_end_drawer.dart';
 import '../../widgets/watermark_background.dart';
 import '../../services/supabase_service.dart';
 import '../../models/models.dart';
+import '../../services/admin_context_service.dart';
 
 class ViagemData {
   final DispositivoModel dispositivo;
@@ -100,7 +101,11 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
 
           if (role == 'admin') {
             _frotas = await _supabase.getFrotas();
-            _dispositivos = await _supabase.getDispositivos();
+            if (widget.isVehicleContext && AdminContextService().selectedFrota != null) {
+              _dispositivos = await _supabase.getDispositivosByFrota(AdminContextService().selectedFrota!.id);
+            } else {
+              _dispositivos = await _supabase.getDispositivos();
+            }
           } else if (role == 'gerente') {
             _frotas = await _supabase.getFrotasByGerente(_perfil!.id);
             List<DispositivoModel> allDevices = [];
@@ -115,18 +120,48 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
             _dispositivos = await _supabase.getDispositivosByOperador(_perfil!.id);
           }
 
-          // Checar se veio veículo por argumento de rota
+          // Checar se veio veículo ou frota por argumento de rota
           if (!mounted) return;
           final routeArg = ModalRoute.of(context)?.settings.arguments;
-          final target = routeArg is DispositivoModel ? routeArg : null;
-          if (target != null && _dispositivos.any((d) => d.id == target.id)) {
-            _selectedDispositivoId = target.id;
-          } else if (widget.isVehicleContext && _dispositivos.isNotEmpty) {
-            _selectedDispositivoId ??= _dispositivos.first.id;
+          DispositivoModel? targetDevice = routeArg is DispositivoModel ? routeArg : null;
+          FrotaModel? targetFrota = routeArg is FrotaModel ? routeArg : null;
+
+          if (role == 'admin') {
+            if (widget.isVehicleContext && targetDevice == null && AdminContextService().selectedDevice != null) {
+              targetDevice = AdminContextService().selectedDevice;
+            } else if (!widget.isVehicleContext && targetFrota == null && AdminContextService().selectedFrota != null) {
+              targetFrota = AdminContextService().selectedFrota;
+            }
           }
 
-          if (!widget.isVehicleContext && _frotas.isNotEmpty) {
-            _selectedFrotaId ??= _frotas.first.id;
+          if (widget.isVehicleContext) {
+            if (targetDevice != null && _dispositivos.any((d) => d.id == targetDevice!.id)) {
+              _selectedDispositivoId = targetDevice.id;
+            } else if (targetDevice != null) {
+              _selectedDispositivoId = targetDevice.id;
+            } else if (role != 'admin' && _dispositivos.isNotEmpty) {
+              _selectedDispositivoId = _dispositivos.first.id;
+            } else {
+              _selectedDispositivoId = null;
+            }
+            if (role == 'admin' && _selectedDispositivoId != null) {
+              final d = _dispositivos.where((x) => x.id == _selectedDispositivoId).firstOrNull ?? targetDevice;
+              if (d != null) AdminContextService().setDevice(d, frota: AdminContextService().selectedFrota);
+            }
+          } else {
+            if (targetFrota != null && _frotas.any((f) => f.id == targetFrota!.id)) {
+              _selectedFrotaId = targetFrota.id;
+            } else if (targetFrota != null) {
+              _selectedFrotaId = targetFrota.id;
+            } else if (role != 'admin' && _frotas.isNotEmpty) {
+              _selectedFrotaId = _frotas.first.id;
+            } else {
+              _selectedFrotaId = null;
+            }
+            if (role == 'admin' && _selectedFrotaId != null) {
+              final f = _frotas.where((x) => x.id == _selectedFrotaId).firstOrNull ?? targetFrota;
+              if (f != null) AdminContextService().setFrota(f);
+            }
           }
           
           await _loadReportData();
@@ -314,7 +349,11 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
         child: SafeArea(
           child: _isLoading 
             ? const Center(child: CircularProgressIndicator(color: Color(0xFFC23147)))
-            : SingleChildScrollView(
+            : (_perfil?.role == 'admin' && !widget.isVehicleContext && _selectedFrotaId == null)
+                ? _buildNoContextSelectedState('frota')
+                : (_perfil?.role == 'admin' && widget.isVehicleContext && _selectedDispositivoId == null)
+                    ? _buildNoContextSelectedState('veículo')
+                    : SingleChildScrollView(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -344,6 +383,57 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
                   ],
                 ),
               ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNoContextSelectedState(String tipo) {
+    final bool isFrota = tipo == 'frota';
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(isFrota ? Icons.fire_truck_outlined : Icons.directions_car_outlined, size: 72, color: const Color(0xFFC23147)),
+            const SizedBox(height: 16),
+            Text(
+              isFrota ? 'Nenhuma frota selecionada' : 'Nenhum veículo selecionado',
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isFrota 
+                ? 'Para visualizar o relatório consolidado da frota, selecione uma frota primeiro.'
+                : 'Para visualizar o relatório detalhado do veículo, selecione um veículo primeiro.',
+              style: const TextStyle(fontSize: 14, color: Colors.black54),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () {
+                if (isFrota) {
+                  Navigator.pushNamed(context, '/listar-frotas');
+                } else if (AdminContextService().hasFrota) {
+                  Navigator.pushNamed(context, '/listar-dispositivos', arguments: AdminContextService().selectedFrota);
+                } else {
+                  Navigator.pushNamed(context, '/listar-frotas');
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFC23147),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              icon: Icon(isFrota ? Icons.local_shipping : Icons.directions_car, color: Colors.white),
+              label: Text(
+                isFrota ? 'Selecionar frota' : (AdminContextService().hasFrota ? 'Ver veículos da frota' : 'Selecionar frota'),
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -402,54 +492,66 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (_frotas.isNotEmpty) ...[
+        if (!widget.isVehicleContext && _frotas.isNotEmpty) ...[
           const Text('Frota', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFC23147))),
           const SizedBox(height: 4),
-          DropdownButtonFormField<String>(
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
             ),
-            value: _selectedFrotaId, // ignore: deprecated_member_use
-            hint: const Text('Todas as frotas'),
-            items: [
-              const DropdownMenuItem(value: '', child: Text('Todas as frotas')),
-              ..._frotas.map((f) => DropdownMenuItem(value: f.id, child: Text(f.nome ?? 'Sem nome'))),
-            ],
-            onChanged: (val) {
-              setState(() {
-                _selectedFrotaId = (val == null || val.isEmpty) ? null : val;
-                _selectedDispositivoId = null; 
-              });
-              _loadReportData();
-            },
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _frotas.any((f) => f.id == _selectedFrotaId) ? _selectedFrotaId : null,
+                isExpanded: true,
+                hint: const Text('Selecione uma frota'),
+                items: _frotas.map((f) => DropdownMenuItem(value: f.id, child: Text(f.nome ?? 'Sem nome'))).toList(),
+                onChanged: (val) {
+                  final newId = val;
+                  if (_perfil?.role == 'admin' && newId != null) {
+                    final f = _frotas.where((x) => x.id == newId).firstOrNull;
+                    if (f != null) AdminContextService().setFrota(f);
+                  }
+                  setState(() {
+                    _selectedFrotaId = newId;
+                    _selectedDispositivoId = null; 
+                  });
+                  _loadReportData();
+                },
+              ),
+            ),
           ),
           const SizedBox(height: 12),
         ],
-        if (_dispositivos.isNotEmpty) ...[
-          const Text('Dispositivo', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFC23147))),
+        if (widget.isVehicleContext && _dispositivos.isNotEmpty) ...[
+          const Text('Veículo', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFC23147))),
           const SizedBox(height: 4),
-          DropdownButtonFormField<String>(
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
             ),
-            value: _selectedDispositivoId, // ignore: deprecated_member_use
-            hint: const Text('Todos os dispositivos'),
-            items: [
-              const DropdownMenuItem(value: '', child: Text('Todos os dispositivos')),
-              ..._dispositivos.where((d) => _selectedFrotaId == null || d.idFrota == _selectedFrotaId).map((d) => DropdownMenuItem(value: d.id, child: Text(d.nomeDispositivo ?? d.placaVeiculo ?? d.id.substring(0,8)))),
-            ],
-            onChanged: (val) {
-              setState(() {
-                _selectedDispositivoId = (val == null || val.isEmpty) ? null : val;
-              });
-              _loadReportData();
-            },
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _dispositivos.any((d) => d.id == _selectedDispositivoId) ? _selectedDispositivoId : null,
+                isExpanded: true,
+                hint: const Text('Selecione um veículo'),
+                items: _dispositivos.map((d) => DropdownMenuItem(value: d.id, child: Text(d.nomeDispositivo ?? d.placaVeiculo ?? d.id.substring(0,8)))).toList(),
+                onChanged: (val) {
+                  final newId = val;
+                  if (_perfil?.role == 'admin' && newId != null) {
+                    final d = _dispositivos.where((x) => x.id == newId).firstOrNull;
+                    if (d != null) AdminContextService().setDevice(d, frota: AdminContextService().selectedFrota);
+                  }
+                  setState(() {
+                    _selectedDispositivoId = newId;
+                  });
+                  _loadReportData();
+                },
+              ),
+            ),
           ),
         ],
       ],

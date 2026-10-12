@@ -79,7 +79,11 @@ class SupabaseService {
     return e.message;
   }
 
+  static UsuarioModel? _cachedPerfil;
+  static UsuarioModel? get currentCachedPerfil => _cachedPerfil;
+
   Future<void> signOut() async {
+    _cachedPerfil = null;
     await _client.auth.signOut();
   }
 
@@ -93,7 +97,7 @@ class SupabaseService {
         if (userId == currentUser?.id) {
           final meta = currentUser?.userMetadata;
           if (meta != null && meta['cargo'] != null) {
-            return UsuarioModel(
+            final fallback = UsuarioModel(
               id: userId,
               nome: meta['nome'],
               email: currentUser?.email,
@@ -101,17 +105,21 @@ class SupabaseService {
               telefone: meta['telefone'],
               cargo: meta['cargo'],
             );
+            _cachedPerfil = fallback;
+            return fallback;
           }
         }
         return null;
       }
-      return UsuarioModel.fromJson(data);
+      final perfil = UsuarioModel.fromJson(data);
+      _cachedPerfil = perfil;
+      return perfil;
     } catch (e) {
       // Se RLS ou schema estiver bloqueando, faz fallback
       if (userId == currentUser?.id) {
         final meta = currentUser?.userMetadata;
         if (meta != null && meta['cargo'] != null) {
-          return UsuarioModel(
+          final fallback = UsuarioModel(
             id: userId,
             nome: meta['nome'],
             email: currentUser?.email,
@@ -119,6 +127,8 @@ class SupabaseService {
             telefone: meta['telefone'],
             cargo: meta['cargo'],
           );
+          _cachedPerfil = fallback;
+          return fallback;
         }
       }
       return null;
