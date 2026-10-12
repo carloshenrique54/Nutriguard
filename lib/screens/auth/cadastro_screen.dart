@@ -58,8 +58,15 @@ class _CadastroScreenState extends State<CadastroScreen> {
       Navigator.pop(context); // Voltar para a tela de login
     } catch (e) {
       if (!mounted) return;
+      final msg = SupabaseService.formatarErro(e);
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao cadastrar: ${e.toString().replaceFirst('Exception: ', '')}'), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text(msg, style: const TextStyle(color: Colors.white)),
+          backgroundColor: const Color(0xFFC23147),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        ),
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);

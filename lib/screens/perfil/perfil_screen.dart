@@ -81,7 +81,15 @@ class _PerfilScreenState extends State<PerfilScreen> {
         await _loadProfile(); 
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Foto atualizada!')));
       } catch (e) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao atualizar foto: $e')));
+        if (mounted) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(SupabaseService.formatarErro(e), style: const TextStyle(color: Colors.white)),
+              backgroundColor: const Color(0xFFC23147),
+            ),
+          );
+        }
       } finally {
         setState(() { _isLoading = false; });
       }
@@ -174,7 +182,15 @@ class _PerfilScreenState extends State<PerfilScreen> {
                                   }
                                 } catch (e) {
                                   setDialogState(() { isSaving = false; });
-                                  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao salvar: $e')));
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(SupabaseService.formatarErro(e), style: const TextStyle(color: Colors.white)),
+                                        backgroundColor: const Color(0xFFC23147),
+                                      ),
+                                    );
+                                  }
                                 }
                               },
                               style: ElevatedButton.styleFrom(
