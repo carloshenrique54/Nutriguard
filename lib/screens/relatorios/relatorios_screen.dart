@@ -461,7 +461,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
               ),
               if (_perfil != null)
                 Text(
-                  _perfil!.role.toUpperCase(),
+                  (_perfil!.role == 'admin' || _perfil!.role == 'adm') ? 'ADM' : _perfil!.role.toUpperCase(),
                   style: const TextStyle(
                     color: Color(0xFFC23147),
                     fontSize: 12,

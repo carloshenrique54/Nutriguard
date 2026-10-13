@@ -6,6 +6,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../../widgets/custom_bottom_nav_bar.dart';
 import '../../widgets/custom_end_drawer.dart';
+import '../../services/admin_context_service.dart';
 
 class GpsScreen extends StatefulWidget {
   final DispositivoModel? initialDevice;
@@ -68,6 +69,8 @@ class _GpsScreenState extends State<GpsScreen> {
         argDevice = routeArg;
       } else if (widget.initialDevice != null) {
         argDevice = widget.initialDevice;
+      } else if ((_userRole == 'admin' || _userRole == 'adm') && AdminContextService().hasDevice) {
+        argDevice = AdminContextService().selectedDevice;
       }
 
       // Buscar veículos de acordo com a matriz de permissões
@@ -422,7 +425,7 @@ class _GpsScreenState extends State<GpsScreen> {
             borderRadius: BorderRadius.circular(12),
           ),
           child: Text(
-            _userRole.toUpperCase(),
+            (_userRole == 'admin' || _userRole == 'adm') ? 'ADM' : _userRole.toUpperCase(),
             style: const TextStyle(
               color: Colors.white,
               fontSize: 11,

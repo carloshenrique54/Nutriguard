@@ -385,7 +385,9 @@ class SupabaseService {
         return null;
       }
       final perfil = UsuarioModel.fromJson(data);
-      _cachedPerfil = perfil;
+      if (userId == currentUser?.id) {
+        _cachedPerfil = perfil;
+      }
       return perfil;
     } catch (e) {
       // Se RLS ou schema estiver bloqueando, faz fallback
@@ -471,6 +473,15 @@ class SupabaseService {
 
   Future<void> deleteDispositivo(String id) async {
     await _client.from('Dispositivos').delete().eq('id', id);
+  }
+
+  Future<void> deleteUsuario(String id) async {
+    // Desvincular dispositivos associados ao operador
+    await _client.from('Dispositivos').update({'id_operador': null}).eq('id_operador', id);
+    // Desvincular frotas associadas ao gerente
+    await _client.from('Frotas').update({'id_gerente': null}).eq('id_gerente', id);
+    // Deletar da tabela Usuarios
+    await _client.from('Usuarios').delete().eq('id', id);
   }
 
   Future<List<DispositivoModel>> getDispositivosByFrota(String frotaId) async {

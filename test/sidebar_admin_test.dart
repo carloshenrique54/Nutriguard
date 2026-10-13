@@ -104,15 +104,13 @@ void main() {
       expect(find.text('XYZ-9876'), findsOneWidget);
       expect(find.text('Frota: Frota Regional Sul'), findsOneWidget);
 
-      // Vehicle options are enabled
+      // Vehicle options and GPS are enabled
       expect(find.text('Dashboard do veículo'), findsOneWidget);
       expect(find.text('Alertas do veículo'), findsOneWidget);
       expect(find.text('Histórico do veículo'), findsOneWidget);
       expect(find.text('Relatório do veículo'), findsOneWidget);
-
-      // GPS remains strictly disabled
-      expect(find.text('Indisponível'), findsOneWidget);
       expect(find.text('GPS — Veículo'), findsOneWidget);
+      expect(find.text('Indisponível'), findsNothing);
     });
   });
 }

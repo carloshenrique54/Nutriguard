@@ -101,18 +101,18 @@ void main() {
       expect(historicoText.style?.color, equals(Colors.black87));
     });
 
-    testWidgets('3. Vehicle Selected: Vehicle items are enabled, but GPS remains gray and non-clickable', (tester) async {
+    testWidgets('3. Vehicle Selected: Vehicle items and GPS are enabled for ADM in vehicle context', (tester) async {
       adminContext.setDevice(testDevice, frota: testFrota);
 
       await tester.pumpWidget(createTestWidget(selectedIndex: 2));
       await tester.pumpAndSettle();
 
-      // GPS must still be gray (Color(0xFF757575))
+      // GPS is enabled in vehicle context
       final gpsText = tester.widget<Text>(find.text('GPS'));
-      expect(gpsText.style?.color, equals(const Color(0xFF757575)));
+      expect(gpsText.style?.color, equals(Colors.black87));
 
       final gpsIcon = tester.widget<Icon>(find.byIcon(Icons.location_on_outlined));
-      expect(gpsIcon.color, equals(const Color(0xFF757575)));
+      expect(gpsIcon.color, equals(Colors.black87));
 
       // Enabled items are black (Colors.black87)
       final alertaText = tester.widget<Text>(find.text('Alertas'));

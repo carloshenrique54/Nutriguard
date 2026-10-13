@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../widgets/custom_end_drawer.dart';
@@ -8,6 +7,7 @@ import '../../widgets/animated_components.dart';
 import '../../widgets/custom_bottom_nav_bar.dart';
 import '../../widgets/watermark_background.dart';
 import '../../services/admin_context_service.dart';
+import '../../widgets/confirmation_dialog.dart';
 
 class ListarFrotasScreen extends StatefulWidget {
   const ListarFrotasScreen({super.key});
@@ -130,7 +130,7 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        _userRole.toUpperCase(),
+                        (_userRole == 'admin' || _userRole == 'adm') ? 'ADM' : _userRole.toUpperCase(),
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 12,
@@ -256,74 +256,45 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
     );
   }
 
-  Future<bool?> _showDeleteDialog(BuildContext context, FrotaModel fleet) {
-    return showGeneralDialog<bool>(
+  Future<bool?> _showDeleteDialog(BuildContext context, FrotaModel fleet) async {
+    final confirmed = await showDeleteConfirmationModal(
       context: context,
-      barrierColor: Colors.transparent,
-      barrierDismissible: true,
-      barrierLabel: 'Delete',
-      transitionDuration: const Duration(milliseconds: 200),
-      pageBuilder: (context, animation, secondaryAnimation) => const SizedBox.shrink(),
-      transitionBuilder: (context, animation, secondaryAnimation, child) {
-        return Stack(
-          children: [
-            FadeTransition(
-              opacity: animation,
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 8.0, sigmaY: 8.0),
-                child: Container(color: const Color(0x33000000)),
-              ),
-            ),
-            ScaleTransition(
-              scale: CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
-              child: AlertDialog(
-                title: const Text('Excluir Frota'),
-                content: Text('Tem certeza que deseja remover ${fleet.nome}?'),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
-                  ),
-                  TextButton(
-                    onPressed: () async {
-                      try {
-                        await _supabase.deleteFrota(fleet.id);
-                        if (context.mounted) {
-                          Navigator.pop(context, true);
-                          HapticFeedback.mediumImpact();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: const Text('Frota removida com sucesso!', style: TextStyle(color: Colors.white)),
-                              backgroundColor: Colors.green,
-                              behavior: SnackBarBehavior.floating,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                            ),
-                          );
-                          _fetchData();
-                        }
-                      } catch (e) {
-                        if (context.mounted) {
-                          Navigator.pop(context, false);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Erro ao excluir: $e', style: const TextStyle(color: Colors.white)),
-                              backgroundColor: Colors.red,
-                              behavior: SnackBarBehavior.floating,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                            ),
-                          );
-                        }
-                      }
-                    },
-                    child: const Text('Excluir', style: TextStyle(color: Color(0xFFC23147))),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        );
-      },
+      title: 'Excluir Frota',
+      itemName: fleet.nome ?? 'Frota',
+      itemDetail: 'Todos os veículos vinculados a esta frota serão desassociados.',
+      itemIcon: Icons.folder_outlined,
     );
+
+    if (confirmed == true && context.mounted) {
+      try {
+        await _supabase.deleteFrota(fleet.id);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Frota "${fleet.nome ?? "Frota"}" removida com sucesso!', style: const TextStyle(color: Colors.white)),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            ),
+          );
+          _fetchData();
+        }
+        return true;
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Erro ao excluir: $e', style: const TextStyle(color: Colors.white)),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            ),
+          );
+        }
+        return false;
+      }
+    }
+    return false;
   }
 }
 

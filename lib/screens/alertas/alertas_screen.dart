@@ -358,7 +358,7 @@ class _AlertasScreenState extends State<AlertasScreen> {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
-                role.toUpperCase(),
+                (role == 'admin' || role == 'adm') ? 'ADM' : role.toUpperCase(),
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 10,

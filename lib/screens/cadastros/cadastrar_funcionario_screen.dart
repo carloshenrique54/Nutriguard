@@ -54,6 +54,12 @@ class _CadastrarFuncionarioScreenState extends State<CadastrarFuncionarioScreen>
     type: MaskAutoCompletionType.lazy,
   );
 
+  final _cnhFormatter = MaskTextInputFormatter(
+    mask: '#########-##',
+    filter: {"#": RegExp(r'[0-9]')},
+    type: MaskAutoCompletionType.lazy,
+  );
+
   @override
   void initState() {
     super.initState();
@@ -612,12 +618,9 @@ class _CadastrarFuncionarioScreenState extends State<CadastrarFuncionarioScreen>
                               const SizedBox(height: 12),
                               CustomFormInput(
                                 label: 'Número da CNH do operador',
-                                hintText: '00000000000 (11 dígitos)',
+                                hintText: '000000000-00',
                                 controller: _numeroCnhCtrl,
-                                inputFormatters: [
-                                  FilteringTextInputFormatter.digitsOnly,
-                                  LengthLimitingTextInputFormatter(11),
-                                ],
+                                inputFormatters: [_cnhFormatter],
                                 keyboardType: TextInputType.number,
                                 enabled: !_isLoading,
                               ),

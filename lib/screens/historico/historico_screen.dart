@@ -389,7 +389,7 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
             borderRadius: BorderRadius.circular(10),
           ),
           child: Text(
-            _userRole.toUpperCase(),
+            (_userRole == 'admin' || _userRole == 'adm') ? 'ADM' : _userRole.toUpperCase(),
             style: const TextStyle(
               color: Colors.white,
               fontSize: 10,

@@ -420,11 +420,12 @@ class _MenuContentState extends State<_MenuContent> {
           routeArguments: device,
           isEnabled: true,
         ),
-        const MenuListItem(
+        MenuListItem(
           icon: Icons.location_on_outlined,
           title: 'GPS — Veículo',
-          isEnabled: false,
-          disabledReason: 'Indisponível',
+          routeName: '/gps',
+          routeArguments: device,
+          isEnabled: true,
         ),
 
         const SizedBox(height: 8),

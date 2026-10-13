@@ -403,7 +403,7 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
-                _userRole.toUpperCase(),
+                _userRole == 'admin' ? 'ADM' : _userRole.toUpperCase(),
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 11,

@@ -382,7 +382,7 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    _userRole.toUpperCase(),
+                    (_userRole == 'admin' || _userRole == 'adm') ? 'ADM' : _userRole.toUpperCase(),
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 11,

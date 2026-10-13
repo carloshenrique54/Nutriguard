@@ -98,14 +98,14 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
       return true;
     }
 
-    // Regra 5: GPS é SEMPRE indisponível para o ADM
+    // GPS é habilitado para ADM quando em contexto de veículo
     if (index == 4) {
-      return false;
+      return widget.isVehicleContext == true || _adminContext.hasDevice;
     }
 
     // Enquanto nenhuma frota estiver selecionada para o ADM,
     // todas as opções secundárias permanecem indisponíveis
-    if (!_adminContext.hasFrota) {
+    if (!_adminContext.hasFrota && widget.isVehicleContext != true) {
       return false;
     }
 
