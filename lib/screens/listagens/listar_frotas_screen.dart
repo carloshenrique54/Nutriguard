@@ -333,6 +333,7 @@ class FleetCard extends StatelessWidget {
   final int deviceCount;
   final VoidCallback onDelete;
   final VoidCallback onTap;
+  final VoidCallback? onTapVehicles;
 
   const FleetCard({
     super.key,
@@ -341,13 +342,13 @@ class FleetCard extends StatelessWidget {
     required this.deviceCount,
     required this.onDelete,
     required this.onTap,
+    this.onTapVehicles,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16, right: 12),
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -359,104 +360,128 @@ class FleetCard extends StatelessWidget {
           ),
         ],
       ),
-      child: Row(
-        children: [
-          Hero(
-            tag: 'fleet_icon_${fleet.id}',
-            child: Container(
-              width: 60,
-              height: 60,
-              decoration: BoxDecoration(
-                color: const Color(0xFFC8E569),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              alignment: Alignment.center,
-              child: const Icon(
-                Icons.fire_truck_outlined,
-                color: Color(0xFF333333),
-                size: 32,
-              ),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
               children: [
                 Hero(
-                  tag: 'fleet_title_${fleet.id}',
-                  child: Material(
-                    color: Colors.transparent,
-                    child: Text(
-                      fleet.nome ?? 'Sem Nome',
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
-                      ),
+                  tag: 'fleet_icon_${fleet.id}',
+                  child: Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFC8E569),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      Icons.fire_truck_outlined,
+                      color: Color(0xFF333333),
+                      size: 32,
                     ),
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  'Gerente: $gerenteName',
-                  style: const TextStyle(
-                    color: Colors.grey,
-                    fontSize: 12,
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Hero(
+                        tag: 'fleet_title_${fleet.id}',
+                        child: Material(
+                          color: Colors.transparent,
+                          child: Text(
+                            fleet.nome ?? 'Sem Nome',
+                            style: const TextStyle(
+                              color: Colors.black,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Gerente: $gerenteName',
+                        style: const TextStyle(
+                          color: Colors.grey,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline, color: Color(0xFFC23147)),
+                      onPressed: onDelete,
+                      constraints: const BoxConstraints(),
+                      padding: EdgeInsets.zero,
+                    ),
+                    const SizedBox(height: 4),
+                    GestureDetector(
+                      onTap: () {
+                        if (onTapVehicles != null) {
+                          onTapVehicles!();
+                        } else {
+                          Navigator.pushNamed(context, '/listar-dispositivos', arguments: fleet);
+                        }
+                      },
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            'Veículos na frota',
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 10,
+                            ),
+                            textAlign: TextAlign.right,
+                          ),
+                          AnimatedCounterText(
+                            value: deviceCount,
+                            style: const TextStyle(
+                              color: Colors.black,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Material(
+                      color: const Color(0xFFC23147),
+                      borderRadius: BorderRadius.circular(6),
+                      child: InkWell(
+                        onTap: onTap,
+                        borderRadius: BorderRadius.circular(6),
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          child: Text(
+                            'Ver frota',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.delete_outline, color: Color(0xFFC23147)),
-                onPressed: onDelete,
-                constraints: const BoxConstraints(),
-                padding: EdgeInsets.zero,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Veículos na frota',
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontSize: 10,
-                ),
-                textAlign: TextAlign.right,
-              ),
-              AnimatedCounterText(
-                value: deviceCount,
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 12,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Material(
-                color: const Color(0xFFC23147),
-                borderRadius: BorderRadius.circular(6),
-                child: InkWell(
-                  onTap: onTap,
-                  borderRadius: BorderRadius.circular(6),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    child: Text(
-                      'Ver mais',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }

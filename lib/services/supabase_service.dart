@@ -290,6 +290,9 @@ class SupabaseService {
         if (msg.contains('id_frota') || details.contains('id_frota')) {
           return 'Selecione uma frota para vincular este dispositivo.';
         }
+        if (msg.contains('id_operador') || details.contains('id_operador')) {
+          return 'Selecione o operador responsável pelo dispositivo.';
+        }
         if (msg.contains('nome_dispositivo') || details.contains('nome_dispositivo')) {
           return 'O nome do dispositivo é obrigatório.';
         }
@@ -483,33 +486,33 @@ class SupabaseService {
   Future<DispositivoModel> cadastrarDispositivo({
     required String nomeDispositivo,
     required String idFrota,
-    String? idOperador,
-    String? numeroSerie,
-    String? modeloDispositivo,
-    String? modeloVeiculo,
-    String? placaVeiculo,
-    num? temperaturaMinima,
-    num? temperaturaMaxima,
-    num? umidadeMaxima,
-    num? sensibilidadeVibracao,
-    num? limiteVibracao,
-    num? intervaloDados,
+    required String idOperador,
+    required String numeroSerie,
+    required String modeloDispositivo,
+    required String modeloVeiculo,
+    required String placaVeiculo,
+    required num temperaturaMinima,
+    required num temperaturaMaxima,
+    required num umidadeMaxima,
+    required num sensibilidadeVibracao,
+    required num limiteVibracao,
+    required num intervaloDados,
   }) async {
     try {
       final payload = <String, dynamic>{
         'nome_dispositivo': nomeDispositivo,
         'id_frota': idFrota,
-        if (idOperador != null && idOperador.isNotEmpty) 'id_operador': idOperador,
-        if (numeroSerie != null && numeroSerie.isNotEmpty) 'numero_serie': numeroSerie,
-        if (modeloDispositivo != null && modeloDispositivo.isNotEmpty) 'modelo_dispositivo': modeloDispositivo,
-        if (modeloVeiculo != null && modeloVeiculo.isNotEmpty) 'modelo_veiculo': modeloVeiculo,
-        if (placaVeiculo != null && placaVeiculo.isNotEmpty) 'placa_veiculo': placaVeiculo,
-        'temperatura_minima':? temperaturaMinima,
-        'temperatura_maxima':? temperaturaMaxima,
-        'umidade_maxima':? umidadeMaxima,
-        'sensibilidade_vibracao':? sensibilidadeVibracao,
-        'limite_vibracao':? limiteVibracao,
-        'intervalo_dados':? intervaloDados,
+        'id_operador': idOperador,
+        'numero_serie': numeroSerie,
+        'modelo_dispositivo': modeloDispositivo,
+        'modelo_veiculo': modeloVeiculo,
+        'placa_veiculo': placaVeiculo,
+        'temperatura_minima': temperaturaMinima,
+        'temperatura_maxima': temperaturaMaxima,
+        'umidade_maxima': umidadeMaxima,
+        'sensibilidade_vibracao': sensibilidadeVibracao,
+        'limite_vibracao': limiteVibracao,
+        'intervalo_dados': intervaloDados,
       };
 
       final res = await _client.from('Dispositivos').insert(payload).select().single();

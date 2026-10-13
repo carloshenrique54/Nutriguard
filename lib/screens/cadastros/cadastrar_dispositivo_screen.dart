@@ -78,11 +78,15 @@ class PercentageTextInputFormatter extends TextInputFormatter {
 class CadastrarDispositivoScreen extends StatefulWidget {
   final String userRole;
   final bool bypassAccessCheck;
+  final String? initialFrotaId;
+  final String? initialOperadorId;
 
   const CadastrarDispositivoScreen({
     super.key,
     this.userRole = 'ADM',
     this.bypassAccessCheck = false,
+    this.initialFrotaId,
+    this.initialOperadorId,
   });
 
   @override
@@ -119,6 +123,8 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
   @override
   void initState() {
     super.initState();
+    _selectedFrotaId = widget.initialFrotaId;
+    _selectedOperadorId = widget.initialOperadorId;
     _checkAccess();
     _fetchInitialData();
   }
@@ -134,12 +140,14 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
           _frotas = frotasList;
           _operadores = usersList.where((u) => u.cargo?.toLowerCase() == 'operador').toList();
 
-          // Pré-seleciona a frota ativa no contexto (se houver)
-          final contextFrota = AdminContextService().selectedFrota;
-          if (contextFrota != null && _frotas.any((f) => f.id == contextFrota.id)) {
-            _selectedFrotaId = contextFrota.id;
-          } else if (_frotas.isNotEmpty && _selectedFrotaId == null) {
-            _selectedFrotaId = _frotas.first.id;
+          // Pré-seleciona a frota ativa no contexto se não especificada
+          if (_selectedFrotaId == null) {
+            final contextFrota = AdminContextService().selectedFrota;
+            if (contextFrota != null && _frotas.any((f) => f.id == contextFrota.id)) {
+              _selectedFrotaId = contextFrota.id;
+            } else if (_frotas.isNotEmpty) {
+              _selectedFrotaId = _frotas.first.id;
+            }
           }
 
           _isLoading = false;
@@ -164,60 +172,140 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
     return val?.toInt() ?? int.tryParse(clean);
   }
 
+  void _mostrarErro(String mensagem) {
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          mensagem,
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: const Color(0xFFC23147),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      ),
+    );
+  }
+
   void _cadastrar() async {
     HapticFeedback.lightImpact();
 
-    // 1. Validação de Frota (Obrigatório no Banco de Dados - NOT NULL)
+    // 1. Frota vinculada (Obrigatório)
     if (_selectedFrotaId == null || _selectedFrotaId!.trim().isEmpty) {
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text(
-            'Selecione uma frota para vincular o dispositivo!',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-          ),
-          backgroundColor: const Color(0xFFC23147),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        ),
-      );
+      _mostrarErro('Selecione uma frota para vincular o dispositivo!');
       return;
     }
 
-    // 2. Validação de Nome do Dispositivo
+    // 2. Operador responsável (Obrigatório)
+    if (_selectedOperadorId == null || _selectedOperadorId!.trim().isEmpty) {
+      _mostrarErro('Selecione o operador responsável pelo dispositivo!');
+      return;
+    }
+
+    // 3. Nome do Dispositivo (Obrigatório)
     final nome = _nomeCtrl.text.trim();
     if (nome.isEmpty) {
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text(
-            'Informe o nome do dispositivo!',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-          ),
-          backgroundColor: const Color(0xFFC23147),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        ),
-      );
+      _mostrarErro('Informe o nome do dispositivo!');
       return;
     }
 
-    // 3. Validação lógica de temperatura (se ambas preenchidas)
+    // 4. Número de Série (Obrigatório)
+    final numSerie = _numSerieCtrl.text.trim();
+    if (numSerie.isEmpty) {
+      _mostrarErro('Informe o número de série do dispositivo!');
+      return;
+    }
+
+    // 5. Modelo do Dispositivo (Obrigatório)
+    final modeloDisp = _modeloDispCtrl.text.trim();
+    if (modeloDisp.isEmpty) {
+      _mostrarErro('Informe o modelo do dispositivo!');
+      return;
+    }
+
+    // 6. Modelo do Veículo (Obrigatório)
+    final modeloVeiculo = _modeloVeiculoCtrl.text.trim();
+    if (modeloVeiculo.isEmpty) {
+      _mostrarErro('Informe o modelo do veículo!');
+      return;
+    }
+
+    // 7. Placa do Veículo (Obrigatório)
+    final placa = _placaCtrl.text.trim();
+    if (placa.isEmpty) {
+      _mostrarErro('Informe a placa do veículo!');
+      return;
+    }
+
+    // 8. Temperatura Mínima (Obrigatório)
+    if (_tempMinCtrl.text.trim().isEmpty) {
+      _mostrarErro('Informe a temperatura mínima do dispositivo!');
+      return;
+    }
     final tempMin = _parseNum(_tempMinCtrl.text);
+    if (tempMin == null) {
+      _mostrarErro('Informe um valor numérico válido para a temperatura mínima!');
+      return;
+    }
+
+    // 9. Temperatura Máxima (Obrigatório)
+    if (_tempMaxCtrl.text.trim().isEmpty) {
+      _mostrarErro('Informe a temperatura máxima do dispositivo!');
+      return;
+    }
     final tempMax = _parseNum(_tempMaxCtrl.text);
-    if (tempMin != null && tempMax != null && tempMin > tempMax) {
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text(
-            'A temperatura mínima não pode ser maior que a temperatura máxima!',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-          ),
-          backgroundColor: const Color(0xFFC23147),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        ),
-      );
+    if (tempMax == null) {
+      _mostrarErro('Informe um valor numérico válido para a temperatura máxima!');
+      return;
+    }
+
+    // Validação de coerência das temperaturas
+    if (tempMin > tempMax) {
+      _mostrarErro('A temperatura mínima não pode ser maior que a temperatura máxima!');
+      return;
+    }
+
+    // 10. Umidade Máxima (Obrigatório)
+    if (_humidadeCtrl.text.trim().isEmpty) {
+      _mostrarErro('Informe a umidade máxima do dispositivo!');
+      return;
+    }
+    final humidade = _parseNum(_humidadeCtrl.text);
+    if (humidade == null) {
+      _mostrarErro('Informe um valor numérico válido para a umidade máxima!');
+      return;
+    }
+
+    // 11. Sensibilidade do Sensor de Vibração (Obrigatório)
+    if (_sensibilidadeCtrl.text.trim().isEmpty) {
+      _mostrarErro('Informe a sensibilidade do sensor de vibração!');
+      return;
+    }
+    final sensibilidade = _parseInt(_sensibilidadeCtrl.text);
+    if (sensibilidade == null) {
+      _mostrarErro('Informe um valor numérico válido para a sensibilidade de vibração!');
+      return;
+    }
+
+    // 12. Limite de Vibração (Obrigatório)
+    if (_limiteVibracaoCtrl.text.trim().isEmpty) {
+      _mostrarErro('Informe o limite de vibração!');
+      return;
+    }
+    final limiteVibracao = _parseInt(_limiteVibracaoCtrl.text);
+    if (limiteVibracao == null) {
+      _mostrarErro('Informe um valor numérico válido para o limite de vibração!');
+      return;
+    }
+
+    // 13. Intervalo entre Coletas de Dados (Obrigatório)
+    if (_intervaloCtrl.text.trim().isEmpty) {
+      _mostrarErro('Informe o intervalo entre coletas de dados!');
+      return;
+    }
+    final intervalo = _parseNum(_intervaloCtrl.text);
+    if (intervalo == null) {
+      _mostrarErro('Informe um valor numérico válido para o intervalo entre coletas!');
       return;
     }
 
@@ -227,17 +315,17 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
       await _supabase.cadastrarDispositivo(
         nomeDispositivo: nome,
         idFrota: _selectedFrotaId!,
-        idOperador: _selectedOperadorId,
-        numeroSerie: _numSerieCtrl.text.trim(),
-        modeloDispositivo: _modeloDispCtrl.text.trim(),
-        modeloVeiculo: _modeloVeiculoCtrl.text.trim(),
-        placaVeiculo: _placaCtrl.text.trim(),
+        idOperador: _selectedOperadorId!,
+        numeroSerie: numSerie,
+        modeloDispositivo: modeloDisp,
+        modeloVeiculo: modeloVeiculo,
+        placaVeiculo: placa,
         temperaturaMinima: tempMin,
         temperaturaMaxima: tempMax,
-        umidadeMaxima: _parseNum(_humidadeCtrl.text),
-        sensibilidadeVibracao: _parseInt(_sensibilidadeCtrl.text),
-        limiteVibracao: _parseInt(_limiteVibracaoCtrl.text),
-        intervaloDados: _parseNum(_intervaloCtrl.text),
+        umidadeMaxima: humidade,
+        sensibilidadeVibracao: sensibilidade,
+        limiteVibracao: limiteVibracao,
+        intervaloDados: intervalo,
       );
 
       HapticFeedback.mediumImpact();
@@ -347,6 +435,17 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
                 fontSize: 14,
               ),
             ),
+            if (isRequired) ...[
+              const SizedBox(width: 4),
+              const Text(
+                '*',
+                style: TextStyle(
+                  color: Color(0xFFC23147),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+            ],
             if (subtitle != null) ...[
               const SizedBox(width: 6),
               Text(
@@ -483,7 +582,7 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
                 // 3. SEÇÃO 1: DADOS DO DISPOSITIVO
                 const SizedBox(height: 24),
                 const Text(
-                  'Dados do dispositivo',
+                  'Dados do dispositivo (Todos obrigatórios)',
                   style: TextStyle(
                     color: Color(0xFF4A4A4A),
                     fontWeight: FontWeight.bold,
@@ -529,7 +628,7 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
                 // 4. SEÇÃO 2: VÍNCULO E DADOS DO VEÍCULO
                 const SizedBox(height: 20),
                 const Text(
-                  'Vínculo e Veículo',
+                  'Vínculo e Veículo (Todos obrigatórios)',
                   style: TextStyle(
                     color: Color(0xFF4A4A4A),
                     fontWeight: FontWeight.bold,
@@ -562,21 +661,18 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
                       const SizedBox(height: 12),
                       _buildDropdownField(
                         label: 'Operador responsável',
-                        subtitle: '(Opcional)',
+                        subtitle: '(Obrigatório)',
+                        isRequired: true,
                         value: _selectedOperadorId,
-                        hintText: 'Selecione o operador...',
-                        items: [
-                          const DropdownMenuItem<String>(
-                            value: null,
-                            child: Text('Nenhum operador atribuído', style: TextStyle(color: Colors.grey)),
-                          ),
-                          ..._operadores.map((u) => DropdownMenuItem(
-                                value: u.id,
-                                child: Text(u.nome ?? 'Sem nome'),
-                              )),
-                        ],
+                        hintText: _operadores.isEmpty ? 'Nenhum operador cadastrado' : 'Selecione o operador...',
+                        items: _operadores
+                            .map((u) => DropdownMenuItem(
+                                  value: u.id,
+                                  child: Text(u.nome ?? 'Sem nome'),
+                                ))
+                            .toList(),
                         onChanged: (val) {
-                          setState(() => _selectedOperadorId = val);
+                          if (val != null) setState(() => _selectedOperadorId = val);
                         },
                       ),
                       const SizedBox(height: 12),
@@ -608,7 +704,7 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
                 Row(
                   children: [
                     const Text(
-                      'Configurações dos sensores',
+                      'Configurações dos sensores (Todos obrigatórios)',
                       style: TextStyle(
                         color: Color(0xFF4A4A4A),
                         fontWeight: FontWeight.bold,
@@ -789,6 +885,7 @@ class CustomFormInput extends StatelessWidget {
   final Widget? suffixIcon;
   final TextCapitalization textCapitalization;
   final bool enabled;
+  final bool isRequired;
 
   const CustomFormInput({
     super.key,
@@ -801,6 +898,7 @@ class CustomFormInput extends StatelessWidget {
     this.suffixIcon,
     this.textCapitalization = TextCapitalization.none,
     this.enabled = true,
+    this.isRequired = true,
   });
 
   @override
@@ -808,13 +906,28 @@ class CustomFormInput extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: const TextStyle(
-            color: Color(0xFF4A4A4A),
-            fontWeight: FontWeight.bold,
-            fontSize: 14,
-          ),
+        Row(
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                color: Color(0xFF4A4A4A),
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+            if (isRequired) ...[
+              const SizedBox(width: 4),
+              const Text(
+                '*',
+                style: TextStyle(
+                  color: Color(0xFFC23147),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ],
         ),
         const SizedBox(height: 4),
         Container(

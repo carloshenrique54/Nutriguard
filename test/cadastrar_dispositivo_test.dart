@@ -103,9 +103,9 @@ void main() {
       expect(find.text('Voltar'), findsOneWidget);
 
       // Section titles
-      expect(find.text('Dados do dispositivo'), findsOneWidget);
-      expect(find.text('Vínculo e Veículo'), findsOneWidget);
-      expect(find.text('Configurações dos sensores'), findsOneWidget);
+      expect(find.text('Dados do dispositivo (Todos obrigatórios)'), findsOneWidget);
+      expect(find.text('Vínculo e Veículo (Todos obrigatórios)'), findsOneWidget);
+      expect(find.text('Configurações dos sensores (Todos obrigatórios)'), findsOneWidget);
       expect(find.text('Apenas números'), findsOneWidget);
 
       // Form labels
@@ -113,8 +113,9 @@ void main() {
       expect(find.text('Número de série'), findsOneWidget);
       expect(find.text('Modelo do dispositivo'), findsOneWidget);
       expect(find.text('Frota vinculada'), findsOneWidget);
-      expect(find.text('(Obrigatório)'), findsOneWidget);
       expect(find.text('Operador responsável'), findsOneWidget);
+      expect(find.text('(Obrigatório)'), findsNWidgets(2));
+      expect(find.text('*'), findsWidgets);
       expect(find.text('Modelo do veículo'), findsOneWidget);
       expect(find.text('Placa do veículo'), findsOneWidget);
 
@@ -154,6 +155,32 @@ void main() {
 
       // Should show red SnackBar demanding fleet selection
       expect(find.text('Selecione uma frota para vincular o dispositivo!'), findsOneWidget);
+    });
+
+    testWidgets('2b. Validation prevents submission when operator is not selected', (tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      await tester.pumpWidget(const MaterialApp(
+        home: CadastrarDispositivoScreen(
+          bypassAccessCheck: true,
+          initialFrotaId: 'frota-uuid-123',
+        ),
+      ));
+      await tester.pump();
+
+      // Tap submit with fleet selected but no operator selected
+      final submitBtn = find.text('Cadastrar Dispositivo');
+      await tester.ensureVisible(submitBtn);
+      await tester.tap(submitBtn);
+      await tester.pumpAndSettle();
+
+      // Should show red SnackBar demanding operator selection
+      expect(find.text('Selecione o operador responsável pelo dispositivo!'), findsOneWidget);
     });
 
     testWidgets('3. Sensor inputs only accept numbers and formatters block letters', (tester) async {

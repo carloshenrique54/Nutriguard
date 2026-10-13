@@ -39,6 +39,22 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
     });
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_selectedDevice == null) {
+      final routeArg = ModalRoute.of(context)?.settings.arguments;
+      if (routeArg is DispositivoModel) {
+        _selectedDevice = routeArg;
+      } else if (widget.initialDevice != null) {
+        _selectedDevice = widget.initialDevice;
+      }
+      if (_selectedDevice != null && !AdminContextService().hasDevice) {
+        AdminContextService().setDevice(_selectedDevice);
+      }
+    }
+  }
+
   Future<void> _fetchData() async {
     setState(() => _isLoading = true);
     try {
@@ -59,22 +75,22 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
         argDevice = routeArg;
       } else if (widget.initialDevice != null) {
         argDevice = widget.initialDevice;
+      } else if (_selectedDevice != null) {
+        argDevice = _selectedDevice;
       } else if (role == 'admin' && AdminContextService().selectedDevice != null) {
         argDevice = AdminContextService().selectedDevice;
       }
 
-      // Se ADM tem argDevice com frota e não tínhamos frota selecionada, resolve a frota de origem
+      // Se ADM tem argDevice com frota, resolve e sincroniza a frota de origem com o AdminContextService
       if (role == 'admin' && argDevice != null) {
-        if (AdminContextService().selectedFrota == null && argDevice.idFrota != null) {
+        FrotaModel? matchedFrota = AdminContextService().selectedFrota;
+        if (argDevice.idFrota != null && (matchedFrota == null || matchedFrota.id != argDevice.idFrota)) {
           try {
             final allFrotas = await _supabase.getFrotas();
-            final matched = allFrotas.where((f) => f.id == argDevice!.idFrota).firstOrNull;
-            if (matched != null) {
-              AdminContextService().setFrota(matched);
-            }
+            matchedFrota = allFrotas.where((f) => f.id == argDevice!.idFrota).firstOrNull;
           } catch (_) {}
         }
-        AdminContextService().setDevice(argDevice, frota: AdminContextService().selectedFrota);
+        AdminContextService().setDevice(argDevice, frota: matchedFrota ?? AdminContextService().selectedFrota);
       }
 
       // 1. Filtrar veículos de acordo com a Matriz de Permissões:
@@ -83,12 +99,14 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
       // Operador: Apenas o veículo vinculado a si mesmo
       List<DispositivoModel> devices = [];
       if (role == 'admin') {
-        if (AdminContextService().selectedFrota != null) {
-          devices = await _supabase.getDispositivosByFrota(AdminContextService().selectedFrota!.id);
-        } else if (argDevice != null) {
-          devices = [argDevice];
-        } else {
-          devices = [];
+        final frotaId = AdminContextService().selectedFrota?.id ?? argDevice?.idFrota;
+        if (frotaId != null) {
+          try {
+            devices = await _supabase.getDispositivosByFrota(frotaId);
+          } catch (_) {}
+        }
+        if (argDevice != null && !devices.any((d) => d.id == argDevice!.id)) {
+          devices.add(argDevice);
         }
       } else if (role == 'gerente') {
         final frotas = await _supabase.getFrotasByGerente(user.id);
@@ -96,20 +114,23 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
           final devs = await _supabase.getDispositivosByFrota(f.id);
           devices.addAll(devs);
         }
+        if (argDevice != null && !devices.any((d) => d.id == argDevice!.id)) {
+          devices.add(argDevice);
+        }
       } else {
         // Operador
         devices = await _supabase.getDispositivosByOperador(user.id);
+        if (argDevice != null && !devices.any((d) => d.id == argDevice!.id)) {
+          devices.add(argDevice);
+        }
       }
 
       _accessibleDevices = devices;
 
       // 2. Determinar o veículo selecionado
-      final target = argDevice;
-      if (target != null && devices.any((d) => d.id == target.id)) {
-        _selectedDevice = devices.firstWhere((d) => d.id == target.id);
-      } else if (target != null) {
-        _selectedDevice = target;
-      } else if (role != 'admin' && devices.isNotEmpty) {
+      if (argDevice != null) {
+        _selectedDevice = devices.firstWhere((d) => d.id == argDevice!.id, orElse: () => argDevice!);
+      } else if (devices.isNotEmpty) {
         _selectedDevice = devices.first;
       } else {
         _selectedDevice = null;
@@ -121,7 +142,11 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
 
       // 3. Carregar dados de telemetria se tiver veículo selecionado
       if (_selectedDevice != null) {
-        await _loadTelemetryForDevice(_selectedDevice!);
+        try {
+          await _loadTelemetryForDevice(_selectedDevice!);
+        } catch (err) {
+          debugPrint('Erro ao carregar telemetria do veículo: $err');
+        }
       }
 
       if (mounted) setState(() => _isLoading = false);

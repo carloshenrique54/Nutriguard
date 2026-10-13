@@ -50,7 +50,11 @@ class AdminContextService extends ChangeNotifier {
     _selectedDevice = device;
     if (frota != null) {
       _selectedFrota = frota;
-    } else if (device != null && device.idFrota != null) {
+      notifyListeners();
+      return;
+    }
+    notifyListeners();
+    if (device != null && device.idFrota != null) {
       // Se não temos a frota em memória ou é diferente, carrega a frota de origem
       if (_selectedFrota == null || _selectedFrota!.id != device.idFrota) {
         try {
@@ -60,18 +64,23 @@ class AdminContextService extends ChangeNotifier {
             final matching = frotas.where((f) => f.id == device.idFrota).firstOrNull;
             if (matching != null) {
               _selectedFrota = matching;
+              notifyListeners();
             }
           }
         } catch (_) {}
       }
     }
-    notifyListeners();
   }
 
   /// Limpa apenas o contexto do veículo, mantendo a frota ativa.
   void clearVehicle() {
     _selectedDevice = null;
     notifyListeners();
+  }
+
+  /// Limpa o contexto da frota e do veículo.
+  void clearFrota() {
+    setFrota(null);
   }
 
   /// Limpa todo o contexto de frota e veículo (ex: ao retornar à tela de seleção de frotas).

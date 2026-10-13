@@ -113,9 +113,12 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
   }
 
   Object? _resolveRouteArgs(String routeName) {
+    final bool isAdmVehicle = _userRole == 'admin' && (_adminContext.hasDevice || widget.isVehicleContext == true);
+    final bool effectiveIsVehicle = widget.isVehicleContext ?? ((_userRole == 'admin') ? isAdmVehicle : _isVehicle);
+
     if (_userRole == 'admin') {
-      if (_adminContext.hasDevice) {
-        return _adminContext.selectedDevice;
+      if (effectiveIsVehicle) {
+        return widget.currentDevice ?? _adminContext.selectedDevice;
       } else if (_adminContext.hasFrota) {
         return _adminContext.selectedFrota;
       }
@@ -137,8 +140,8 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
 
   @override
   Widget build(BuildContext context) {
-    final bool isAdmVehicle = _userRole == 'admin' && _adminContext.hasDevice;
-    final bool effectiveIsVehicle = (_userRole == 'admin') ? isAdmVehicle : _isVehicle;
+    final bool isAdmVehicle = _userRole == 'admin' && (_adminContext.hasDevice || widget.isVehicleContext == true);
+    final bool effectiveIsVehicle = widget.isVehicleContext ?? ((_userRole == 'admin') ? isAdmVehicle : _isVehicle);
 
     final String alertasRoute = effectiveIsVehicle ? '/alertas-veiculo' : '/alertas-frota';
     final String relatoriosRoute = effectiveIsVehicle ? '/relatorios-veiculo' : '/relatorios-frota';

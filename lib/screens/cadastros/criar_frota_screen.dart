@@ -72,11 +72,23 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
 
   void _criarFrota() async {
     HapticFeedback.lightImpact();
-    if (_nomeCtrl.text.isEmpty) {
+    if (_nomeCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Preencha o nome da frota!', style: TextStyle(color: Colors.white)),
-          backgroundColor: Colors.red,
+          backgroundColor: const Color(0xFFC23147),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        ),
+      );
+      return;
+    }
+
+    if (_selectedGerenteId == null || _selectedGerenteId!.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Selecione o gerente responsável pela frota!', style: TextStyle(color: Colors.white)),
+          backgroundColor: const Color(0xFFC23147),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         ),
@@ -216,13 +228,26 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
               const SizedBox(height: 24),
               Row(
                 children: [
-                  const Text(
-                    'Nome da frota',
-                    style: TextStyle(
-                      color: Color(0xFF333333),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
+                  const Row(
+                    children: [
+                      Text(
+                        'Nome da frota',
+                        style: TextStyle(
+                          color: Color(0xFF333333),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      SizedBox(width: 4),
+                      Text(
+                        '*',
+                        style: TextStyle(
+                          color: Color(0xFFC23147),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
                   ),
                   const Spacer(),
                   Material(
@@ -271,13 +296,35 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
 
               // 3. SECÇÃO GERENTE RESPONSÁVEL
               const SizedBox(height: 16),
-              const Text(
-                'Gerente responsável',
-                style: TextStyle(
-                  color: Color(0xFF333333),
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
+              const Row(
+                children: [
+                  Text(
+                    'Gerente responsável',
+                    style: TextStyle(
+                      color: Color(0xFF333333),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  SizedBox(width: 4),
+                  Text(
+                    '*',
+                    style: TextStyle(
+                      color: Color(0xFFC23147),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  SizedBox(width: 6),
+                  Text(
+                    '(Obrigatório)',
+                    style: TextStyle(
+                      color: Color(0xFFC23147),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
               Container(

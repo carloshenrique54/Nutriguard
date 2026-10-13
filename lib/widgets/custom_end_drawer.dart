@@ -547,6 +547,12 @@ class _MenuContentState extends State<_MenuContent> {
         isEnabled: true,
       ),
       const MenuListItem(
+        icon: Icons.devices_other_outlined,
+        title: 'Listar dispositivos',
+        routeName: '/listar-dispositivos',
+        isEnabled: true,
+      ),
+      const MenuListItem(
         icon: Icons.add_box_outlined,
         title: 'Cadastrar dispositivo',
         routeName: '/cadastrar-dispositivo',

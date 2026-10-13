@@ -63,6 +63,10 @@ void main() {
       // Frotas is accessible (scroll to it if offscreen)
       await tester.scrollUntilVisible(find.text('Frotas (Seleção)'), 50);
       expect(find.text('Frotas (Seleção)'), findsOneWidget);
+
+      // Listar dispositivos is accessible in GERENCIAMENTO
+      await tester.scrollUntilVisible(find.text('Listar dispositivos'), 50);
+      expect(find.text('Listar dispositivos'), findsOneWidget);
     });
 
     testWidgets('2. Fleet Selected: Fleet options are enabled and GPS remains unavailable', (tester) async {
