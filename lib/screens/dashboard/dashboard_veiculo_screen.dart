@@ -199,14 +199,18 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bool hideBottomNav = _isLoading || (_userRole == 'gerente' && _accessibleDevices.isEmpty && _selectedDevice == null);
+
     return Scaffold(
       extendBody: true,
       backgroundColor: const Color(0xFFFFF2E0),
-      bottomNavigationBar: CustomBottomNavBar(
-        selectedIndex: 2,
-        isVehicleContext: true,
-        currentDevice: _selectedDevice,
-      ),
+      bottomNavigationBar: hideBottomNav
+          ? null
+          : CustomBottomNavBar(
+              selectedIndex: 2,
+              isVehicleContext: true,
+              currentDevice: _selectedDevice,
+            ),
       body: WatermarkBackground(
         child: SafeArea(
           child: _isLoading
@@ -423,7 +427,10 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
         const Spacer(),
         Builder(
           builder: (ctx) => GestureDetector(
-            onTap: () => CustomEndDrawer.showMenu(context),
+            onTap: () => CustomEndDrawer.showMenu(
+              context,
+              hasFleetsOverride: _userRole == 'gerente' ? _accessibleDevices.isNotEmpty : null,
+            ),
             child: SizedBox(
               width: 48,
               height: 48,

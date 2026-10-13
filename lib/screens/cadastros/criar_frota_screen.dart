@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../widgets/custom_end_drawer.dart';
 import '../../services/supabase_service.dart';
+import '../../services/admin_context_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/models.dart';
-import '../../widgets/animated_components.dart';
 import '../../widgets/watermark_background.dart';
 
 class VeiculoItem {
@@ -16,7 +16,18 @@ class VeiculoItem {
 }
 
 class CriarFrotaScreen extends StatefulWidget {
-  const CriarFrotaScreen({super.key});
+  final bool bypassAccessCheck;
+  final List<UsuarioModel>? initialUsers;
+  final List<FrotaModel>? initialFrotas;
+  final List<DispositivoModel>? initialDispositivos;
+
+  const CriarFrotaScreen({
+    super.key,
+    this.bypassAccessCheck = false,
+    this.initialUsers,
+    this.initialFrotas,
+    this.initialDispositivos,
+  });
 
   @override
   State<CriarFrotaScreen> createState() => _CriarFrotaScreenState();
@@ -29,6 +40,7 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
   List<VeiculoItem> veiculos = [];
   List<UsuarioModel> _gerentes = [];
   bool _isLoading = true;
+  bool _isSubmitting = false;
 
   @override
   void initState() {
@@ -40,15 +52,38 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
   Future<void> _fetchData() async {
     setState(() => _isLoading = true);
     try {
-      final dispositivos = await _supabase.getDispositivos();
+      final dispositivos = widget.initialDispositivos ?? await _supabase.getDispositivos();
+      final frotas = widget.initialFrotas ?? await _supabase.getFrotas();
       
-      // Obter todos os usuários (necessário filtrar gerentes e operadores localmente ou via API)
-      final res = await Supabase.instance.client.from('Usuarios').select();
-      final allUsers = (res as List).map((e) => UsuarioModel.fromJson(e)).toList();
+      final List<UsuarioModel> allUsers;
+      if (widget.initialUsers != null) {
+        allUsers = widget.initialUsers!;
+      } else {
+        final res = await Supabase.instance.client.from('Usuarios').select();
+        allUsers = (res as List).map((e) => UsuarioModel.fromJson(e)).toList();
+      }
       
-      _gerentes = allUsers.where((u) => u.cargo?.toLowerCase() == 'gerente').toList();
+      // Identificar gerentes que já possuem frota vinculada
+      final gerentesComFrotaIds = frotas
+          .map((f) => f.idGerente?.trim())
+          .where((id) => id != null && id.isNotEmpty)
+          .toSet();
 
-      veiculos = dispositivos.map((d) {
+      // Apenas gerentes que NÃO têm frota definida devem aparecer como opção
+      _gerentes = allUsers
+          .where((u) =>
+              (u.role == 'gerente' || u.cargo?.trim().toLowerCase() == 'gerente') &&
+              !gerentesComFrotaIds.contains(u.id.trim()))
+          .toList();
+
+      if (_selectedGerenteId != null && !_gerentes.any((g) => g.id.trim() == _selectedGerenteId!.trim())) {
+        _selectedGerenteId = null;
+      }
+
+      // Filtrar apenas veículos que NÃO têm frota vinculada
+      final semFrota = dispositivos.where((d) => d.idFrota == null || d.idFrota!.isEmpty).toList();
+
+      veiculos = semFrota.map((d) {
         final op = allUsers.firstWhere((u) => u.id == d.idOperador, orElse: () => UsuarioModel(id: ''));
         return VeiculoItem(
           device: d,
@@ -72,7 +107,10 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
 
   void _criarFrota() async {
     HapticFeedback.lightImpact();
+    if (_isSubmitting) return;
+
     if (_nomeCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Preencha o nome da frota!', style: TextStyle(color: Colors.white)),
@@ -85,6 +123,7 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
     }
 
     if (_selectedGerenteId == null || _selectedGerenteId!.trim().isEmpty) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Selecione o gerente responsável pela frota!', style: TextStyle(color: Colors.white)),
@@ -96,25 +135,52 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
       return;
     }
 
+    setState(() => _isSubmitting = true);
+
     // Insert new frota
     try {
+      // Verificação em tempo real: garante que o gerente não possui frota atribuída
+      final frotasAtuais = await _supabase.getFrotas();
+      if (frotasAtuais.any((f) => f.idGerente != null && f.idGerente!.trim() == _selectedGerenteId!.trim())) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+              'Este gerente já possui uma frota vinculada! Selecione outro gerente.',
+              style: TextStyle(color: Colors.white),
+            ),
+            backgroundColor: const Color(0xFFC23147),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          ),
+        );
+        setState(() => _isSubmitting = false);
+        return;
+      }
       final response = await Supabase.instance.client.from('Frotas').insert({
-        'nome': _nomeCtrl.text,
+        'nome': _nomeCtrl.text.trim(),
         'id_gerente': _selectedGerenteId,
       }).select().single();
       
-      final newFrotaId = response['id'];
+      final newFrota = FrotaModel.fromJson(response);
+      final newFrotaId = newFrota.id;
 
-      // Atualizar o id_frota nos dispositivos selecionados
+      // Atualizar o id_frota nos dispositivos selecionados (se houver algum)
       final selectedDevices = veiculos.where((v) => v.isSelected).map((v) => v.device.id).toList();
       for (var devId in selectedDevices) {
         await Supabase.instance.client.from('Dispositivos').update({'id_frota': newFrotaId}).eq('id', devId);
       }
 
+      // Ativa imediatamente a nova frota no contexto administrativo
+      AdminContextService().setFrota(newFrota);
+      AdminContextService().clearVehicle();
+
       HapticFeedback.mediumImpact();
       _nomeCtrl.clear();
       
       if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Frota criada com sucesso!', style: TextStyle(color: Colors.white)),
@@ -123,7 +189,7 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         ),
       );
-      Navigator.pop(context);
+      Navigator.pushReplacementNamed(context, '/listar-frotas');
     } catch (e) {
       if (!mounted) return;
       final msg = SupabaseService.formatarErro(e);
@@ -136,6 +202,10 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         ),
       );
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
     }
   }
 
@@ -146,6 +216,7 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
   }
 
   Future<void> _checkAccess() async {
+    if (widget.bypassAccessCheck) return;
     final currentUserId = _supabase.currentUser?.id;
     if (currentUserId == null) {
       if (mounted) Navigator.pushReplacementNamed(context, '/login');
@@ -335,16 +406,28 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
                 ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
-                    value: _selectedGerenteId,
-                    hint: const Text('Selecione...'),
+                    value: _gerentes.any((u) => u.id == _selectedGerenteId) ? _selectedGerenteId : null,
+                    hint: Text(
+                      _isLoading
+                          ? 'Carregando gerentes...'
+                          : _gerentes.isEmpty
+                              ? 'Nenhum gerente disponível sem frota'
+                              : 'Selecione o gerente...',
+                      style: TextStyle(
+                        color: _gerentes.isEmpty ? Colors.grey.shade500 : Colors.black54,
+                        fontSize: 14,
+                      ),
+                    ),
                     isExpanded: true,
                     icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFFC23147)),
                     items: _gerentes
                         .map((u) => DropdownMenuItem(value: u.id, child: Text(u.nome ?? 'Sem nome')))
                         .toList(),
-                    onChanged: (val) {
-                      if (val != null) setState(() => _selectedGerenteId = val);
-                    },
+                    onChanged: (_isSubmitting || _gerentes.isEmpty)
+                        ? null
+                        : (val) {
+                            setState(() => _selectedGerenteId = val);
+                          },
                   ),
                 ),
               ),
@@ -354,16 +437,29 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'Selecionar veiculos',
-                    style: TextStyle(
-                      color: Color(0xFF333333),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
+                  const Row(
+                    children: [
+                      Text(
+                        'Selecionar veículos',
+                        style: TextStyle(
+                          color: Color(0xFF333333),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      SizedBox(width: 6),
+                      Text(
+                        '(Opcional)',
+                        style: TextStyle(
+                          color: Colors.black54,
+                          fontWeight: FontWeight.normal,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ),
                   Text(
-                    '$selectedCount veiculos',
+                    '$selectedCount veículos',
                     style: const TextStyle(
                       color: Color(0xFF8DC63F), // Verde Claro
                       fontWeight: FontWeight.bold,
@@ -393,7 +489,18 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
                     ),
                     child: _isLoading 
                       ? const Center(child: CircularProgressIndicator(color: Color(0xFFC23147)))
-                      : Scrollbar(
+                      : veiculos.isEmpty
+                          ? const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(24.0),
+                                child: Text(
+                                  'Nenhum veículo disponível sem frota',
+                                  style: TextStyle(color: Colors.black54, fontSize: 14),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            )
+                          : Scrollbar(
                       thickness: 6,
                       radius: const Radius.circular(3),
                       thumbVisibility: true,
@@ -476,9 +583,45 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
               
               // 6. BOTÃO CRIAR FROTA
               const SizedBox(height: 16),
-              MorphingSubmitButton(
-                text: 'Criar frota',
-                onPressed: _criarFrota,
+              SizedBox(
+                width: double.infinity,
+                height: 54,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFC23147),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 2,
+                    shadowColor: const Color(0x4DC23147),
+                  ),
+                  onPressed: _isSubmitting ? null : _criarFrota,
+                  child: _isSubmitting
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2.5,
+                          ),
+                        )
+                      : const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.add_circle_outline, color: Colors.white, size: 20),
+                            SizedBox(width: 8),
+                            Text(
+                              'Criar frota',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
               ),
             ],
           ),

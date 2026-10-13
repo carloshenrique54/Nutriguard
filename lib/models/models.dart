@@ -88,9 +88,9 @@ class FrotaModel {
 
   factory FrotaModel.fromJson(Map<String, dynamic> json) {
     return FrotaModel(
-      id: json['id'],
+      id: json['id']?.toString() ?? '',
       fotoUrl: json['foto_url'] ?? json['avatar_url'],
-      idGerente: json['id_gerente'],
+      idGerente: json['id_gerente']?.toString(),
       nome: json['nome'],
       createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at']) : null,
       updatedAt: json['updated_at'] != null ? DateTime.tryParse(json['updated_at']) : null,

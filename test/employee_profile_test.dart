@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:nutriguard1/models/models.dart';
 import 'package:nutriguard1/screens/perfil/perfil_screen.dart';
 import 'package:nutriguard1/screens/listagens/listar_operadores_screen.dart';
+import 'package:nutriguard1/widgets/custom_bottom_nav_bar.dart';
 
 void main() {
   setUpAll(() async {
@@ -131,7 +132,6 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-
       expect(find.text('Perfil do Funcionário'), findsOneWidget);
       expect(find.text('Mariana Gerente'), findsOneWidget);
       expect(find.text('mariana.ger@nutriguard.com'), findsOneWidget);
@@ -226,6 +226,58 @@ void main() {
 
       // Verify contact
       expect(find.text('(11) 98888-7777'), findsOneWidget);
+    });
+
+    testWidgets('7. PerfilScreen bottom navigation menu is grey and disabled', (tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PerfilScreen(role: UserRole.adm, usuario: testOperador),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final navBarFinder = find.byType(CustomBottomNavBar);
+      expect(navBarFinder, findsOneWidget);
+
+      final navBar = tester.widget<CustomBottomNavBar>(navBarFinder);
+      expect(navBar.isDisabled, isTrue);
+
+      // Verify all items are rendered in grey (Color(0xFF757575))
+      final texts = ['Alertas', 'Relatórios', 'Dashboard', 'Histórico', 'GPS'];
+      for (final label in texts) {
+        final textWidget = tester.widget<Text>(find.descendant(
+          of: navBarFinder,
+          matching: find.text(label),
+        ));
+        expect(textWidget.style?.color, const Color(0xFF757575));
+      }
+
+      final icons = [
+        Icons.notifications_none,
+        Icons.description_outlined,
+        Icons.dashboard_rounded,
+        Icons.access_time,
+        Icons.location_on_outlined,
+      ];
+      for (final icon in icons) {
+        final iconWidget = tester.widget<Icon>(find.descendant(
+          of: navBarFinder,
+          matching: find.byIcon(icon),
+        ));
+        expect(iconWidget.color, const Color(0xFF757575));
+      }
+
+      // Tapping on a disabled item does not trigger navigation or error
+      await tester.tap(find.text('Dashboard'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PerfilScreen), findsOneWidget);
     });
   });
 }

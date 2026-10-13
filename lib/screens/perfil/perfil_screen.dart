@@ -255,7 +255,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
     return Scaffold(
       extendBody: true,
       backgroundColor: const Color(0xFFFFF2E0),
-      bottomNavigationBar: const CustomBottomNavBar(selectedIndex: -1),
+      bottomNavigationBar: const CustomBottomNavBar(selectedIndex: -1, isDisabled: true),
       body: WatermarkBackground(
         child: SafeArea(
           child: _isLoading 

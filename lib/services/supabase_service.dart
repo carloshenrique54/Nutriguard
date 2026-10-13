@@ -288,7 +288,7 @@ class SupabaseService {
           msg.contains('null value in column') ||
           details.contains('null value')) {
         if (msg.contains('id_frota') || details.contains('id_frota')) {
-          return 'Selecione uma frota para vincular este dispositivo.';
+          return 'O banco de dados ainda possui restrição NOT NULL na coluna id_frota da tabela Dispositivos. Execute o script no Supabase para permitir dispositivos sem frota.';
         }
         if (msg.contains('id_operador') || details.contains('id_operador')) {
           return 'Selecione o operador responsável pelo dispositivo.';
@@ -338,7 +338,7 @@ class SupabaseService {
     }
 
     if (lower.contains('null value in column "id_frota"') || (lower.contains('id_frota') && lower.contains('not-null'))) {
-      return 'Selecione uma frota para vincular este dispositivo.';
+      return 'O banco de dados ainda possui restrição NOT NULL na coluna id_frota da tabela Dispositivos. Execute o script no Supabase para permitir dispositivos sem frota.';
     }
     if (lower.contains('violates not-null constraint') || lower.contains('null value in column')) {
       return 'Preencha todos os campos obrigatórios antes de prosseguir.';
@@ -496,7 +496,7 @@ class SupabaseService {
 
   Future<DispositivoModel> cadastrarDispositivo({
     required String nomeDispositivo,
-    required String idFrota,
+    String? idFrota,
     required String idOperador,
     required String numeroSerie,
     required String modeloDispositivo,
@@ -512,7 +512,6 @@ class SupabaseService {
     try {
       final payload = <String, dynamic>{
         'nome_dispositivo': nomeDispositivo,
-        'id_frota': idFrota,
         'id_operador': idOperador,
         'numero_serie': numeroSerie,
         'modelo_dispositivo': modeloDispositivo,
@@ -525,6 +524,9 @@ class SupabaseService {
         'limite_vibracao': limiteVibracao,
         'intervalo_dados': intervaloDados,
       };
+      if (idFrota != null && idFrota.isNotEmpty) {
+        payload['id_frota'] = idFrota;
+      }
 
       final res = await _client.from('Dispositivos').insert(payload).select().single();
       return DispositivoModel.fromJson(res);

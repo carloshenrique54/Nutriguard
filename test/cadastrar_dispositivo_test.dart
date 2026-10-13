@@ -104,7 +104,7 @@ void main() {
 
       // Section titles
       expect(find.text('Dados do dispositivo (Todos obrigatórios)'), findsOneWidget);
-      expect(find.text('Vínculo e Veículo (Todos obrigatórios)'), findsOneWidget);
+      expect(find.text('Vínculo e Veículo (Frota opcional)'), findsOneWidget);
       expect(find.text('Configurações dos sensores (Todos obrigatórios)'), findsOneWidget);
       expect(find.text('Apenas números'), findsOneWidget);
 
@@ -114,7 +114,8 @@ void main() {
       expect(find.text('Modelo do dispositivo'), findsOneWidget);
       expect(find.text('Frota vinculada'), findsOneWidget);
       expect(find.text('Operador responsável'), findsOneWidget);
-      expect(find.text('(Obrigatório)'), findsNWidgets(2));
+      expect(find.text('(Obrigatório)'), findsOneWidget);
+      expect(find.text('(Opcional)'), findsOneWidget);
       expect(find.text('*'), findsWidgets);
       expect(find.text('Modelo do veículo'), findsOneWidget);
       expect(find.text('Placa do veículo'), findsOneWidget);
@@ -136,7 +137,7 @@ void main() {
       expect(find.text('Cadastrar Dispositivo'), findsOneWidget);
     });
 
-    testWidgets('2. Validation prevents submission when fleet is not selected', (tester) async {
+    testWidgets('2. Fleet is optional; validation prevents submission when operator is not selected', (tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() {
@@ -153,8 +154,9 @@ void main() {
       await tester.tap(submitBtn);
       await tester.pumpAndSettle();
 
-      // Should show red SnackBar demanding fleet selection
-      expect(find.text('Selecione uma frota para vincular o dispositivo!'), findsOneWidget);
+      // Fleet is optional: should NOT demand fleet, demands operator instead
+      expect(find.text('Selecione uma frota para vincular o dispositivo!'), findsNothing);
+      expect(find.text('Selecione o operador responsável pelo dispositivo!'), findsOneWidget);
     });
 
     testWidgets('2b. Validation prevents submission when operator is not selected', (tester) async {
@@ -242,14 +244,14 @@ void main() {
       );
 
       final formatted = SupabaseService.formatarErro(error);
-      expect(formatted, 'Selecione uma frota para vincular este dispositivo.');
+      expect(formatted, contains('restrição NOT NULL na coluna id_frota'));
 
       // Also simulate string exception containing the same message
       final strError = Exception(
         'PostgrestException: null value in column "id_frota" of relation "Dispositivos" violates not-null constraint',
       );
       final formattedStr = SupabaseService.formatarErro(strError);
-      expect(formattedStr, 'Selecione uma frota para vincular este dispositivo.');
+      expect(formattedStr, contains('restrição NOT NULL na coluna id_frota'));
     });
   });
 }

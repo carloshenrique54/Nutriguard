@@ -145,8 +145,6 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
             final contextFrota = AdminContextService().selectedFrota;
             if (contextFrota != null && _frotas.any((f) => f.id == contextFrota.id)) {
               _selectedFrotaId = contextFrota.id;
-            } else if (_frotas.isNotEmpty) {
-              _selectedFrotaId = _frotas.first.id;
             }
           }
 
@@ -190,11 +188,7 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
   void _cadastrar() async {
     HapticFeedback.lightImpact();
 
-    // 1. Frota vinculada (Obrigatório)
-    if (_selectedFrotaId == null || _selectedFrotaId!.trim().isEmpty) {
-      _mostrarErro('Selecione uma frota para vincular o dispositivo!');
-      return;
-    }
+    // 1. Frota vinculada (Opcional - sem bloqueio)
 
     // 2. Operador responsável (Obrigatório)
     if (_selectedOperadorId == null || _selectedOperadorId!.trim().isEmpty) {
@@ -314,7 +308,7 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
     try {
       await _supabase.cadastrarDispositivo(
         nomeDispositivo: nome,
-        idFrota: _selectedFrotaId!,
+        idFrota: _selectedFrotaId,
         idOperador: _selectedOperadorId!,
         numeroSerie: numSerie,
         modeloDispositivo: modeloDisp,
@@ -628,7 +622,7 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
                 // 4. SEÇÃO 2: VÍNCULO E DADOS DO VEÍCULO
                 const SizedBox(height: 20),
                 const Text(
-                  'Vínculo e Veículo (Todos obrigatórios)',
+                  'Vínculo e Veículo (Frota opcional)',
                   style: TextStyle(
                     color: Color(0xFF4A4A4A),
                     fontWeight: FontWeight.bold,
@@ -647,15 +641,26 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
                     children: [
                       _buildDropdownField(
                         label: 'Frota vinculada',
-                        subtitle: '(Obrigatório)',
-                        isRequired: true,
-                        value: _selectedFrotaId,
-                        hintText: _frotas.isEmpty ? 'Nenhuma frota encontrada' : 'Selecione a frota...',
-                        items: _frotas
-                            .map((f) => DropdownMenuItem(value: f.id, child: Text(f.nome ?? 'Frota sem nome')))
-                            .toList(),
+                        subtitle: '(Opcional)',
+                        isRequired: false,
+                        value: _selectedFrotaId ?? '',
+                        hintText: _frotas.isEmpty ? 'Nenhuma frota encontrada' : 'Selecione a frota (Opcional)...',
+                        items: [
+                          const DropdownMenuItem(
+                            value: '',
+                            child: Text('Nenhuma frota (Sem frota)', style: TextStyle(color: Colors.black54)),
+                          ),
+                          if (_selectedFrotaId != null &&
+                              _selectedFrotaId!.isNotEmpty &&
+                              !_frotas.any((f) => f.id == _selectedFrotaId))
+                            DropdownMenuItem(
+                              value: _selectedFrotaId,
+                              child: const Text('Frota selecionada'),
+                            ),
+                          ..._frotas.map((f) => DropdownMenuItem(value: f.id, child: Text(f.nome ?? 'Frota sem nome'))),
+                        ],
                         onChanged: (val) {
-                          if (val != null) setState(() => _selectedFrotaId = val);
+                          setState(() => _selectedFrotaId = (val == null || val.isEmpty) ? null : val);
                         },
                       ),
                       const SizedBox(height: 12),
@@ -665,12 +670,19 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
                         isRequired: true,
                         value: _selectedOperadorId,
                         hintText: _operadores.isEmpty ? 'Nenhum operador cadastrado' : 'Selecione o operador...',
-                        items: _operadores
-                            .map((u) => DropdownMenuItem(
-                                  value: u.id,
-                                  child: Text(u.nome ?? 'Sem nome'),
-                                ))
-                            .toList(),
+                        items: [
+                          if (_selectedOperadorId != null &&
+                              _selectedOperadorId!.isNotEmpty &&
+                              !_operadores.any((u) => u.id == _selectedOperadorId))
+                            DropdownMenuItem(
+                              value: _selectedOperadorId,
+                              child: const Text('Operador selecionado'),
+                            ),
+                          ..._operadores.map((u) => DropdownMenuItem(
+                                value: u.id,
+                                child: Text(u.nome ?? 'Sem nome'),
+                              )),
+                        ],
                         onChanged: (val) {
                           if (val != null) setState(() => _selectedOperadorId = val);
                         },

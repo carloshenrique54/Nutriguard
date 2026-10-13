@@ -5,7 +5,7 @@ import '../services/supabase_service.dart';
 import '../services/admin_context_service.dart';
 
 class CustomEndDrawer {
-  static void showMenu(BuildContext context, {String? userRoleOverride}) {
+  static void showMenu(BuildContext context, {String? userRoleOverride, bool? hasFleetsOverride}) {
     HapticFeedback.lightImpact();
     showGeneralDialog(
       context: context,
@@ -51,7 +51,10 @@ class CustomEndDrawer {
                         color: Color(0xFFFFF2E0),
                         borderRadius: BorderRadius.horizontal(left: Radius.circular(24)),
                       ),
-                      child: _MenuContent(userRoleOverride: userRoleOverride),
+                      child: _MenuContent(
+                        userRoleOverride: userRoleOverride,
+                        hasFleetsOverride: hasFleetsOverride,
+                      ),
                     ),
                   ),
                 ),
@@ -66,7 +69,8 @@ class CustomEndDrawer {
 
 class _MenuContent extends StatefulWidget {
   final String? userRoleOverride;
-  const _MenuContent({this.userRoleOverride});
+  final bool? hasFleetsOverride;
+  const _MenuContent({this.userRoleOverride, this.hasFleetsOverride});
 
   @override
   State<_MenuContent> createState() => _MenuContentState();
@@ -82,12 +86,16 @@ class _MenuContentState extends State<_MenuContent> {
   }
   final AdminContextService _adminContext = AdminContextService();
   String _userRole = '';
+  bool _hasFleets = true;
 
   @override
   void initState() {
     super.initState();
     if (widget.userRoleOverride != null) {
       _userRole = widget.userRoleOverride!;
+    }
+    if (widget.hasFleetsOverride != null) {
+      _hasFleets = widget.hasFleetsOverride!;
     }
     _fetchUserRole();
     _adminContext.addListener(_onContextChanged);
@@ -104,16 +112,29 @@ class _MenuContentState extends State<_MenuContent> {
   }
 
   Future<void> _fetchUserRole() async {
-    if (widget.userRoleOverride != null) return;
     final client = _supabase;
     if (client == null) return;
     final currentUserId = client.currentUser?.id;
     if (currentUserId != null) {
-      final perfil = await client.getUsuarioPerfil(currentUserId);
-      if (perfil != null && mounted) {
-        setState(() {
-          _userRole = perfil.role;
-        });
+      if (widget.userRoleOverride == null) {
+        final perfil = await client.getUsuarioPerfil(currentUserId);
+        if (perfil != null && mounted) {
+          setState(() {
+            _userRole = perfil.role;
+          });
+        }
+      }
+
+      final role = widget.userRoleOverride ?? _userRole;
+      if (role == 'gerente' && widget.hasFleetsOverride == null) {
+        try {
+          final frotas = await client.getFrotasByGerente(currentUserId);
+          if (mounted) {
+            setState(() {
+              _hasFleets = frotas.isNotEmpty;
+            });
+          }
+        } catch (_) {}
       }
     }
   }
@@ -595,81 +616,160 @@ class _MenuContentState extends State<_MenuContent> {
   List<Widget> _buildDefaultMenuItems(BuildContext context) {
     return [
       if (_userRole == 'gerente') ...[
+        if (!_hasFleets) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFC8E569), width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: const [
+                    Icon(Icons.info_outline, size: 16, color: Color(0xFFC23147)),
+                    SizedBox(width: 6),
+                    Text(
+                      'Nenhuma frota atribuída',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFC23147),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'As opções que dependem de frota estão indisponíveis.',
+                  style: TextStyle(fontSize: 11, color: Colors.black54),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+
         _buildSectionHeader('DASHBOARDS'),
-        const MenuListItem(
+        MenuListItem(
           icon: Icons.dashboard_outlined,
           title: 'Dashboard — Frota',
           routeName: '/dashboard-frota',
+          isEnabled: _hasFleets,
+          disabledReason: 'Requer frota',
+          disabledMessage: 'Você não possui nenhuma frota atribuída para acessar esta opção.',
         ),
-        const MenuListItem(
+        MenuListItem(
           icon: Icons.local_shipping_outlined,
           title: 'Dashboard — Veículo',
           routeName: '/dashboard-veiculo',
+          isEnabled: _hasFleets,
+          disabledReason: 'Requer frota',
+          disabledMessage: 'Você não possui nenhuma frota atribuída para acessar esta opção.',
         ),
 
         const SizedBox(height: 12),
         _buildSectionHeader('GERENCIAMENTO'),
-        const MenuListItem(
+        MenuListItem(
           icon: Icons.fire_truck_outlined,
           title: 'Listar frotas',
           routeName: '/listar-frotas',
+          isEnabled: _hasFleets,
+          disabledReason: 'Requer frota',
+          disabledMessage: 'Você não possui nenhuma frota atribuída para acessar esta opção.',
         ),
-        const MenuListItem(
+        MenuListItem(
           icon: Icons.devices_other_outlined,
           title: 'Listar dispositivos',
           routeName: '/listar-dispositivos',
+          isEnabled: _hasFleets,
+          disabledReason: 'Requer frota',
+          disabledMessage: 'Você não possui nenhuma frota atribuída para acessar esta opção.',
         ),
-        const MenuListItem(
+        MenuListItem(
           icon: Icons.people_alt_outlined,
           title: 'Listar operadores',
           routeName: '/listar-operadores',
+          isEnabled: _hasFleets,
+          disabledReason: 'Requer frota',
+          disabledMessage: 'Você não possui nenhuma frota atribuída para acessar esta opção.',
         ),
 
         const SizedBox(height: 12),
         _buildSectionHeader('ALERTAS'),
-        const MenuListItem(
+        MenuListItem(
           icon: Icons.notifications_none,
           title: 'Alertas — Frota',
           routeName: '/alertas-frota',
+          isEnabled: _hasFleets,
+          disabledReason: 'Requer frota',
+          disabledMessage: 'Você não possui nenhuma frota atribuída para acessar esta opção.',
         ),
-        const MenuListItem(
+        MenuListItem(
           icon: Icons.notification_important_outlined,
           title: 'Alertas — Veículo',
           routeName: '/alertas-veiculo',
+          isEnabled: _hasFleets,
+          disabledReason: 'Requer frota',
+          disabledMessage: 'Você não possui nenhuma frota atribuída para acessar esta opção.',
         ),
 
         const SizedBox(height: 12),
         _buildSectionHeader('LOCALIZAÇÃO'),
-        const MenuListItem(
+        MenuListItem(
           icon: Icons.location_on_outlined,
           title: 'GPS — Veículo',
           routeName: '/gps',
+          isEnabled: _hasFleets,
+          disabledReason: 'Requer frota',
+          disabledMessage: 'Você não possui nenhuma frota atribuída para acessar esta opção.',
         ),
 
         const SizedBox(height: 12),
         _buildSectionHeader('HISTÓRICO'),
-        const MenuListItem(
+        MenuListItem(
           icon: Icons.history,
           title: 'Histórico — Frota',
           routeName: '/historico-frota',
+          isEnabled: _hasFleets,
+          disabledReason: 'Requer frota',
+          disabledMessage: 'Você não possui nenhuma frota atribuída para acessar esta opção.',
         ),
-        const MenuListItem(
+        MenuListItem(
           icon: Icons.manage_history_outlined,
           title: 'Histórico — Veículo',
           routeName: '/historico-veiculo',
+          isEnabled: _hasFleets,
+          disabledReason: 'Requer frota',
+          disabledMessage: 'Você não possui nenhuma frota atribuída para acessar esta opção.',
         ),
 
         const SizedBox(height: 12),
         _buildSectionHeader('RELATÓRIOS'),
-        const MenuListItem(
+        MenuListItem(
           icon: Icons.description_outlined,
           title: 'Relatório — Frota',
           routeName: '/relatorios-frota',
+          isEnabled: _hasFleets,
+          disabledReason: 'Requer frota',
+          disabledMessage: 'Você não possui nenhuma frota atribuída para acessar esta opção.',
         ),
-        const MenuListItem(
+        MenuListItem(
           icon: Icons.assessment_outlined,
           title: 'Relatório — Veículo',
           routeName: '/relatorios-veiculo',
+          isEnabled: _hasFleets,
+          disabledReason: 'Requer frota',
+          disabledMessage: 'Você não possui nenhuma frota atribuída para acessar esta opção.',
         ),
       ] else if (_userRole == 'operador') ...[
         _buildSectionHeader('DASHBOARDS'),
@@ -743,6 +843,7 @@ class MenuListItem extends StatelessWidget {
   final VoidCallback? onTapAction;
   final bool isEnabled;
   final String? disabledReason;
+  final String? disabledMessage;
 
   const MenuListItem({
     super.key,
@@ -754,6 +855,7 @@ class MenuListItem extends StatelessWidget {
     this.onTapAction,
     this.isEnabled = true,
     this.disabledReason,
+    this.disabledMessage,
   });
 
   @override
@@ -773,14 +875,16 @@ class MenuListItem extends StatelessWidget {
               }
             }
           : () {
-              if (disabledReason != null) {
+              if (disabledReason != null || disabledMessage != null) {
                 HapticFeedback.lightImpact();
+                final String msg = disabledMessage ??
+                    (disabledReason == 'Indisponível'
+                        ? 'A funcionalidade de GPS está indisponível na sidebar no momento.'
+                        : 'Selecione uma frota primeiro para acessar esta opção.');
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(
-                      disabledReason == 'Indisponível' 
-                          ? 'A funcionalidade de GPS está indisponível na sidebar no momento.'
-                          : 'Selecione uma frota primeiro para acessar esta opção.',
+                      msg,
                       style: const TextStyle(color: Colors.white),
                     ),
                     backgroundColor: const Color(0xFFC23147),

@@ -8,6 +8,7 @@ class CustomBottomNavBar extends StatefulWidget {
   final bool? isVehicleContext;
   final Object? currentDevice;
   final String? userRoleOverride;
+  final bool isDisabled;
 
   const CustomBottomNavBar({
     super.key,
@@ -15,6 +16,7 @@ class CustomBottomNavBar extends StatefulWidget {
     this.isVehicleContext,
     this.currentDevice,
     this.userRoleOverride,
+    this.isDisabled = false,
   });
 
   @override
@@ -93,6 +95,10 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
   ///   Indisponíveis enquanto nenhuma frota estiver selecionada.
   ///   Habilitados assim que uma frota for selecionada.
   bool _isItemEnabled(int index) {
+    if (widget.isDisabled) {
+      return false;
+    }
+
     if (_userRole != 'admin') {
       // Para outros papéis (gerente, operador), mantém comportamento padrão
       return true;
