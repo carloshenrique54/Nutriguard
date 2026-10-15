@@ -188,14 +188,19 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bool hideBottomNav = _isLoading || (_userRole == 'gerente' && _frotas.isEmpty);
+    final bool isEmpty = _frotas.isEmpty || _dispositivos.isEmpty;
 
     return Scaffold(
       extendBody: true,
       backgroundColor: const Color(0xFFFFF2E0),
-      bottomNavigationBar: hideBottomNav
-          ? null
-          : const CustomBottomNavBar(selectedIndex: 2, isVehicleContext: false),
+      bottomNavigationBar: CustomBottomNavBar(
+        selectedIndex: 2,
+        isVehicleContext: false,
+        isDisabled: isEmpty,
+        hasFleetsOverride: _frotas.isNotEmpty,
+        hasDevicesOverride: _dispositivos.isNotEmpty,
+        userRoleOverride: _userRole.isNotEmpty ? _userRole : null,
+      ),
       body: WatermarkBackground(
         child: SafeArea(
           child: _isLoading
@@ -250,7 +255,7 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
   }
 
   Widget _buildEmptyFrotaDevices(BuildContext context) {
-    final bool isAdmin = _userRole == 'admin';
+    final bool isAdmin = _userRole.toLowerCase() == 'admin' || _userRole.toLowerCase() == 'adm';
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -786,26 +791,7 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
                         'Modelo: ${d.modeloVeiculo ?? d.modeloDispositivo ?? "N/D"}',
                         style: const TextStyle(fontSize: 12, color: Colors.black54),
                       ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.location_on_outlined, color: Color(0xFFC23147)),
-                            onPressed: () {
-                              Navigator.pushNamed(context, '/gps', arguments: d);
-                            },
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.chevron_right, color: Colors.black45),
-                            onPressed: () {
-                              if (_userRole == 'admin') {
-                                AdminContextService().setDevice(d, frota: _selectedFrota);
-                              }
-                              Navigator.pushNamed(context, '/dashboard-veiculo', arguments: d);
-                            },
-                          ),
-                        ],
-                      ),
+                      trailing: const Icon(Icons.chevron_right, color: Colors.black45),
                       onTap: () {
                         if (_userRole == 'admin') {
                           AdminContextService().setDevice(d, frota: _selectedFrota);

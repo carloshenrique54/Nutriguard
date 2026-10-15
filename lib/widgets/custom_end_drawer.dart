@@ -5,7 +5,7 @@ import '../services/supabase_service.dart';
 import '../services/admin_context_service.dart';
 
 class CustomEndDrawer {
-  static void showMenu(BuildContext context, {String? userRoleOverride, bool? hasFleetsOverride}) {
+  static void showMenu(BuildContext context, {String? userRoleOverride, bool? hasFleetsOverride, bool? hasDevicesOverride}) {
     HapticFeedback.lightImpact();
     showGeneralDialog(
       context: context,
@@ -54,6 +54,7 @@ class CustomEndDrawer {
                       child: _MenuContent(
                         userRoleOverride: userRoleOverride,
                         hasFleetsOverride: hasFleetsOverride,
+                        hasDevicesOverride: hasDevicesOverride,
                       ),
                     ),
                   ),
@@ -70,7 +71,8 @@ class CustomEndDrawer {
 class _MenuContent extends StatefulWidget {
   final String? userRoleOverride;
   final bool? hasFleetsOverride;
-  const _MenuContent({this.userRoleOverride, this.hasFleetsOverride});
+  final bool? hasDevicesOverride;
+  const _MenuContent({this.userRoleOverride, this.hasFleetsOverride, this.hasDevicesOverride});
 
   @override
   State<_MenuContent> createState() => _MenuContentState();
@@ -87,6 +89,7 @@ class _MenuContentState extends State<_MenuContent> {
   final AdminContextService _adminContext = AdminContextService();
   String _userRole = '';
   bool _hasFleets = true;
+  bool _hasDevices = true;
 
   @override
   void initState() {
@@ -96,6 +99,9 @@ class _MenuContentState extends State<_MenuContent> {
     }
     if (widget.hasFleetsOverride != null) {
       _hasFleets = widget.hasFleetsOverride!;
+    }
+    if (widget.hasDevicesOverride != null) {
+      _hasDevices = widget.hasDevicesOverride!;
     }
     _fetchUserRole();
     _adminContext.addListener(_onContextChanged);
@@ -126,15 +132,30 @@ class _MenuContentState extends State<_MenuContent> {
       }
 
       final role = widget.userRoleOverride ?? _userRole;
-      if (role == 'gerente' && widget.hasFleetsOverride == null) {
-        try {
-          final frotas = await client.getFrotasByGerente(currentUserId);
+      if (role == 'gerente') {
+        if (widget.hasFleetsOverride == null) {
+          try {
+            final frotas = await client.getFrotasByGerente(currentUserId);
+            bool hasDevs = false;
+            if (frotas.isNotEmpty) {
+              final allDevices = await client.getDispositivos();
+              final frotaIds = frotas.map((f) => f.id).toSet();
+              hasDevs = allDevices.any((d) => frotaIds.contains(d.idFrota));
+            }
+            if (mounted) {
+              setState(() {
+                _hasFleets = frotas.isNotEmpty;
+                _hasDevices = hasDevs;
+              });
+            }
+          } catch (_) {}
+        } else if (widget.hasDevicesOverride != null) {
           if (mounted) {
             setState(() {
-              _hasFleets = frotas.isNotEmpty;
+              _hasDevices = widget.hasDevicesOverride!;
             });
           }
-        } catch (_) {}
+        }
       }
     }
   }
@@ -414,13 +435,6 @@ class _MenuContentState extends State<_MenuContent> {
       if (hasDevice) ...[
         _buildSectionHeader('VEÍCULO ATUAL'),
         MenuListItem(
-          icon: Icons.dashboard_rounded,
-          title: 'Dashboard do veículo',
-          routeName: '/dashboard-veiculo',
-          routeArguments: device,
-          isEnabled: true,
-        ),
-        MenuListItem(
           icon: Icons.notification_important_outlined,
           title: 'Alertas do veículo',
           routeName: '/alertas-veiculo',
@@ -452,15 +466,6 @@ class _MenuContentState extends State<_MenuContent> {
         const SizedBox(height: 8),
         _buildSectionHeader('FROTA DE ORIGEM'),
         MenuListItem(
-          icon: Icons.dashboard_outlined,
-          title: 'Dashboard da frota',
-          onTapAction: () {
-            _adminContext.clearVehicle();
-            Navigator.pushNamed(context, '/dashboard-frota', arguments: frota);
-          },
-          isEnabled: true,
-        ),
-        MenuListItem(
           icon: Icons.directions_car_outlined,
           title: 'Veículos da frota',
           onTapAction: () {
@@ -471,13 +476,6 @@ class _MenuContentState extends State<_MenuContent> {
         ),
       ] else if (hasFrota) ...[
         _buildSectionHeader('FROTA ATUAL'),
-        MenuListItem(
-          icon: Icons.dashboard_rounded,
-          title: 'Dashboard da frota',
-          routeName: '/dashboard-frota',
-          routeArguments: frota,
-          isEnabled: true,
-        ),
         MenuListItem(
           icon: Icons.directions_car_outlined,
           title: 'Veículos da frota',
@@ -515,12 +513,6 @@ class _MenuContentState extends State<_MenuContent> {
       ] else ...[
         // Sem frota selecionada: opções contextuais desabilitadas
         _buildSectionHeader('NAVEGAÇÃO CONTEXTUAL'),
-        const MenuListItem(
-          icon: Icons.dashboard_rounded,
-          title: 'Dashboard da frota',
-          isEnabled: false,
-          disabledReason: 'Requer frota',
-        ),
         const MenuListItem(
           icon: Icons.directions_car_outlined,
           title: 'Veículos da frota',
@@ -657,51 +649,69 @@ class _MenuContentState extends State<_MenuContent> {
             ),
           ),
           const SizedBox(height: 12),
+        ] else if (!_hasDevices) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFC8E569), width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: const [
+                    Icon(Icons.info_outline, size: 16, color: Color(0xFFC23147)),
+                    SizedBox(width: 6),
+                    Text(
+                      'Nenhum dispositivo cadastrado',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFC23147),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'As opções que dependem de dispositivo estão indisponíveis.',
+                  style: TextStyle(fontSize: 11, color: Colors.black54),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
         ],
 
-        _buildSectionHeader('DASHBOARDS'),
-        MenuListItem(
-          icon: Icons.dashboard_outlined,
-          title: 'Dashboard — Frota',
-          routeName: '/dashboard-frota',
-          isEnabled: _hasFleets,
-          disabledReason: 'Requer frota',
-          disabledMessage: 'Você não possui nenhuma frota atribuída para acessar esta opção.',
-        ),
-        MenuListItem(
-          icon: Icons.local_shipping_outlined,
-          title: 'Dashboard — Veículo',
-          routeName: '/dashboard-veiculo',
-          isEnabled: _hasFleets,
-          disabledReason: 'Requer frota',
-          disabledMessage: 'Você não possui nenhuma frota atribuída para acessar esta opção.',
-        ),
-
-        const SizedBox(height: 12),
         _buildSectionHeader('GERENCIAMENTO'),
-        MenuListItem(
-          icon: Icons.fire_truck_outlined,
-          title: 'Listar frotas',
-          routeName: '/listar-frotas',
-          isEnabled: _hasFleets,
-          disabledReason: 'Requer frota',
-          disabledMessage: 'Você não possui nenhuma frota atribuída para acessar esta opção.',
-        ),
         MenuListItem(
           icon: Icons.devices_other_outlined,
           title: 'Listar dispositivos',
           routeName: '/listar-dispositivos',
-          isEnabled: _hasFleets,
-          disabledReason: 'Requer frota',
-          disabledMessage: 'Você não possui nenhuma frota atribuída para acessar esta opção.',
+          isEnabled: _hasFleets && _hasDevices,
+          disabledReason: !_hasFleets ? 'Requer frota' : 'Requer dispositivo',
+          disabledMessage: !_hasFleets
+              ? 'Você não possui nenhuma frota atribuída para acessar esta opção.'
+              : 'Sua frota não possui nenhum dispositivo cadastrado para acessar esta opção.',
         ),
         MenuListItem(
           icon: Icons.people_alt_outlined,
           title: 'Listar operadores',
           routeName: '/listar-operadores',
-          isEnabled: _hasFleets,
-          disabledReason: 'Requer frota',
-          disabledMessage: 'Você não possui nenhuma frota atribuída para acessar esta opção.',
+          isEnabled: _hasFleets && _hasDevices,
+          disabledReason: !_hasFleets ? 'Requer frota' : 'Requer dispositivo',
+          disabledMessage: !_hasFleets
+              ? 'Você não possui nenhuma frota atribuída para acessar esta opção.'
+              : 'Sua frota não possui nenhum dispositivo cadastrado para acessar esta opção.',
         ),
 
         const SizedBox(height: 12),
@@ -710,17 +720,21 @@ class _MenuContentState extends State<_MenuContent> {
           icon: Icons.notifications_none,
           title: 'Alertas — Frota',
           routeName: '/alertas-frota',
-          isEnabled: _hasFleets,
-          disabledReason: 'Requer frota',
-          disabledMessage: 'Você não possui nenhuma frota atribuída para acessar esta opção.',
+          isEnabled: _hasFleets && _hasDevices,
+          disabledReason: !_hasFleets ? 'Requer frota' : 'Requer dispositivo',
+          disabledMessage: !_hasFleets
+              ? 'Você não possui nenhuma frota atribuída para acessar esta opção.'
+              : 'Sua frota não possui nenhum dispositivo cadastrado para acessar esta opção.',
         ),
         MenuListItem(
           icon: Icons.notification_important_outlined,
           title: 'Alertas — Veículo',
           routeName: '/alertas-veiculo',
-          isEnabled: _hasFleets,
-          disabledReason: 'Requer frota',
-          disabledMessage: 'Você não possui nenhuma frota atribuída para acessar esta opção.',
+          isEnabled: _hasFleets && _hasDevices,
+          disabledReason: !_hasFleets ? 'Requer frota' : 'Requer dispositivo',
+          disabledMessage: !_hasFleets
+              ? 'Você não possui nenhuma frota atribuída para acessar esta opção.'
+              : 'Sua frota não possui nenhum dispositivo cadastrado para acessar esta opção.',
         ),
 
         const SizedBox(height: 12),
@@ -729,9 +743,11 @@ class _MenuContentState extends State<_MenuContent> {
           icon: Icons.location_on_outlined,
           title: 'GPS — Veículo',
           routeName: '/gps',
-          isEnabled: _hasFleets,
-          disabledReason: 'Requer frota',
-          disabledMessage: 'Você não possui nenhuma frota atribuída para acessar esta opção.',
+          isEnabled: _hasFleets && _hasDevices,
+          disabledReason: !_hasFleets ? 'Requer frota' : 'Requer dispositivo',
+          disabledMessage: !_hasFleets
+              ? 'Você não possui nenhuma frota atribuída para acessar esta opção.'
+              : 'Sua frota não possui nenhum dispositivo cadastrado para acessar esta opção.',
         ),
 
         const SizedBox(height: 12),
@@ -740,17 +756,21 @@ class _MenuContentState extends State<_MenuContent> {
           icon: Icons.history,
           title: 'Histórico — Frota',
           routeName: '/historico-frota',
-          isEnabled: _hasFleets,
-          disabledReason: 'Requer frota',
-          disabledMessage: 'Você não possui nenhuma frota atribuída para acessar esta opção.',
+          isEnabled: _hasFleets && _hasDevices,
+          disabledReason: !_hasFleets ? 'Requer frota' : 'Requer dispositivo',
+          disabledMessage: !_hasFleets
+              ? 'Você não possui nenhuma frota atribuída para acessar esta opção.'
+              : 'Sua frota não possui nenhum dispositivo cadastrado para acessar esta opção.',
         ),
         MenuListItem(
           icon: Icons.manage_history_outlined,
           title: 'Histórico — Veículo',
           routeName: '/historico-veiculo',
-          isEnabled: _hasFleets,
-          disabledReason: 'Requer frota',
-          disabledMessage: 'Você não possui nenhuma frota atribuída para acessar esta opção.',
+          isEnabled: _hasFleets && _hasDevices,
+          disabledReason: !_hasFleets ? 'Requer frota' : 'Requer dispositivo',
+          disabledMessage: !_hasFleets
+              ? 'Você não possui nenhuma frota atribuída para acessar esta opção.'
+              : 'Sua frota não possui nenhum dispositivo cadastrado para acessar esta opção.',
         ),
 
         const SizedBox(height: 12),
@@ -759,27 +779,23 @@ class _MenuContentState extends State<_MenuContent> {
           icon: Icons.description_outlined,
           title: 'Relatório — Frota',
           routeName: '/relatorios-frota',
-          isEnabled: _hasFleets,
-          disabledReason: 'Requer frota',
-          disabledMessage: 'Você não possui nenhuma frota atribuída para acessar esta opção.',
+          isEnabled: _hasFleets && _hasDevices,
+          disabledReason: !_hasFleets ? 'Requer frota' : 'Requer dispositivo',
+          disabledMessage: !_hasFleets
+              ? 'Você não possui nenhuma frota atribuída para acessar esta opção.'
+              : 'Sua frota não possui nenhum dispositivo cadastrado para acessar esta opção.',
         ),
         MenuListItem(
           icon: Icons.assessment_outlined,
           title: 'Relatório — Veículo',
           routeName: '/relatorios-veiculo',
-          isEnabled: _hasFleets,
-          disabledReason: 'Requer frota',
-          disabledMessage: 'Você não possui nenhuma frota atribuída para acessar esta opção.',
+          isEnabled: _hasFleets && _hasDevices,
+          disabledReason: !_hasFleets ? 'Requer frota' : 'Requer dispositivo',
+          disabledMessage: !_hasFleets
+              ? 'Você não possui nenhuma frota atribuída para acessar esta opção.'
+              : 'Sua frota não possui nenhum dispositivo cadastrado para acessar esta opção.',
         ),
       ] else if (_userRole == 'operador') ...[
-        _buildSectionHeader('DASHBOARDS'),
-        const MenuListItem(
-          icon: Icons.local_shipping_outlined,
-          title: 'Dashboard — Veículo',
-          routeName: '/dashboard-veiculo',
-        ),
-
-        const SizedBox(height: 12),
         _buildSectionHeader('ALERTAS'),
         const MenuListItem(
           icon: Icons.notification_important_outlined,

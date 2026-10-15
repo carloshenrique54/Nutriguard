@@ -118,5 +118,33 @@ void main() {
       final alertaText = tester.widget<Text>(find.text('Alertas'));
       expect(alertaText.style?.color, equals(Colors.black87));
     });
+
+    testWidgets('4. Gerente in fleet context (isVehicleContext: false): GPS remains gray and non-clickable', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            bottomNavigationBar: CustomBottomNavBar(
+              selectedIndex: 2,
+              userRoleOverride: 'gerente',
+              isVehicleContext: false,
+            ),
+            body: Center(child: Text('Gerente Fleet Dashboard')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // GPS must be gray (Color(0xFF757575)) because fleet dashboard cannot take to GPS
+      final gpsText = tester.widget<Text>(find.text('GPS'));
+      expect(gpsText.style?.color, equals(const Color(0xFF757575)));
+
+      final gpsIcon = tester.widget<Icon>(find.byIcon(Icons.location_on_outlined));
+      expect(gpsIcon.color, equals(const Color(0xFF757575)));
+
+      // Tap GPS does nothing
+      await tester.tap(find.text('GPS'));
+      await tester.pumpAndSettle();
+      expect(find.text('Gerente Fleet Dashboard'), findsOneWidget);
+    });
   });
 }

@@ -50,8 +50,9 @@ void main() {
       // Context Banner shows no fleet
       expect(find.text('Nenhuma frota selecionada'), findsOneWidget);
 
-      // Dashboards category was removed
+      // Dashboards category and option were removed
       expect(find.text('Dashboards'), findsNothing);
+      expect(find.text('Dashboard da frota'), findsNothing);
 
       // Requer frota badge appears on locked items
       expect(find.text('Requer frota'), findsWidgets);
@@ -80,8 +81,10 @@ void main() {
       expect(find.text('FROTA SELECIONADA'), findsOneWidget);
       expect(find.text('Frota Regional Sul'), findsOneWidget);
 
+      // Dashboard option was removed from lateral menu
+      expect(find.text('Dashboard da frota'), findsNothing);
+
       // Fleet options are enabled
-      expect(find.text('Dashboard da frota'), findsOneWidget);
       expect(find.text('Veículos da frota'), findsOneWidget);
       expect(find.text('Alertas da frota'), findsOneWidget);
       expect(find.text('Histórico da frota'), findsOneWidget);
@@ -104,8 +107,10 @@ void main() {
       expect(find.text('XYZ-9876'), findsOneWidget);
       expect(find.text('Frota: Frota Regional Sul'), findsOneWidget);
 
+      // Dashboard option was removed from lateral menu
+      expect(find.text('Dashboard do veículo'), findsNothing);
+
       // Vehicle options and GPS are enabled
-      expect(find.text('Dashboard do veículo'), findsOneWidget);
       expect(find.text('Alertas do veículo'), findsOneWidget);
       expect(find.text('Histórico do veículo'), findsOneWidget);
       expect(find.text('Relatório do veículo'), findsOneWidget);

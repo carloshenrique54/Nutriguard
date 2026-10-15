@@ -5,6 +5,7 @@ import 'package:nutriguard1/screens/dashboard/dashboard_frota_screen.dart';
 import 'package:nutriguard1/services/admin_context_service.dart';
 import 'package:nutriguard1/services/supabase_service.dart';
 import 'package:nutriguard1/widgets/custom_bottom_nav_bar.dart';
+import 'package:nutriguard1/screens/listagens/listar_dispositivos_screen.dart';
 // ignore: depend_on_referenced_packages
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -97,8 +98,10 @@ void main() {
       // Settle loading and async calls
       await tester.pumpAndSettle();
 
-      // Bottom menu MUST be hidden
-      expect(find.byType(CustomBottomNavBar), findsNothing);
+      // Bottom menu MUST be displayed, but with all items disabled/gray
+      expect(find.byType(CustomBottomNavBar), findsOneWidget);
+      final dashboardText = tester.widget<Text>(find.text('Dashboard'));
+      expect(dashboardText.style?.color, equals(const Color(0xFF757575)));
 
       // Empty state text must be visible
       expect(find.text('Nenhuma frota atribuída'), findsOneWidget);
@@ -239,6 +242,84 @@ void main() {
       expect(find.text('Nenhum dispositivo cadastrado'), findsOneWidget);
       expect(find.text('Esta frota ainda não possui dispositivos vinculados.'), findsOneWidget);
       expect(find.text('Atualizar'), findsOneWidget);
+      expect(find.text('Cadastrar dispositivo'), findsNothing);
+
+      // Bottom navigation bar MUST be displayed, but with all items disabled/gray
+      expect(find.byType(CustomBottomNavBar), findsOneWidget);
+      final dashboardText = tester.widget<Text>(find.text('Dashboard'));
+      expect(dashboardText.style?.color, equals(const Color(0xFF757575)));
+    });
+
+    testWidgets('6. DashboardFrotaScreen vehicle list does NOT have GPS icon button (does not lead to GPS)', (tester) async {
+      final frotaGerente = FrotaModel(
+        id: 'frota-01',
+        nome: 'Frota com Veículos',
+        idGerente: 'test-user-id',
+        createdAt: DateTime.now(),
+      );
+
+      final mockService = MockGerenteSupabaseService(
+        role: 'gerente',
+        frotas: [frotaGerente],
+        dispositivos: [
+          DispositivoModel(
+            id: 'dev-01',
+            idFrota: 'frota-01',
+            nomeDispositivo: 'Caminhão 01',
+            placaVeiculo: 'ABC-1234',
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DashboardFrotaScreen(supabaseService: mockService),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Vehicle item is rendered
+      expect(find.text('ABC-1234'), findsOneWidget);
+
+      // NO GPS location icon button in the vehicle list tile (only chevron_right)
+      final vehicleTile = find.widgetWithText(ListTile, 'ABC-1234');
+      expect(vehicleTile, findsOneWidget);
+      expect(find.descendant(of: vehicleTile, matching: find.byIcon(Icons.location_on_outlined)), findsNothing);
+      expect(find.descendant(of: vehicleTile, matching: find.byIcon(Icons.chevron_right)), findsOneWidget);
+    });
+
+    testWidgets('7. ListarDispositivosScreen for Gerente with no devices shows "Atualizar", hides "Cadastrar dispositivo" and shows gray bottom menu', (tester) async {
+      final mockService = MockGerenteSupabaseService(
+        role: 'gerente',
+        frotas: [
+          FrotaModel(
+            id: 'frota-01',
+            nome: 'Frota do Gerente',
+            idGerente: 'test-user-id',
+            createdAt: DateTime.now(),
+          ),
+        ],
+        dispositivos: [],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ListarDispositivosScreen(supabaseService: mockService),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Manager must NOT see "Cadastrar dispositivo"
+      expect(find.text('Cadastrar dispositivo'), findsNothing);
+      expect(find.text('Atualizar'), findsOneWidget);
+      expect(find.text('Aguarde o cadastro de dispositivos pelo Administrador.'), findsOneWidget);
+
+      // Bottom bar must be visible with all items gray
+      expect(find.byType(CustomBottomNavBar), findsOneWidget);
+      final dashboardText = tester.widget<Text>(find.text('Dashboard'));
+      expect(dashboardText.style?.color, equals(const Color(0xFF757575)));
     });
   });
 }

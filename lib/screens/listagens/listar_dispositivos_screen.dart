@@ -10,14 +10,15 @@ import '../../services/admin_context_service.dart';
 import '../../widgets/confirmation_dialog.dart';
 
 class ListarDispositivosScreen extends StatefulWidget {
-  const ListarDispositivosScreen({super.key});
+  final SupabaseService? supabaseService;
+  const ListarDispositivosScreen({super.key, this.supabaseService});
 
   @override
   State<ListarDispositivosScreen> createState() => _ListarDispositivosScreenState();
 }
 
 class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
-  final SupabaseService _supabase = SupabaseService();
+  late final SupabaseService _supabase = widget.supabaseService ?? SupabaseService();
   bool _isLoading = true;
   List<DispositivoModel> _dispositivos = [];
   Map<String, String> _operadoresNomes = {};
@@ -103,6 +104,7 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
           _operadoresNomes = opsMap;
           _frotasNomes = frotasMap;
           _frotasById = frotasObjMap;
+          _userRole = _userRole;
           _isLoading = false;
         });
       }
@@ -120,6 +122,9 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
     }
     final perfil = await _supabase.getUsuarioPerfil(currentUserId);
     final role = perfil?.role ?? '';
+    if (mounted && role.isNotEmpty) {
+      setState(() => _userRole = role);
+    }
     
     List<String> allowedRoles = ['admin', 'gerente'];
 
@@ -135,11 +140,19 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isGerenteEmpty = _userRole == 'gerente' && (_frotasNomes.isEmpty || _dispositivos.isEmpty);
+
     return Scaffold(
       backgroundColor: const Color(0xFFFFF2E0),
       extendBody: true,
       
-      bottomNavigationBar: const CustomBottomNavBar(selectedIndex: null),
+      bottomNavigationBar: CustomBottomNavBar(
+        selectedIndex: null,
+        isDisabled: isGerenteEmpty,
+        hasDevicesOverride: _dispositivos.isNotEmpty,
+        hasFleetsOverride: _currentFrota != null || _frotasNomes.isNotEmpty,
+        userRoleOverride: _userRole.isNotEmpty ? _userRole : null,
+      ),
       body: WatermarkBackground(
         child: SafeArea(
           child: Padding(
@@ -283,22 +296,39 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
                                         textAlign: TextAlign.center,
                                       ),
                                       const SizedBox(height: 8),
-                                      const Text(
-                                        'Cadastre um dispositivo para começar a monitorar seus veículos.',
-                                        style: TextStyle(fontSize: 13, color: Colors.black54),
+                                      Text(
+                                        _userRole.toLowerCase() == 'admin' || _userRole.toLowerCase() == 'adm'
+                                            ? 'Cadastre um dispositivo para começar a monitorar seus veículos.'
+                                            : 'Aguarde o cadastro de dispositivos pelo Administrador.',
+                                        style: const TextStyle(fontSize: 13, color: Colors.black54),
                                         textAlign: TextAlign.center,
                                       ),
                                       const SizedBox(height: 20),
-                                      ElevatedButton.icon(
-                                        onPressed: () => Navigator.pushNamed(context, '/cadastrar-dispositivo'),
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: const Color(0xFFC23147),
-                                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                      if (_userRole.toLowerCase() == 'admin' || _userRole.toLowerCase() == 'adm')
+                                        ElevatedButton.icon(
+                                          onPressed: () => Navigator.pushNamed(context, '/cadastrar-dispositivo'),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: const Color(0xFFC23147),
+                                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                          ),
+                                          icon: const Icon(Icons.add_box_outlined, color: Colors.white, size: 18),
+                                          label: const Text('Cadastrar dispositivo', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                        )
+                                      else
+                                        ElevatedButton.icon(
+                                          onPressed: () {
+                                            HapticFeedback.lightImpact();
+                                            _fetchData();
+                                          },
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: const Color(0xFFC23147),
+                                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                          ),
+                                          icon: const Icon(Icons.refresh, color: Colors.white, size: 18),
+                                          label: const Text('Atualizar', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                                         ),
-                                        icon: const Icon(Icons.add_box_outlined, color: Colors.white, size: 18),
-                                        label: const Text('Cadastrar dispositivo', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                                      ),
                                     ],
                                   ),
                                 ),

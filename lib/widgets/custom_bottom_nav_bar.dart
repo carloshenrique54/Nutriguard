@@ -9,6 +9,8 @@ class CustomBottomNavBar extends StatefulWidget {
   final Object? currentDevice;
   final String? userRoleOverride;
   final bool isDisabled;
+  final bool? hasFleetsOverride;
+  final bool? hasDevicesOverride;
 
   const CustomBottomNavBar({
     super.key,
@@ -17,6 +19,8 @@ class CustomBottomNavBar extends StatefulWidget {
     this.currentDevice,
     this.userRoleOverride,
     this.isDisabled = false,
+    this.hasFleetsOverride,
+    this.hasDevicesOverride,
   });
 
   @override
@@ -36,11 +40,19 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
   bool _isInit = false;
   bool _isVehicle = false;
   String _userRole = '';
+  bool _hasFleets = true;
+  bool _hasDevices = true;
 
   @override
   void initState() {
     super.initState();
     _userRole = widget.userRoleOverride ?? SupabaseService.currentCachedPerfil?.role ?? '';
+    if (widget.hasFleetsOverride != null) {
+      _hasFleets = widget.hasFleetsOverride!;
+    }
+    if (widget.hasDevicesOverride != null) {
+      _hasDevices = widget.hasDevicesOverride!;
+    }
     _adminContext.addListener(_onContextChanged);
     _resolveContext();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -50,6 +62,20 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
         });
       }
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant CustomBottomNavBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.userRoleOverride != null) {
+      _userRole = widget.userRoleOverride!;
+    }
+    if (widget.hasFleetsOverride != null) {
+      _hasFleets = widget.hasFleetsOverride!;
+    }
+    if (widget.hasDevicesOverride != null) {
+      _hasDevices = widget.hasDevicesOverride!;
+    }
   }
 
   @override
@@ -63,23 +89,47 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
   }
 
   Future<void> _resolveContext() async {
-    if (widget.userRoleOverride != null) {
-      if (mounted) setState(() => _userRole = widget.userRoleOverride!);
-      return;
-    }
     final client = _supabase;
     if (client == null) return;
     final user = client.currentUser;
     if (user != null) {
-      final perfil = await client.getUsuarioPerfil(user.id);
+      if (widget.userRoleOverride == null) {
+        final perfil = await client.getUsuarioPerfil(user.id);
+        if (mounted && perfil != null) {
+          setState(() {
+            _userRole = perfil.role;
+          });
+        }
+      }
+
+      final role = widget.userRoleOverride ?? _userRole;
+      if (role == 'gerente') {
+        if (widget.hasFleetsOverride == null || widget.hasDevicesOverride == null) {
+          try {
+            final frotas = await client.getFrotasByGerente(user.id);
+            bool hasDevs = false;
+            if (frotas.isNotEmpty) {
+              final allDevices = await client.getDispositivos();
+              final frotaIds = frotas.map((f) => f.id).toSet();
+              hasDevs = allDevices.any((d) => frotaIds.contains(d.idFrota));
+            }
+            if (mounted) {
+              setState(() {
+                if (widget.hasFleetsOverride == null) _hasFleets = frotas.isNotEmpty;
+                if (widget.hasDevicesOverride == null) _hasDevices = hasDevs;
+              });
+            }
+          } catch (_) {}
+        }
+      }
+
       if (mounted) {
         setState(() {
-          _userRole = perfil?.role ?? '';
           if (_userRole != 'admin') {
             if (widget.isVehicleContext != null) {
               _isVehicle = widget.isVehicleContext!;
             } else {
-              _isVehicle = perfil?.role == 'operador';
+              _isVehicle = _userRole == 'operador';
             }
           }
         });
@@ -89,24 +139,44 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
 
   /// Verifica se o item da barra inferior está habilitado.
   /// 
-  /// Regras para ADM:
-  /// - Índice 4 (GPS): SEMPRE indisponível (Regra 5).
-  /// - Índices 0..3 (Alertas, Relatórios, Dashboard, Histórico):
-  ///   Indisponíveis enquanto nenhuma frota estiver selecionada.
-  ///   Habilitados assim que uma frota for selecionada.
+  /// Regras:
+  /// - Se isDisabled for true: tudo indisponível (cinza).
+  /// - Para Gerente: se não tiver frota ou não tiver dispositivo cadastrado,
+  ///   tudo fica indisponível (cinza).
+  /// - Para ADM:
+  ///   - Índice 4 (GPS): SEMPRE indisponível em contexto de frota.
+  ///   - Índices 0..3: Indisponíveis enquanto nenhuma frota estiver selecionada.
   bool _isItemEnabled(int index) {
     if (widget.isDisabled) {
       return false;
     }
 
-    if (_userRole != 'admin') {
-      // Para outros papéis (gerente, operador), mantém comportamento padrão
-      return true;
+    final effectiveRole = widget.userRoleOverride ?? _userRole;
+    final effectiveHasFleets = widget.hasFleetsOverride ?? _hasFleets;
+    final effectiveHasDevices = widget.hasDevicesOverride ?? _hasDevices;
+
+    if (effectiveRole == 'gerente') {
+      if (!effectiveHasFleets || !effectiveHasDevices) {
+        return false;
+      }
     }
 
-    // GPS é habilitado para ADM quando em contexto de veículo
+    // Índice 4 (GPS): Estritamente vinculado ao contexto de veículo.
+    // Em contexto de frota (isVehicleContext == false), o GPS SEMPRE deve estar indisponível
+    // tanto para ADM quanto para Gerente (o dashboard da frota não pode levar pro GPS).
     if (index == 4) {
-      return widget.isVehicleContext == true || _adminContext.hasDevice;
+      if (widget.isVehicleContext == false) {
+        return false;
+      }
+      if (effectiveRole == 'admin') {
+        return widget.isVehicleContext == true || _adminContext.hasDevice;
+      }
+      return widget.isVehicleContext == true;
+    }
+
+    if (effectiveRole != 'admin') {
+      // Para outros papéis (gerente com dispositivos, operador), mantém comportamento padrão
+      return true;
     }
 
     // Enquanto nenhuma frota estiver selecionada para o ADM,
@@ -119,10 +189,11 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
   }
 
   Object? _resolveRouteArgs(String routeName) {
-    final bool isAdmVehicle = _userRole == 'admin' && (_adminContext.hasDevice || widget.isVehicleContext == true);
-    final bool effectiveIsVehicle = widget.isVehicleContext ?? ((_userRole == 'admin') ? isAdmVehicle : _isVehicle);
+    final effectiveRole = widget.userRoleOverride ?? _userRole;
+    final bool isAdmVehicle = effectiveRole == 'admin' && (_adminContext.hasDevice || widget.isVehicleContext == true);
+    final bool effectiveIsVehicle = widget.isVehicleContext ?? ((effectiveRole == 'admin') ? isAdmVehicle : _isVehicle);
 
-    if (_userRole == 'admin') {
+    if (effectiveRole == 'admin') {
       if (effectiveIsVehicle) {
         return widget.currentDevice ?? _adminContext.selectedDevice;
       } else if (_adminContext.hasFrota) {
