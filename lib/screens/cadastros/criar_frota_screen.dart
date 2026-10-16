@@ -20,6 +20,7 @@ class CriarFrotaScreen extends StatefulWidget {
   final List<UsuarioModel>? initialUsers;
   final List<FrotaModel>? initialFrotas;
   final List<DispositivoModel>? initialDispositivos;
+  final FrotaModel? frotaToEdit;
 
   const CriarFrotaScreen({
     super.key,
@@ -27,6 +28,7 @@ class CriarFrotaScreen extends StatefulWidget {
     this.initialUsers,
     this.initialFrotas,
     this.initialDispositivos,
+    this.frotaToEdit,
   });
 
   @override
@@ -41,12 +43,36 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
   List<UsuarioModel> _gerentes = [];
   bool _isLoading = true;
   bool _isSubmitting = false;
+  FrotaModel? _frotaToEdit;
+  bool _hasInitializedRoute = false;
+
+  bool get isEditing => _frotaToEdit != null;
 
   @override
   void initState() {
     super.initState();
+    if (widget.frotaToEdit != null) {
+      _frotaToEdit = widget.frotaToEdit;
+      _nomeCtrl.text = _frotaToEdit!.nome ?? '';
+      _selectedGerenteId = _frotaToEdit!.idGerente;
+    }
     _checkAccess();
     _fetchData();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_hasInitializedRoute) {
+      _hasInitializedRoute = true;
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (_frotaToEdit == null && args is FrotaModel) {
+        _frotaToEdit = args;
+        _nomeCtrl.text = _frotaToEdit!.nome ?? '';
+        _selectedGerenteId = _frotaToEdit!.idGerente;
+        _fetchData();
+      }
+    }
   }
 
   Future<void> _fetchData() async {
@@ -63,8 +89,9 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
         allUsers = (res as List).map((e) => UsuarioModel.fromJson(e)).toList();
       }
       
-      // Identificar gerentes que já possuem frota vinculada
+      // Identificar gerentes que já possuem frota vinculada (exceto a frota sendo editada)
       final gerentesComFrotaIds = frotas
+          .where((f) => !isEditing || f.id != _frotaToEdit!.id)
           .map((f) => f.idGerente?.trim())
           .where((id) => id != null && id.isNotEmpty)
           .toSet();
@@ -76,21 +103,62 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
               !gerentesComFrotaIds.contains(u.id.trim()))
           .toList();
 
-      if (_selectedGerenteId != null && !_gerentes.any((g) => g.id.trim() == _selectedGerenteId!.trim())) {
-        _selectedGerenteId = null;
+      if (isEditing && _frotaToEdit?.idGerente != null) {
+        final currentGerente = allUsers.where((u) => u.id == _frotaToEdit!.idGerente).firstOrNull;
+        if (currentGerente != null && !_gerentes.any((g) => g.id == currentGerente.id)) {
+          _gerentes.add(currentGerente);
+        }
       }
 
-      // Filtrar apenas veículos que NÃO têm frota vinculada
-      final semFrota = dispositivos.where((d) => d.idFrota == null || d.idFrota!.isEmpty).toList();
+      if (_selectedGerenteId != null && !_gerentes.any((g) => g.id.trim() == _selectedGerenteId!.trim())) {
+        if (!isEditing) {
+          _selectedGerenteId = null;
+        }
+      }
 
-      veiculos = semFrota.map((d) {
-        final op = allUsers.firstWhere((u) => u.id == d.idOperador, orElse: () => UsuarioModel(id: ''));
-        return VeiculoItem(
-          device: d,
-          operador: op.nome != null ? 'Operador: ${op.nome}' : 'Sem operador',
-          isSelected: false,
-        );
-      }).toList();
+      if (!isEditing) {
+        // Filtrar apenas veículos que NÃO têm frota vinculada
+        final semFrota = dispositivos.where((d) => d.idFrota == null || d.idFrota!.isEmpty).toList();
+
+        veiculos = semFrota.map((d) {
+          final op = allUsers.firstWhere((u) => u.id == d.idOperador, orElse: () => UsuarioModel(id: ''));
+          return VeiculoItem(
+            device: d,
+            operador: op.nome != null ? 'Operador: ${op.nome}' : 'Sem operador',
+            isSelected: false,
+          );
+        }).toList();
+      } else {
+        // Modo de edição:
+        // Exibe veículos desta frota (selecionados), sem frota, e de outras frotas (permitindo transferência)
+        final frotasMap = {for (var f in frotas) f.id: f.nome ?? 'Outra frota'};
+
+        veiculos = dispositivos.map((d) {
+          final op = allUsers.firstWhere((u) => u.id == d.idOperador, orElse: () => UsuarioModel(id: ''));
+          final bool isInThisFleet = d.idFrota == _frotaToEdit!.id;
+          final String statusText;
+          if (isInThisFleet) {
+            statusText = ' (Nesta frota)';
+          } else if (d.idFrota == null || d.idFrota!.isEmpty) {
+            statusText = ' (Sem frota)';
+          } else {
+            statusText = ' (Frota: ${frotasMap[d.idFrota] ?? "Outra"})';
+          }
+          final opStr = op.nome != null ? 'Operador: ${op.nome}' : 'Sem operador';
+
+          return VeiculoItem(
+            device: d,
+            operador: '$opStr$statusText',
+            isSelected: isInThisFleet,
+          );
+        }).toList();
+
+        veiculos.sort((a, b) {
+          final aIn = a.device.idFrota == _frotaToEdit!.id ? 0 : (a.device.idFrota == null || a.device.idFrota!.isEmpty ? 1 : 2);
+          final bIn = b.device.idFrota == _frotaToEdit!.id ? 0 : (b.device.idFrota == null || b.device.idFrota!.isEmpty ? 1 : 2);
+          return aIn.compareTo(bIn);
+        });
+      }
 
       if (mounted) {
         setState(() {
@@ -137,11 +205,14 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
 
     setState(() => _isSubmitting = true);
 
-    // Insert new frota
     try {
-      // Verificação em tempo real: garante que o gerente não possui frota atribuída
+      // Verificação em tempo real: garante que o gerente não possui outra frota atribuída
       final frotasAtuais = await _supabase.getFrotas();
-      if (frotasAtuais.any((f) => f.idGerente != null && f.idGerente!.trim() == _selectedGerenteId!.trim())) {
+      final outroComGerente = frotasAtuais
+          .where((f) => !isEditing || f.id != _frotaToEdit!.id)
+          .any((f) => f.idGerente != null && f.idGerente!.trim() == _selectedGerenteId!.trim());
+
+      if (outroComGerente) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -158,38 +229,71 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
         setState(() => _isSubmitting = false);
         return;
       }
-      final response = await Supabase.instance.client.from('Frotas').insert({
-        'nome': _nomeCtrl.text.trim(),
-        'id_gerente': _selectedGerenteId,
-      }).select().single();
-      
-      final newFrota = FrotaModel.fromJson(response);
-      final newFrotaId = newFrota.id;
 
-      // Atualizar o id_frota nos dispositivos selecionados (se houver algum)
       final selectedDevices = veiculos.where((v) => v.isSelected).map((v) => v.device.id).toList();
-      for (var devId in selectedDevices) {
-        await Supabase.instance.client.from('Dispositivos').update({'id_frota': newFrotaId}).eq('id', devId);
+
+      if (isEditing) {
+        final updatedFrota = await _supabase.updateFrota(
+          id: _frotaToEdit!.id,
+          nome: _nomeCtrl.text.trim(),
+          idGerente: _selectedGerenteId,
+          selectedDeviceIds: selectedDevices,
+        );
+
+        if (AdminContextService().selectedFrota?.id == _frotaToEdit!.id) {
+          AdminContextService().setFrota(updatedFrota);
+        }
+
+        HapticFeedback.mediumImpact();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Frota atualizada com sucesso!', style: TextStyle(color: Colors.white)),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          ),
+        );
+
+        if (Navigator.canPop(context)) {
+          Navigator.pop(context, true);
+        } else {
+          Navigator.pushReplacementNamed(context, '/listar-frotas');
+        }
+      } else {
+        final response = await Supabase.instance.client.from('Frotas').insert({
+          'nome': _nomeCtrl.text.trim(),
+          'id_gerente': _selectedGerenteId,
+        }).select().single();
+        
+        final newFrota = FrotaModel.fromJson(response);
+        final newFrotaId = newFrota.id;
+
+        // Atualizar o id_frota nos dispositivos selecionados (se houver algum)
+        for (var devId in selectedDevices) {
+          await Supabase.instance.client.from('Dispositivos').update({'id_frota': newFrotaId}).eq('id', devId);
+        }
+
+        // Ativa imediatamente a nova frota no contexto administrativo
+        AdminContextService().setFrota(newFrota);
+        AdminContextService().clearVehicle();
+
+        HapticFeedback.mediumImpact();
+        _nomeCtrl.clear();
+        
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Frota criada com sucesso!', style: TextStyle(color: Colors.white)),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          ),
+        );
+        Navigator.pushReplacementNamed(context, '/listar-frotas');
       }
-
-      // Ativa imediatamente a nova frota no contexto administrativo
-      AdminContextService().setFrota(newFrota);
-      AdminContextService().clearVehicle();
-
-      HapticFeedback.mediumImpact();
-      _nomeCtrl.clear();
-      
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Frota criada com sucesso!', style: TextStyle(color: Colors.white)),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        ),
-      );
-      Navigator.pushReplacementNamed(context, '/listar-frotas');
     } catch (e) {
       if (!mounted) return;
       final msg = SupabaseService.formatarErro(e);
@@ -252,9 +356,9 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
               // 1. CABEÇALHO
               Row(
                 children: [
-                  const Text(
-                    'Criar frota',
-                    style: TextStyle(
+                  Text(
+                    isEditing ? 'Editar frota' : 'Criar frota',
+                    style: const TextStyle(
                       fontSize: 28,
                       fontWeight: FontWeight.bold,
                       color: Color(0xFFC23147),
@@ -490,12 +594,14 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
                     child: _isLoading 
                       ? const Center(child: CircularProgressIndicator(color: Color(0xFFC23147)))
                       : veiculos.isEmpty
-                          ? const Center(
+                          ? Center(
                               child: Padding(
-                                padding: EdgeInsets.all(24.0),
+                                padding: const EdgeInsets.all(24.0),
                                 child: Text(
-                                  'Nenhum veículo disponível sem frota',
-                                  style: TextStyle(color: Colors.black54, fontSize: 14),
+                                  isEditing
+                                      ? 'Nenhum veículo disponível'
+                                      : 'Nenhum veículo disponível sem frota',
+                                  style: const TextStyle(color: Colors.black54, fontSize: 14),
                                   textAlign: TextAlign.center,
                                 ),
                               ),
@@ -606,14 +712,14 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
                             strokeWidth: 2.5,
                           ),
                         )
-                      : const Row(
+                      : Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.add_circle_outline, color: Colors.white, size: 20),
-                            SizedBox(width: 8),
+                            Icon(isEditing ? Icons.save_outlined : Icons.add_circle_outline, color: Colors.white, size: 20),
+                            const SizedBox(width: 8),
                             Text(
-                              'Criar frota',
-                              style: TextStyle(
+                              isEditing ? 'Salvar alterações' : 'Criar frota',
+                              style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,

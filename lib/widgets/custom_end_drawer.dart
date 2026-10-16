@@ -102,6 +102,8 @@ class _MenuContentState extends State<_MenuContent> {
     }
     if (widget.hasDevicesOverride != null) {
       _hasDevices = widget.hasDevicesOverride!;
+    } else if (widget.hasFleetsOverride == false) {
+      _hasDevices = false;
     }
     _fetchUserRole();
     _adminContext.addListener(_onContextChanged);
@@ -133,7 +135,7 @@ class _MenuContentState extends State<_MenuContent> {
 
       final role = widget.userRoleOverride ?? _userRole;
       if (role == 'gerente') {
-        if (widget.hasFleetsOverride == null) {
+        if (widget.hasFleetsOverride == null || widget.hasDevicesOverride == null) {
           try {
             final frotas = await client.getFrotasByGerente(currentUserId);
             bool hasDevs = false;
@@ -144,17 +146,35 @@ class _MenuContentState extends State<_MenuContent> {
             }
             if (mounted) {
               setState(() {
-                _hasFleets = frotas.isNotEmpty;
-                _hasDevices = hasDevs;
+                if (widget.hasFleetsOverride == null) _hasFleets = frotas.isNotEmpty;
+                if (widget.hasDevicesOverride == null) _hasDevices = hasDevs;
               });
             }
           } catch (_) {}
-        } else if (widget.hasDevicesOverride != null) {
-          if (mounted) {
-            setState(() {
-              _hasDevices = widget.hasDevicesOverride!;
-            });
-          }
+        }
+      } else if (role == 'operador') {
+        if (widget.hasDevicesOverride == null) {
+          try {
+            final devs = await client.getDispositivosByOperador(currentUserId);
+            if (mounted) {
+              setState(() {
+                _hasDevices = devs.isNotEmpty;
+              });
+            }
+          } catch (_) {}
+        }
+      } else if (role == 'admin') {
+        if (widget.hasFleetsOverride == null || widget.hasDevicesOverride == null) {
+          try {
+            final frotas = await client.getFrotas();
+            final allDevices = await client.getDispositivos();
+            if (mounted) {
+              setState(() {
+                if (widget.hasFleetsOverride == null) _hasFleets = frotas.isNotEmpty;
+                if (widget.hasDevicesOverride == null) _hasDevices = allDevices.isNotEmpty;
+              });
+            }
+          } catch (_) {}
         }
       }
     }
@@ -273,7 +293,48 @@ class _MenuContentState extends State<_MenuContent> {
 
     return [
       // Banner de Contexto Atual
-      if (!hasFrota) ...[
+      if (!_hasFleets) ...[
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFC8E569), width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: const [
+                  Icon(Icons.info_outline, size: 16, color: Color(0xFFC23147)),
+                  SizedBox(width: 6),
+                  Text(
+                    'Nenhuma frota cadastrada',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFFC23147),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Cadastre uma frota para habilitar as opções do sistema.',
+                style: TextStyle(fontSize: 11, color: Colors.black54),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+      ] else if (!hasFrota) ...[
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -376,6 +437,48 @@ class _MenuContentState extends State<_MenuContent> {
         const SizedBox(height: 12),
       ] else ...[
         // Contexto de Frota
+        if (!_hasDevices) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFC8E569), width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: const [
+                    Icon(Icons.info_outline, size: 16, color: Color(0xFFC23147)),
+                    SizedBox(width: 6),
+                    Text(
+                      'Nenhum dispositivo cadastrado',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFC23147),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Esta frota não possui dispositivos cadastrados. As opções dependentes estão indisponíveis.',
+                  style: TextStyle(fontSize: 11, color: Colors.black54),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -439,28 +542,36 @@ class _MenuContentState extends State<_MenuContent> {
           title: 'Alertas do veículo',
           routeName: '/alertas-veiculo',
           routeArguments: device,
-          isEnabled: true,
+          isEnabled: _hasDevices,
+          disabledReason: 'Requer dispositivo',
+          disabledMessage: 'Nenhum dispositivo disponível para acessar esta opção.',
         ),
         MenuListItem(
           icon: Icons.manage_history_outlined,
           title: 'Histórico do veículo',
           routeName: '/historico-veiculo',
           routeArguments: device,
-          isEnabled: true,
+          isEnabled: _hasDevices,
+          disabledReason: 'Requer dispositivo',
+          disabledMessage: 'Nenhum dispositivo disponível para acessar esta opção.',
         ),
         MenuListItem(
           icon: Icons.assessment_outlined,
           title: 'Relatório do veículo',
           routeName: '/relatorios-veiculo',
           routeArguments: device,
-          isEnabled: true,
+          isEnabled: _hasDevices,
+          disabledReason: 'Requer dispositivo',
+          disabledMessage: 'Nenhum dispositivo disponível para acessar esta opção.',
         ),
         MenuListItem(
           icon: Icons.location_on_outlined,
           title: 'GPS — Veículo',
           routeName: '/gps',
           routeArguments: device,
-          isEnabled: true,
+          isEnabled: _hasDevices,
+          disabledReason: 'Requer dispositivo',
+          disabledMessage: 'Nenhum dispositivo disponível para acessar esta opção.',
         ),
 
         const SizedBox(height: 8),
@@ -472,37 +583,47 @@ class _MenuContentState extends State<_MenuContent> {
             _adminContext.clearVehicle();
             Navigator.pushNamed(context, '/listar-dispositivos', arguments: frota);
           },
-          isEnabled: true,
+          isEnabled: _hasDevices,
+          disabledReason: 'Requer dispositivo',
+          disabledMessage: 'Nenhum dispositivo disponível nesta frota.',
         ),
-      ] else if (hasFrota) ...[
+      ] else if (hasFrota && _hasFleets) ...[
         _buildSectionHeader('FROTA ATUAL'),
         MenuListItem(
           icon: Icons.directions_car_outlined,
           title: 'Veículos da frota',
           routeName: '/listar-dispositivos',
           routeArguments: frota,
-          isEnabled: true,
+          isEnabled: _hasDevices,
+          disabledReason: 'Requer dispositivo',
+          disabledMessage: 'Esta frota não possui nenhum dispositivo cadastrado.',
         ),
         MenuListItem(
           icon: Icons.notifications_none,
           title: 'Alertas da frota',
           routeName: '/alertas-frota',
           routeArguments: frota,
-          isEnabled: true,
+          isEnabled: _hasDevices,
+          disabledReason: 'Requer dispositivo',
+          disabledMessage: 'Esta frota não possui nenhum dispositivo cadastrado para acessar alertas.',
         ),
         MenuListItem(
           icon: Icons.history,
           title: 'Histórico da frota',
           routeName: '/historico-frota',
           routeArguments: frota,
-          isEnabled: true,
+          isEnabled: _hasDevices,
+          disabledReason: 'Requer dispositivo',
+          disabledMessage: 'Esta frota não possui nenhum dispositivo cadastrado para acessar histórico.',
         ),
         MenuListItem(
           icon: Icons.description_outlined,
           title: 'Relatório da frota',
           routeName: '/relatorios-frota',
           routeArguments: frota,
-          isEnabled: true,
+          isEnabled: _hasDevices,
+          disabledReason: 'Requer dispositivo',
+          disabledMessage: 'Esta frota não possui nenhum dispositivo cadastrado para acessar relatórios.',
         ),
         const MenuListItem(
           icon: Icons.location_on_outlined,
@@ -511,31 +632,35 @@ class _MenuContentState extends State<_MenuContent> {
           disabledReason: 'Indisponível',
         ),
       ] else ...[
-        // Sem frota selecionada: opções contextuais desabilitadas
+        // Sem frota selecionada ou sem frotas cadastradas: opções contextuais desabilitadas
         _buildSectionHeader('NAVEGAÇÃO CONTEXTUAL'),
-        const MenuListItem(
+        MenuListItem(
           icon: Icons.directions_car_outlined,
           title: 'Veículos da frota',
           isEnabled: false,
           disabledReason: 'Requer frota',
+          disabledMessage: !_hasFleets ? 'Nenhuma frota cadastrada no sistema.' : 'Selecione uma frota primeiro para acessar esta opção.',
         ),
-        const MenuListItem(
+        MenuListItem(
           icon: Icons.notifications_none,
           title: 'Alertas',
           isEnabled: false,
           disabledReason: 'Requer frota',
+          disabledMessage: !_hasFleets ? 'Nenhuma frota cadastrada no sistema.' : 'Selecione uma frota primeiro para acessar esta opção.',
         ),
-        const MenuListItem(
+        MenuListItem(
           icon: Icons.history,
           title: 'Histórico',
           isEnabled: false,
           disabledReason: 'Requer frota',
+          disabledMessage: !_hasFleets ? 'Nenhuma frota cadastrada no sistema.' : 'Selecione uma frota primeiro para acessar esta opção.',
         ),
-        const MenuListItem(
+        MenuListItem(
           icon: Icons.description_outlined,
           title: 'Relatórios',
           isEnabled: false,
           disabledReason: 'Requer frota',
+          disabledMessage: !_hasFleets ? 'Nenhuma frota cadastrada no sistema.' : 'Selecione uma frota primeiro para acessar esta opção.',
         ),
         const MenuListItem(
           icon: Icons.location_on_outlined,
@@ -548,11 +673,13 @@ class _MenuContentState extends State<_MenuContent> {
       // --- GERENCIAMENTO GERAL ---
       const SizedBox(height: 12),
       _buildSectionHeader('GERENCIAMENTO'),
-      const MenuListItem(
+      MenuListItem(
         icon: Icons.fire_truck_outlined,
         title: 'Frotas (Seleção)',
         routeName: '/listar-frotas',
-        isEnabled: true,
+        isEnabled: _hasFleets,
+        disabledReason: 'Sem frotas',
+        disabledMessage: 'Nenhuma frota cadastrada no sistema.',
       ),
       const MenuListItem(
         icon: Icons.add_business_outlined,
@@ -560,11 +687,15 @@ class _MenuContentState extends State<_MenuContent> {
         routeName: '/criar-frota',
         isEnabled: true,
       ),
-      const MenuListItem(
+      MenuListItem(
         icon: Icons.devices_other_outlined,
         title: 'Listar dispositivos',
         routeName: '/listar-dispositivos',
-        isEnabled: true,
+        isEnabled: _hasFleets && _hasDevices,
+        disabledReason: !_hasFleets ? 'Requer frota' : 'Sem dispositivos',
+        disabledMessage: !_hasFleets
+            ? 'Nenhuma frota cadastrada para listar dispositivos.'
+            : 'Nenhum dispositivo cadastrado no sistema.',
       ),
       const MenuListItem(
         icon: Icons.add_box_outlined,
@@ -796,35 +927,90 @@ class _MenuContentState extends State<_MenuContent> {
               : 'Sua frota não possui nenhum dispositivo cadastrado para acessar esta opção.',
         ),
       ] else if (_userRole == 'operador') ...[
+        if (!_hasDevices) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFC8E569), width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: const [
+                    Icon(Icons.info_outline, size: 16, color: Color(0xFFC23147)),
+                    SizedBox(width: 6),
+                    Text(
+                      'Nenhum veículo vinculado',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFC23147),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'As opções que dependem de veículo estão indisponíveis.',
+                  style: TextStyle(fontSize: 11, color: Colors.black54),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+
         _buildSectionHeader('ALERTAS'),
-        const MenuListItem(
+        MenuListItem(
           icon: Icons.notification_important_outlined,
           title: 'Alertas — Veículo',
           routeName: '/alertas-veiculo',
+          isEnabled: _hasDevices,
+          disabledReason: 'Requer veículo',
+          disabledMessage: 'Você não possui nenhum veículo vinculado para acessar esta opção.',
         ),
 
         const SizedBox(height: 12),
         _buildSectionHeader('LOCALIZAÇÃO'),
-        const MenuListItem(
+        MenuListItem(
           icon: Icons.location_on_outlined,
           title: 'GPS — Veículo',
           routeName: '/gps',
+          isEnabled: _hasDevices,
+          disabledReason: 'Requer veículo',
+          disabledMessage: 'Você não possui nenhum veículo vinculado para acessar esta opção.',
         ),
 
         const SizedBox(height: 12),
         _buildSectionHeader('HISTÓRICO'),
-        const MenuListItem(
+        MenuListItem(
           icon: Icons.manage_history_outlined,
           title: 'Histórico — Veículo',
           routeName: '/historico-veiculo',
+          isEnabled: _hasDevices,
+          disabledReason: 'Requer veículo',
+          disabledMessage: 'Você não possui nenhum veículo vinculado para acessar esta opção.',
         ),
 
         const SizedBox(height: 12),
         _buildSectionHeader('RELATÓRIOS'),
-        const MenuListItem(
+        MenuListItem(
           icon: Icons.assessment_outlined,
           title: 'Relatório — Veículo',
           routeName: '/relatorios-veiculo',
+          isEnabled: _hasDevices,
+          disabledReason: 'Requer veículo',
+          disabledMessage: 'Você não possui nenhum veículo vinculado para acessar esta opção.',
         ),
       ],
 
@@ -834,11 +1020,15 @@ class _MenuContentState extends State<_MenuContent> {
         icon: Icons.person_outline,
         title: 'Perfil',
         routeName: '/perfil',
+        isEnabled: true,
       ),
       if (_userRole == 'operador')
         MenuListItem(
           icon: Icons.stop_circle_outlined,
           title: 'Parar viagem',
+          isEnabled: _hasDevices,
+          disabledReason: 'Requer veículo',
+          disabledMessage: 'Você não possui nenhum veículo vinculado para parar viagem.',
           onTapAction: () {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Viagem parada com sucesso!')),
@@ -897,6 +1087,7 @@ class MenuListItem extends StatelessWidget {
                     (disabledReason == 'Indisponível'
                         ? 'A funcionalidade de GPS está indisponível na sidebar no momento.'
                         : 'Selecione uma frota primeiro para acessar esta opção.');
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(

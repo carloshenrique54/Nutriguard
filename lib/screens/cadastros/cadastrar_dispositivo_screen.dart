@@ -80,6 +80,7 @@ class CadastrarDispositivoScreen extends StatefulWidget {
   final bool bypassAccessCheck;
   final String? initialFrotaId;
   final String? initialOperadorId;
+  final DispositivoModel? dispositivoToEdit;
 
   const CadastrarDispositivoScreen({
     super.key,
@@ -87,6 +88,7 @@ class CadastrarDispositivoScreen extends StatefulWidget {
     this.bypassAccessCheck = false,
     this.initialFrotaId,
     this.initialOperadorId,
+    this.dispositivoToEdit,
   });
 
   @override
@@ -119,14 +121,50 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
   List<UsuarioModel> _operadores = [];
   bool _isLoading = true;
   bool _isSubmitting = false;
+  DispositivoModel? _dispositivoToEdit;
+  bool _hasInitializedRoute = false;
+
+  bool get isEditing => _dispositivoToEdit != null;
 
   @override
   void initState() {
     super.initState();
     _selectedFrotaId = widget.initialFrotaId;
     _selectedOperadorId = widget.initialOperadorId;
+    if (widget.dispositivoToEdit != null) {
+      _initFromDispositivo(widget.dispositivoToEdit!);
+    }
     _checkAccess();
     _fetchInitialData();
+  }
+
+  void _initFromDispositivo(DispositivoModel d) {
+    _dispositivoToEdit = d;
+    _nomeCtrl.text = d.nomeDispositivo ?? '';
+    _numSerieCtrl.text = d.numeroSerie ?? '';
+    _modeloDispCtrl.text = d.modeloDispositivo ?? '';
+    _modeloVeiculoCtrl.text = d.modeloVeiculo ?? '';
+    _placaCtrl.text = d.placaVeiculo ?? '';
+    _selectedFrotaId = d.idFrota;
+    _selectedOperadorId = d.idOperador;
+    _tempMinCtrl.text = d.temperaturaMinima?.toString() ?? '';
+    _tempMaxCtrl.text = d.temperaturaMaxima?.toString() ?? '';
+    _humidadeCtrl.text = d.umidadeMaxima?.toString() ?? '';
+    _sensibilidadeCtrl.text = d.sensibilidadeVibracao?.toString() ?? '';
+    _limiteVibracaoCtrl.text = d.limiteVibracao?.toString() ?? '';
+    _intervaloCtrl.text = d.intervaloDados?.toString() ?? '';
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_hasInitializedRoute) {
+      _hasInitializedRoute = true;
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (_dispositivoToEdit == null && args is DispositivoModel) {
+        _initFromDispositivo(args);
+      }
+    }
   }
 
   Future<void> _fetchInitialData() async {
@@ -138,10 +176,10 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
       if (mounted) {
         setState(() {
           _frotas = frotasList;
-          _operadores = usersList.where((u) => u.cargo?.toLowerCase() == 'operador').toList();
+          _operadores = usersList.where((u) => u.cargo?.trim().toLowerCase() == 'operador').toList();
 
           // Pré-seleciona a frota ativa no contexto se não especificada
-          if (_selectedFrotaId == null) {
+          if (_selectedFrotaId == null && !isEditing) {
             final contextFrota = AdminContextService().selectedFrota;
             if (contextFrota != null && _frotas.any((f) => f.id == contextFrota.id)) {
               _selectedFrotaId = contextFrota.id;
@@ -306,50 +344,96 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
     setState(() => _isSubmitting = true);
 
     try {
-      await _supabase.cadastrarDispositivo(
-        nomeDispositivo: nome,
-        idFrota: _selectedFrotaId,
-        idOperador: _selectedOperadorId!,
-        numeroSerie: numSerie,
-        modeloDispositivo: modeloDisp,
-        modeloVeiculo: modeloVeiculo,
-        placaVeiculo: placa,
-        temperaturaMinima: tempMin,
-        temperaturaMaxima: tempMax,
-        umidadeMaxima: humidade,
-        sensibilidadeVibracao: sensibilidade,
-        limiteVibracao: limiteVibracao,
-        intervaloDados: intervalo,
-      );
+      if (isEditing) {
+        final updated = await _supabase.updateDispositivo(
+          id: _dispositivoToEdit!.id,
+          nomeDispositivo: nome,
+          idFrota: (_selectedFrotaId != null && _selectedFrotaId!.isNotEmpty) ? _selectedFrotaId : null,
+          idOperador: _selectedOperadorId!,
+          numeroSerie: numSerie,
+          modeloDispositivo: modeloDisp,
+          modeloVeiculo: modeloVeiculo,
+          placaVeiculo: placa,
+          temperaturaMinima: tempMin,
+          temperaturaMaxima: tempMax,
+          umidadeMaxima: humidade,
+          sensibilidadeVibracao: sensibilidade,
+          limiteVibracao: limiteVibracao,
+          intervaloDados: intervalo,
+        );
 
-      HapticFeedback.mediumImpact();
+        if (AdminContextService().selectedDevice?.id == _dispositivoToEdit!.id) {
+          AdminContextService().setDevice(updated);
+        }
 
-      _nomeCtrl.clear();
-      _numSerieCtrl.clear();
-      _modeloDispCtrl.clear();
-      _modeloVeiculoCtrl.clear();
-      _placaCtrl.clear();
-      _tempMinCtrl.clear();
-      _tempMaxCtrl.clear();
-      _humidadeCtrl.clear();
-      _sensibilidadeCtrl.clear();
-      _limiteVibracaoCtrl.clear();
-      _intervaloCtrl.clear();
+        HapticFeedback.mediumImpact();
 
-      if (!mounted) return;
-      setState(() => _isSubmitting = false);
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text(
-            'Dispositivo cadastrado com sucesso!',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        if (!mounted) return;
+        setState(() => _isSubmitting = false);
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+              'Dispositivo atualizado com sucesso!',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
           ),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        ),
-      );
+        );
+
+        if (Navigator.canPop(context)) {
+          Navigator.pop(context, true);
+        } else {
+          Navigator.pushReplacementNamed(context, '/listar-dispositivos');
+        }
+      } else {
+        await _supabase.cadastrarDispositivo(
+          nomeDispositivo: nome,
+          idFrota: _selectedFrotaId,
+          idOperador: _selectedOperadorId!,
+          numeroSerie: numSerie,
+          modeloDispositivo: modeloDisp,
+          modeloVeiculo: modeloVeiculo,
+          placaVeiculo: placa,
+          temperaturaMinima: tempMin,
+          temperaturaMaxima: tempMax,
+          umidadeMaxima: humidade,
+          sensibilidadeVibracao: sensibilidade,
+          limiteVibracao: limiteVibracao,
+          intervaloDados: intervalo,
+        );
+
+        HapticFeedback.mediumImpact();
+
+        _nomeCtrl.clear();
+        _numSerieCtrl.clear();
+        _modeloDispCtrl.clear();
+        _modeloVeiculoCtrl.clear();
+        _placaCtrl.clear();
+        _tempMinCtrl.clear();
+        _tempMaxCtrl.clear();
+        _humidadeCtrl.clear();
+        _sensibilidadeCtrl.clear();
+        _limiteVibracaoCtrl.clear();
+        _intervaloCtrl.clear();
+
+        if (!mounted) return;
+        setState(() => _isSubmitting = false);
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+              'Dispositivo cadastrado com sucesso!',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _isSubmitting = false);
@@ -496,9 +580,9 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Cadastrar\nDispositivo',
-                      style: TextStyle(
+                    Text(
+                      isEditing ? 'Editar\nDispositivo' : 'Cadastrar\nDispositivo',
+                      style: const TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.bold,
                         color: Color(0xFFC23147),
@@ -854,14 +938,14 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
                                       strokeWidth: 2.5,
                                     ),
                                   )
-                                : const Row(
+                                : Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      Icon(Icons.save_outlined, color: Colors.white, size: 20),
-                                      SizedBox(width: 8),
+                                      const Icon(Icons.save_outlined, color: Colors.white, size: 20),
+                                      const SizedBox(width: 8),
                                       Text(
-                                        'Cadastrar Dispositivo',
-                                        style: TextStyle(
+                                        isEditing ? 'Salvar alterações' : 'Cadastrar Dispositivo',
+                                        style: const TextStyle(
                                           color: Colors.white,
                                           fontSize: 16,
                                           fontWeight: FontWeight.bold,

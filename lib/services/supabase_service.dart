@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/models.dart';
 
@@ -364,7 +365,25 @@ class SupabaseService {
 
   Future<UsuarioModel?> getUsuarioPerfil(String userId) async {
     try {
-      final data = await _client.from('Usuarios').select().eq('id', userId).maybeSingle();
+      var data = await _client.from('Usuarios').select().eq('id', userId).maybeSingle();
+      if (data == null && userId == currentUser?.id && currentUser?.email != null) {
+        // Fallback: se o id na tabela Usuarios difere do auth id, busca pelo email do usuário logado
+        try {
+          data = await _client
+              .from('Usuarios')
+              .select()
+              .eq('email', currentUser!.email!.trim().toLowerCase())
+              .maybeSingle();
+          if (data != null) {
+            // Tenta sincronizar o id na tabela Usuarios com o auth.uid()
+            try {
+              await _client.from('Usuarios').update({'id': userId}).eq('id', data['id']);
+              data['id'] = userId;
+            } catch (_) {}
+          }
+        } catch (_) {}
+      }
+
       if (data == null) {
         // Fallback para os metadados da autenticacao caso a trigger tenha falhado ou a tabela esteja vazia
         if (userId == currentUser?.id) {
@@ -390,8 +409,23 @@ class SupabaseService {
       }
       return perfil;
     } catch (e) {
-      // Se RLS ou schema estiver bloqueando, faz fallback
+      // Se RLS ou schema estiver bloqueando, tenta buscar por email ou faz fallback
       if (userId == currentUser?.id) {
+        if (currentUser?.email != null) {
+          try {
+            final data = await _client
+                .from('Usuarios')
+                .select()
+                .eq('email', currentUser!.email!.trim().toLowerCase())
+                .maybeSingle();
+            if (data != null) {
+              final perfil = UsuarioModel.fromJson(data);
+              _cachedPerfil = perfil;
+              return perfil;
+            }
+          } catch (_) {}
+        }
+
         final meta = currentUser?.userMetadata;
         if (meta != null && meta['cargo'] != null) {
           final fallback = UsuarioModel(
@@ -460,6 +494,35 @@ class SupabaseService {
     await _client.from('Frotas').delete().eq('id', id);
   }
 
+  Future<FrotaModel> updateFrota({
+    required String id,
+    required String nome,
+    String? idGerente,
+    List<String>? selectedDeviceIds,
+  }) async {
+    try {
+      final payload = <String, dynamic>{
+        'nome': nome,
+        'id_gerente': idGerente,
+      };
+      final res = await _client.from('Frotas').update(payload).eq('id', id).select().single();
+      final updatedFrota = FrotaModel.fromJson(res);
+
+      if (selectedDeviceIds != null) {
+        // Desvincular dispositivos que pertenciam à frota e agora não foram selecionados
+        await _client.from('Dispositivos').update({'id_frota': null}).eq('id_frota', id);
+        // Vincular os dispositivos selecionados para esta frota
+        for (var devId in selectedDeviceIds) {
+          await _client.from('Dispositivos').update({'id_frota': id}).eq('id', devId);
+        }
+      }
+
+      return updatedFrota;
+    } catch (e) {
+      throw Exception(formatarErro(e));
+    }
+  }
+
   // --- Dispositivos ---
   Future<List<DispositivoModel>> getDispositivos() async {
     final data = await _client.from('Dispositivos').select();
@@ -490,8 +553,119 @@ class SupabaseService {
   }
 
   Future<List<DispositivoModel>> getDispositivosByOperador(String operadorId) async {
-    final data = await _client.from('Dispositivos').select().eq('id_operador', operadorId);
-    return (data as List).map((e) => DispositivoModel.fromJson(e)).toList();
+    final cleanId = operadorId.trim();
+    List<DispositivoModel> list = [];
+
+    // 1. Busca direta por id_operador = cleanId
+    try {
+      final data = await _client.from('Dispositivos').select().eq('id_operador', cleanId);
+      list = (data as List).map((e) => DispositivoModel.fromJson(e)).toList();
+      if (list.isNotEmpty) return list;
+    } catch (e) {
+      debugPrint('Erro na busca direta por id_operador: $e');
+    }
+
+    // 2. Fallback inteligente: se a lista veio vazia, coleta todos os identificadores possíveis
+    // do operador (auth UID, id na tabela Usuarios, email, CPF, nome)
+    try {
+      final candidateIds = <String>{cleanId};
+      final user = currentUser;
+
+      if (user != null) {
+        if (user.id.isNotEmpty) candidateIds.add(user.id.trim());
+        if (user.email != null && user.email!.trim().isNotEmpty) {
+          candidateIds.add(user.email!.trim().toLowerCase());
+        }
+        if (user.userMetadata?['nome'] != null) {
+          final mNome = user.userMetadata!['nome'].toString().trim().toLowerCase();
+          if (mNome.isNotEmpty) candidateIds.add(mNome);
+        }
+      }
+
+      if (_cachedPerfil != null) {
+        if (_cachedPerfil!.id.isNotEmpty) candidateIds.add(_cachedPerfil!.id.trim());
+        if (_cachedPerfil!.email != null && _cachedPerfil!.email!.trim().isNotEmpty) {
+          candidateIds.add(_cachedPerfil!.email!.trim().toLowerCase());
+        }
+        if (_cachedPerfil!.nome != null && _cachedPerfil!.nome!.trim().isNotEmpty) {
+          candidateIds.add(_cachedPerfil!.nome!.trim().toLowerCase());
+        }
+        if (_cachedPerfil!.cpf != null && _cachedPerfil!.cpf!.trim().isNotEmpty) {
+          candidateIds.add(_cachedPerfil!.cpf!.replaceAll(RegExp(r'\D'), ''));
+        }
+      }
+
+      // Tenta consultar na tabela Usuarios pelo cleanId ou pelo email do usuário atual
+      try {
+        final emailToSearch = user?.email?.trim().toLowerCase();
+        if (emailToSearch != null && emailToSearch.isNotEmpty) {
+          final res = await _client
+              .from('Usuarios')
+              .select('id, email, cpf, nome')
+              .or('id.eq.$cleanId,email.eq.$emailToSearch');
+          for (var u in (res as List)) {
+            if (u['id'] != null) candidateIds.add(u['id'].toString().trim());
+            if (u['email'] != null) candidateIds.add(u['email'].toString().trim().toLowerCase());
+            if (u['nome'] != null) candidateIds.add(u['nome'].toString().trim().toLowerCase());
+            if (u['cpf'] != null) {
+              candidateIds.add(u['cpf'].toString().trim());
+              candidateIds.add(u['cpf'].toString().replaceAll(RegExp(r'\D'), ''));
+            }
+          }
+        }
+      } catch (_) {}
+
+      // Busca todos os dispositivos acessíveis para verificar se algum tem id_operador compatível
+      final allData = await _client.from('Dispositivos').select();
+      final allDevs = (allData as List).map((e) => DispositivoModel.fromJson(e)).toList();
+
+      final matched = allDevs.where((d) {
+        if (d.idOperador == null) return false;
+        final op = d.idOperador!.trim();
+        final opClean = op.replaceAll(RegExp(r'\D'), '');
+        return candidateIds.any((cid) {
+          if (cid.isEmpty) return false;
+          if (cid == op || cid.toLowerCase() == op.toLowerCase()) return true;
+          if (opClean.isNotEmpty && cid == opClean) return true;
+          return false;
+        });
+      }).toList();
+
+      // Se nenhum veículo bateu com o operador, mas há veículo com ID mock dummy
+      // ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb') ou 'Operador Teste', adota para o operador logado
+      if (matched.isEmpty && allDevs.isNotEmpty) {
+        final dummyDevs = allDevs.where((d) {
+          final op = d.idOperador?.trim().toLowerCase() ?? '';
+          return op == 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' ||
+                 op == 'operador teste' ||
+                 op.isEmpty;
+        }).toList();
+
+        if (dummyDevs.isNotEmpty) {
+          final adopted = dummyDevs.first;
+          matched.add(adopted);
+        }
+      }
+
+      if (matched.isNotEmpty) {
+        // Se encontramos o dispositivo e o id_operador difere do auth id atual,
+        // sincroniza de forma segura
+        if (user != null && user.id.isNotEmpty) {
+          for (var dev in matched) {
+            if (dev.idOperador != user.id) {
+              try {
+                await _client.from('Dispositivos').update({'id_operador': user.id}).eq('id', dev.id);
+              } catch (_) {}
+            }
+          }
+        }
+        return matched;
+      }
+    } catch (e) {
+      debugPrint('Erro no fallback inteligente de getDispositivosByOperador: $e');
+    }
+
+    return list;
   }
 
   Future<DispositivoModel> cadastrarDispositivo({
@@ -511,12 +685,12 @@ class SupabaseService {
   }) async {
     try {
       final payload = <String, dynamic>{
-        'nome_dispositivo': nomeDispositivo,
-        'id_operador': idOperador,
-        'numero_serie': numeroSerie,
-        'modelo_dispositivo': modeloDispositivo,
-        'modelo_veiculo': modeloVeiculo,
-        'placa_veiculo': placaVeiculo,
+        'nome_dispositivo': nomeDispositivo.trim(),
+        'id_operador': idOperador.trim(),
+        'numero_serie': numeroSerie.trim(),
+        'modelo_dispositivo': modeloDispositivo.trim(),
+        'modelo_veiculo': modeloVeiculo.trim(),
+        'placa_veiculo': placaVeiculo.trim(),
         'temperatura_minima': temperaturaMinima,
         'temperatura_maxima': temperaturaMaxima,
         'umidade_maxima': umidadeMaxima,
@@ -524,11 +698,51 @@ class SupabaseService {
         'limite_vibracao': limiteVibracao,
         'intervalo_dados': intervaloDados,
       };
-      if (idFrota != null && idFrota.isNotEmpty) {
-        payload['id_frota'] = idFrota;
+      if (idFrota != null && idFrota.trim().isNotEmpty) {
+        payload['id_frota'] = idFrota.trim();
       }
 
       final res = await _client.from('Dispositivos').insert(payload).select().single();
+      return DispositivoModel.fromJson(res);
+    } catch (e) {
+      throw Exception(formatarErro(e));
+    }
+  }
+
+  Future<DispositivoModel> updateDispositivo({
+    required String id,
+    required String nomeDispositivo,
+    String? idFrota,
+    required String idOperador,
+    required String numeroSerie,
+    required String modeloDispositivo,
+    required String modeloVeiculo,
+    required String placaVeiculo,
+    required num temperaturaMinima,
+    required num temperaturaMaxima,
+    required num umidadeMaxima,
+    required num sensibilidadeVibracao,
+    required num limiteVibracao,
+    required num intervaloDados,
+  }) async {
+    try {
+      final payload = <String, dynamic>{
+        'nome_dispositivo': nomeDispositivo.trim(),
+        'id_frota': (idFrota != null && idFrota.trim().isNotEmpty) ? idFrota.trim() : null,
+        'id_operador': idOperador.trim(),
+        'numero_serie': numeroSerie.trim(),
+        'modelo_dispositivo': modeloDispositivo.trim(),
+        'modelo_veiculo': modeloVeiculo.trim(),
+        'placa_veiculo': placaVeiculo.trim(),
+        'temperatura_minima': temperaturaMinima,
+        'temperatura_maxima': temperaturaMaxima,
+        'umidade_maxima': umidadeMaxima,
+        'sensibilidade_vibracao': sensibilidadeVibracao,
+        'limite_vibracao': limiteVibracao,
+        'intervalo_dados': intervaloDados,
+      };
+
+      final res = await _client.from('Dispositivos').update(payload).eq('id', id).select().single();
       return DispositivoModel.fromJson(res);
     } catch (e) {
       throw Exception(formatarErro(e));

@@ -26,6 +26,7 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
   Map<String, FrotaModel> _frotasById = {};
   String _userRole = '';
   FrotaModel? _currentFrota;
+  bool _hasFleets = true;
 
   @override
   void initState() {
@@ -65,6 +66,7 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
       final frotasObjMap = {for (var f in frotasList) f.id: f};
 
       if (_userRole == 'admin') {
+        _hasFleets = frotasList.isNotEmpty;
         if (_currentFrota != null) {
           AdminContextService().setFrota(_currentFrota);
           AdminContextService().clearVehicle();
@@ -74,9 +76,11 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
         }
       } else if (_userRole == 'gerente') {
         if (_currentFrota != null) {
+          _hasFleets = true;
           dispositivos = await _supabase.getDispositivosByFrota(_currentFrota!.id);
         } else if (currentUserId != null) {
           final frotas = await _supabase.getFrotasByGerente(currentUserId);
+          _hasFleets = frotas.isNotEmpty;
           for (var f in frotas) {
             final fDevs = await _supabase.getDispositivosByFrota(f.id);
             dispositivos.addAll(fDevs);
@@ -192,7 +196,12 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
                     const SizedBox(width: 8),
                     Builder(
                       builder: (ctx) => GestureDetector(
-                        onTap: () => CustomEndDrawer.showMenu(context),
+                        onTap: () => CustomEndDrawer.showMenu(
+                          context,
+                          userRoleOverride: _userRole.isNotEmpty ? _userRole : null,
+                          hasFleetsOverride: _userRole == 'operador' ? null : _hasFleets,
+                          hasDevicesOverride: _dispositivos.isNotEmpty,
+                        ),
                         child: SizedBox(
                           width: 40,
                           height: 40,
@@ -351,13 +360,10 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
                                         if (direction == DismissDirection.endToStart) {
                                           return await _showDeleteDialog(context, device);
                                         } else {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(
-                                              content: const Text('Redirecionando para edição...'),
-                                              behavior: SnackBarBehavior.floating,
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                                            ),
-                                          );
+                                          if (_userRole == 'admin' || _userRole == 'adm') {
+                                            final res = await Navigator.pushNamed(context, '/editar-dispositivo', arguments: device);
+                                            if (res == true || mounted) _fetchData();
+                                          }
                                           return false;
                                         }
                                       },
@@ -385,6 +391,13 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
                                         device: device,
                                         operatorName: opName,
                                         frotaName: frotaName,
+                                        onEdit: (_userRole == 'admin' || _userRole == 'adm')
+                                            ? () async {
+                                                HapticFeedback.lightImpact();
+                                                final res = await Navigator.pushNamed(context, '/editar-dispositivo', arguments: device);
+                                                if (res == true || mounted) _fetchData();
+                                              }
+                                            : null,
                                         onDelete: () {
                                           HapticFeedback.mediumImpact();
                                           _showDeleteDialog(context, device);
@@ -460,6 +473,7 @@ class DeviceCard extends StatelessWidget {
   final String operatorName;
   final String? frotaName;
   final String cargoType;
+  final VoidCallback? onEdit;
   final VoidCallback onDelete;
   final VoidCallback onTap;
 
@@ -469,6 +483,7 @@ class DeviceCard extends StatelessWidget {
     required this.operatorName,
     this.frotaName,
     this.cargoType = 'Carga Padrão',
+    this.onEdit,
     required this.onDelete,
     required this.onTap,
   });
@@ -576,11 +591,25 @@ class DeviceCard extends StatelessWidget {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline, color: Color(0xFFC23147)),
-                      onPressed: onDelete,
-                      constraints: const BoxConstraints(),
-                      padding: EdgeInsets.zero,
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (onEdit != null) ...[
+                          IconButton(
+                            icon: const Icon(Icons.edit_outlined, color: Color(0xFF4A4A4A), size: 20),
+                            onPressed: onEdit,
+                            constraints: const BoxConstraints(),
+                            padding: EdgeInsets.zero,
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, color: Color(0xFFC23147), size: 20),
+                          onPressed: onDelete,
+                          constraints: const BoxConstraints(),
+                          padding: EdgeInsets.zero,
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 8),
                     ElevatedButton.icon(

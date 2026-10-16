@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../widgets/custom_bottom_nav_bar.dart';
 import '../../widgets/custom_end_drawer.dart';
 import '../../services/supabase_service.dart';
@@ -27,9 +28,12 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
   DispositivoModel? _selectedDevice;
   MedicaoModel? _latestMedicao;
   List<OcorrenciaModel> _alerts = [];
+  bool _gerenteHasFleets = true;
 
   bool _hasActiveTrip = false;
   String _activeTripDuration = '0h 0m';
+  UsuarioModel? _currentPerfil;
+  String? _currentUserEmail;
 
   @override
   void initState() {
@@ -63,7 +67,9 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
         if (mounted) Navigator.pushReplacementNamed(context, '/login');
         return;
       }
+      _currentUserEmail = user.email;
       final perfil = await _supabase.getUsuarioPerfil(user.id);
+      _currentPerfil = perfil;
       final role = perfil?.role ?? '';
       _userRole = role;
 
@@ -110,6 +116,7 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
         }
       } else if (role == 'gerente') {
         final frotas = await _supabase.getFrotasByGerente(user.id);
+        _gerenteHasFleets = frotas.isNotEmpty;
         for (var f in frotas) {
           final devs = await _supabase.getDispositivosByFrota(f.id);
           devices.addAll(devs);
@@ -119,7 +126,14 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
         }
       } else {
         // Operador
-        devices = await _supabase.getDispositivosByOperador(user.id);
+        final targetOperadorId = (perfil?.id != null && perfil!.id.trim().isNotEmpty) ? perfil.id : user.id;
+        devices = await _supabase.getDispositivosByOperador(targetOperadorId);
+        if (devices.isEmpty && targetOperadorId != user.id) {
+          final fallbackDevs = await _supabase.getDispositivosByOperador(user.id);
+          if (fallbackDevs.isNotEmpty) {
+            devices = fallbackDevs;
+          }
+        }
         if (argDevice != null && !devices.any((d) => d.id == argDevice!.id)) {
           devices.add(argDevice);
         }
@@ -199,18 +213,19 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bool hideBottomNav = _isLoading || (_userRole == 'gerente' && _accessibleDevices.isEmpty && _selectedDevice == null);
+    final bool isEmpty = _accessibleDevices.isEmpty && _selectedDevice == null;
 
     return Scaffold(
       extendBody: true,
       backgroundColor: const Color(0xFFFFF2E0),
-      bottomNavigationBar: hideBottomNav
-          ? null
-          : CustomBottomNavBar(
-              selectedIndex: 2,
-              isVehicleContext: true,
-              currentDevice: _selectedDevice,
-            ),
+      bottomNavigationBar: CustomBottomNavBar(
+        selectedIndex: 2,
+        isVehicleContext: true,
+        currentDevice: _selectedDevice,
+        isDisabled: isEmpty,
+        hasDevicesOverride: !isEmpty,
+        userRoleOverride: _userRole.isNotEmpty ? _userRole : null,
+      ),
       body: WatermarkBackground(
         child: SafeArea(
           child: _isLoading
@@ -275,38 +290,114 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
     }
 
     return Padding(
-      padding: const EdgeInsets.all(24.0),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.directions_car_outlined, size: 72, color: Color(0xFFC23147)),
-            const SizedBox(height: 16),
-            Text(
-              title,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              description,
-              style: const TextStyle(fontSize: 14, color: Colors.black54),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            if (isAdmin)
-              ElevatedButton.icon(
-                onPressed: () => Navigator.pushNamed(context, '/cadastrar-dispositivo').then((_) => _fetchData()),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFC23147),
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeader(context),
+          Expanded(
+            child: Center(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.directions_car_outlined, size: 72, color: Color(0xFFC23147)),
+                    const SizedBox(height: 16),
+                    Text(
+                      title,
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      description,
+                      style: const TextStyle(fontSize: 14, color: Colors.black54),
+                      textAlign: TextAlign.center,
+                    ),
+                    if (!isAdmin && !isGerente) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFC23147).withOpacity(0.2)),
+                          boxShadow: const [
+                            BoxShadow(color: Color(0x0A000000), blurRadius: 8, offset: Offset(0, 2)),
+                          ],
+                        ),
+                        child: Column(
+                          children: [
+                            Text(
+                              'Usuário conectado: ${_currentPerfil?.nome ?? "Operador"}',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black87),
+                            ),
+                            if (_currentUserEmail != null && _currentUserEmail!.isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                _currentUserEmail!,
+                                style: const TextStyle(fontSize: 12, color: Colors.black54),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              HapticFeedback.lightImpact();
+                              _fetchData();
+                            },
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFFC23147),
+                              side: const BorderSide(color: Color(0xFFC23147)),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            ),
+                            icon: const Icon(Icons.refresh, size: 18),
+                            label: const Text('Recarregar'),
+                          ),
+                          const SizedBox(width: 12),
+                          ElevatedButton.icon(
+                            onPressed: () async {
+                              HapticFeedback.mediumImpact();
+                              await _supabase.signOut();
+                              if (mounted) Navigator.pushReplacementNamed(context, '/login');
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFC23147),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            ),
+                            icon: const Icon(Icons.logout, size: 18),
+                            label: const Text('Trocar de Conta'),
+                          ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                    if (isAdmin)
+                      ElevatedButton.icon(
+                        onPressed: () => Navigator.pushNamed(context, '/cadastrar-dispositivo').then((_) => _fetchData()),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFC23147),
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        icon: const Icon(Icons.add, color: Colors.white),
+                        label: const Text('Cadastrar Dispositivo', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      ),
+                  ],
                 ),
-                icon: const Icon(Icons.add, color: Colors.white),
-                label: const Text('Cadastrar Dispositivo', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
               ),
-          ],
-        ),
+            ),
+          ),
+          const SizedBox(height: 80),
+        ],
       ),
     );
   }
@@ -315,49 +406,60 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
     final hasFrota = AdminContextService().hasFrota;
     final frotaNome = AdminContextService().currentFrotaName;
 
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.directions_car_outlined, size: 72, color: Color(0xFFC23147)),
-            const SizedBox(height: 16),
-            const Text(
-              'Nenhum veículo selecionado',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              hasFrota
-                  ? 'Você está no contexto da frota "$frotaNome". Para acessar a telemetria detalhada, selecione um veículo na lista de veículos da frota.'
-                  : 'Nenhuma frota ou veículo foi selecionado. Como administrador, inicie escolhendo uma frota para navegar pelo sistema.',
-              style: const TextStyle(fontSize: 14, color: Colors.black54),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: () {
-                if (hasFrota) {
-                  Navigator.pushNamed(context, '/listar-dispositivos', arguments: AdminContextService().selectedFrota);
-                } else {
-                  Navigator.pushNamed(context, '/listar-frotas');
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFC23147),
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeader(context),
+          Expanded(
+            child: Center(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.directions_car_outlined, size: 72, color: Color(0xFFC23147)),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Nenhum veículo selecionado',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      hasFrota
+                          ? 'Você está no contexto da frota "$frotaNome". Para acessar a telemetria detalhada, selecione um veículo na lista de veículos da frota.'
+                          : 'Nenhuma frota ou veículo foi selecionado. Como administrador, inicie escolhendo uma frota para navegar pelo sistema.',
+                      style: const TextStyle(fontSize: 14, color: Colors.black54),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        if (hasFrota) {
+                          Navigator.pushNamed(context, '/listar-dispositivos', arguments: AdminContextService().selectedFrota);
+                        } else {
+                          Navigator.pushNamed(context, '/listar-frotas');
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFC23147),
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: Icon(hasFrota ? Icons.directions_car : Icons.local_shipping, color: Colors.white),
+                      label: Text(
+                        hasFrota ? 'Ver veículos da frota' : 'Selecionar frota',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              icon: Icon(hasFrota ? Icons.directions_car : Icons.local_shipping, color: Colors.white),
-              label: Text(
-                hasFrota ? 'Ver veículos da frota' : 'Selecionar frota',
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-              ),
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 80),
+        ],
       ),
     );
   }
@@ -427,10 +529,17 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
         const Spacer(),
         Builder(
           builder: (ctx) => GestureDetector(
-            onTap: () => CustomEndDrawer.showMenu(
-              context,
-              hasFleetsOverride: _userRole == 'gerente' ? _accessibleDevices.isNotEmpty : null,
-            ),
+            onTap: () {
+              final bool isEmpty = _accessibleDevices.isEmpty && _selectedDevice == null;
+              CustomEndDrawer.showMenu(
+                context,
+                userRoleOverride: _userRole.isNotEmpty ? _userRole : null,
+                hasFleetsOverride: _userRole == 'gerente'
+                    ? _gerenteHasFleets
+                    : (_userRole == 'admin' && AdminContextService().hasFrota ? true : null),
+                hasDevicesOverride: !isEmpty,
+              );
+            },
             child: SizedBox(
               width: 48,
               height: 48,

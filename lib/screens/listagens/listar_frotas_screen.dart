@@ -23,6 +23,7 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
   Map<String, String> _gerentesNomes = {};
   Map<String, int> _deviceCounts = {};
   String _userRole = '';
+  bool _hasDevices = true;
 
   @override
   void initState() {
@@ -68,6 +69,7 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
           _frotas = frotas;
           _gerentesNomes = gerentesMap;
           _deviceCounts = countsMap;
+          _hasDevices = dispositivos.isNotEmpty;
           _isLoading = false;
         });
       }
@@ -141,7 +143,12 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
                     const Spacer(),
                     Builder(
                       builder: (ctx) => GestureDetector(
-                        onTap: () => CustomEndDrawer.showMenu(context),
+                        onTap: () => CustomEndDrawer.showMenu(
+                          context,
+                          userRoleOverride: _userRole.isNotEmpty ? _userRole : null,
+                          hasFleetsOverride: _frotas.isNotEmpty,
+                          hasDevicesOverride: _hasDevices,
+                        ),
                         child: SizedBox(
                           width: 40,
                           height: 40,
@@ -197,13 +204,10 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
                                       return await _showDeleteDialog(context, fleet);
                                     } else {
                                       // Edit Action
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: const Text('Redirecionando para edição...'),
-                                          behavior: SnackBarBehavior.floating,
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                                        ),
-                                      );
+                                      if (_userRole == 'admin' || _userRole == 'adm') {
+                                        final res = await Navigator.pushNamed(context, '/editar-frota', arguments: fleet);
+                                        if (res == true || mounted) _fetchData();
+                                      }
                                       return false;
                                     }
                                   },
@@ -231,6 +235,13 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
                                     fleet: fleet,
                                     gerenteName: gerenteName,
                                     deviceCount: deviceCount,
+                                    onEdit: (_userRole == 'admin' || _userRole == 'adm')
+                                        ? () async {
+                                            HapticFeedback.lightImpact();
+                                            final res = await Navigator.pushNamed(context, '/editar-frota', arguments: fleet);
+                                            if (res == true || mounted) _fetchData();
+                                          }
+                                        : null,
                                     onDelete: () {
                                       HapticFeedback.mediumImpact();
                                       _showDeleteDialog(context, fleet);
@@ -302,6 +313,7 @@ class FleetCard extends StatelessWidget {
   final FrotaModel fleet;
   final String gerenteName;
   final int deviceCount;
+  final VoidCallback? onEdit;
   final VoidCallback onDelete;
   final VoidCallback onTap;
   final VoidCallback? onTapVehicles;
@@ -311,6 +323,7 @@ class FleetCard extends StatelessWidget {
     required this.fleet,
     required this.gerenteName,
     required this.deviceCount,
+    this.onEdit,
     required this.onDelete,
     required this.onTap,
     this.onTapVehicles,
@@ -390,11 +403,25 @@ class FleetCard extends StatelessWidget {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline, color: Color(0xFFC23147)),
-                      onPressed: onDelete,
-                      constraints: const BoxConstraints(),
-                      padding: EdgeInsets.zero,
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (onEdit != null) ...[
+                          IconButton(
+                            icon: const Icon(Icons.edit_outlined, color: Color(0xFF4A4A4A), size: 20),
+                            onPressed: onEdit,
+                            constraints: const BoxConstraints(),
+                            padding: EdgeInsets.zero,
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, color: Color(0xFFC23147), size: 20),
+                          onPressed: onDelete,
+                          constraints: const BoxConstraints(),
+                          padding: EdgeInsets.zero,
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 4),
                     GestureDetector(

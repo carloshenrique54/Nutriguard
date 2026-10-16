@@ -75,7 +75,9 @@ class NutriGuardApp extends StatelessWidget {
         // Cadastros e Listagens
         '/cadastrar-funcionario': (context) => const CadastrarFuncionarioScreen(),
         '/cadastrar-dispositivo': (context) => const CadastrarDispositivoScreen(),
+        '/editar-dispositivo': (context) => const CadastrarDispositivoScreen(),
         '/criar-frota': (context) => const CriarFrotaScreen(),
+        '/editar-frota': (context) => const CriarFrotaScreen(),
         '/listar-dispositivos': (context) => const ListarDispositivosScreen(),
         '/listar-gerentes': (context) => const ListarOperadoresScreen(title: 'Gerentes'),
         '/listar-operadores': (context) => const ListarOperadoresScreen(title: 'Operadores'),

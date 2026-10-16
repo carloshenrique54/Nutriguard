@@ -324,76 +324,98 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
 
   Widget _buildEmptyFrotasAdmin() {
     return Padding(
-      padding: const EdgeInsets.all(24.0),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.local_shipping_outlined, size: 72, color: Color(0xFFC23147)),
-            const SizedBox(height: 16),
-            const Text(
-              'Nenhuma frota cadastrada',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              _totalSystemDevices > 0
-                  ? 'Existem $_totalSystemDevices dispositivos cadastrados prontos para uso. Crie uma frota para associá-los!'
-                  : 'Nenhuma frota cadastrada no sistema. Comece criando uma nova frota!',
-              style: const TextStyle(fontSize: 14, color: Colors.black54),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: () => Navigator.pushNamed(context, '/criar-frota').then((_) => _fetchData()),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFC23147),
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeader(context),
+          Expanded(
+            child: Center(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.local_shipping_outlined, size: 72, color: Color(0xFFC23147)),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Nenhuma frota cadastrada',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _totalSystemDevices > 0
+                          ? 'Existem $_totalSystemDevices dispositivos cadastrados prontos para uso. Crie uma frota para associá-los!'
+                          : 'Nenhuma frota cadastrada no sistema. Comece criando uma nova frota!',
+                      style: const TextStyle(fontSize: 14, color: Colors.black54),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton.icon(
+                      onPressed: () => Navigator.pushNamed(context, '/criar-frota').then((_) => _fetchData()),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFC23147),
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.add, color: Colors.white),
+                      label: const Text('Criar frota', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
               ),
-              icon: const Icon(Icons.add, color: Colors.white),
-              label: const Text('Criar frota', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 80),
+        ],
       ),
     );
   }
 
   Widget _buildNoFrotaSelectedAdmin() {
     return Padding(
-      padding: const EdgeInsets.all(24.0),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.fire_truck_outlined, size: 72, color: Color(0xFFC23147)),
-            const SizedBox(height: 16),
-            const Text(
-              'Nenhuma frota selecionada',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Para visualizar métricas, relatórios e veículos no Dashboard, selecione uma frota primeiro.',
-              style: TextStyle(fontSize: 14, color: Colors.black54),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: () => Navigator.pushNamed(context, '/listar-frotas'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFC23147),
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeader(context),
+          Expanded(
+            child: Center(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.fire_truck_outlined, size: 72, color: Color(0xFFC23147)),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Nenhuma frota selecionada',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Para visualizar métricas, relatórios e veículos no Dashboard, selecione uma frota primeiro.',
+                      style: TextStyle(fontSize: 14, color: Colors.black54),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton.icon(
+                      onPressed: () => Navigator.pushNamed(context, '/listar-frotas'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFC23147),
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.format_list_bulleted, color: Colors.white),
+                      label: const Text('Selecionar frota', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
               ),
-              icon: const Icon(Icons.format_list_bulleted, color: Colors.white),
-              label: const Text('Selecionar frota', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 80),
+        ],
       ),
     );
   }
@@ -507,7 +529,9 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
               builder: (ctx) => GestureDetector(
                 onTap: () => CustomEndDrawer.showMenu(
                   context,
-                  hasFleetsOverride: _userRole == 'gerente' ? _frotas.isNotEmpty : null,
+                  userRoleOverride: _userRole.isNotEmpty ? _userRole : null,
+                  hasFleetsOverride: _frotas.isNotEmpty,
+                  hasDevicesOverride: _dispositivos.isNotEmpty,
                 ),
                 child: SizedBox(
                   width: 48,
