@@ -51,10 +51,12 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } catch (e) {
       if (!mounted) return;
+      final msg = SupabaseService.formatarErro(e);
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Erro ao fazer login: ${e.toString()}', style: const TextStyle(color: Colors.white)),
-          backgroundColor: Colors.red,
+          content: Text(msg, style: const TextStyle(color: Colors.white)),
+          backgroundColor: const Color(0xFFC23147),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         ),

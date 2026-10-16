@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../widgets/custom_end_drawer.dart';
@@ -7,6 +6,8 @@ import '../../models/models.dart';
 import '../../widgets/animated_components.dart';
 import '../../widgets/custom_bottom_nav_bar.dart';
 import '../../widgets/watermark_background.dart';
+import '../../services/admin_context_service.dart';
+import '../../widgets/confirmation_dialog.dart';
 
 class ListarFrotasScreen extends StatefulWidget {
   const ListarFrotasScreen({super.key});
@@ -22,6 +23,7 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
   Map<String, String> _gerentesNomes = {};
   Map<String, int> _deviceCounts = {};
   String _userRole = '';
+  bool _hasDevices = true;
 
   @override
   void initState() {
@@ -38,6 +40,10 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
       if (currentUserId != null) {
         final perfil = await _supabase.getUsuarioPerfil(currentUserId);
         if (perfil != null) _userRole = perfil.role;
+      }
+
+      if (_userRole == 'admin') {
+        AdminContextService().clearAll();
       }
 
       final frotas = _userRole == 'gerente' && currentUserId != null
@@ -63,6 +69,7 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
           _frotas = frotas;
           _gerentesNomes = gerentesMap;
           _deviceCounts = countsMap;
+          _hasDevices = dispositivos.isNotEmpty;
           _isLoading = false;
         });
       }
@@ -99,7 +106,7 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
       backgroundColor: const Color(0xFFFFF2E0),
       extendBody: true,
       
-      bottomNavigationBar: const CustomBottomNavBar(selectedIndex: 2),
+      bottomNavigationBar: const CustomBottomNavBar(selectedIndex: null),
       body: WatermarkBackground(
         child: SafeArea(
           child: Padding(
@@ -125,7 +132,7 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        _userRole.toUpperCase(),
+                        (_userRole == 'admin' || _userRole == 'adm') ? 'ADM' : _userRole.toUpperCase(),
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 12,
@@ -136,7 +143,12 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
                     const Spacer(),
                     Builder(
                       builder: (ctx) => GestureDetector(
-                        onTap: () => CustomEndDrawer.showMenu(context),
+                        onTap: () => CustomEndDrawer.showMenu(
+                          context,
+                          userRoleOverride: _userRole.isNotEmpty ? _userRole : null,
+                          hasFleetsOverride: _frotas.isNotEmpty,
+                          hasDevicesOverride: _hasDevices,
+                        ),
                         child: SizedBox(
                           width: 40,
                           height: 40,
@@ -192,13 +204,10 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
                                       return await _showDeleteDialog(context, fleet);
                                     } else {
                                       // Edit Action
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: const Text('Redirecionando para edição...'),
-                                          behavior: SnackBarBehavior.floating,
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                                        ),
-                                      );
+                                      if (_userRole == 'admin' || _userRole == 'adm') {
+                                        final res = await Navigator.pushNamed(context, '/editar-frota', arguments: fleet);
+                                        if (res == true || mounted) _fetchData();
+                                      }
                                       return false;
                                     }
                                   },
@@ -226,12 +235,22 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
                                     fleet: fleet,
                                     gerenteName: gerenteName,
                                     deviceCount: deviceCount,
+                                    onEdit: (_userRole == 'admin' || _userRole == 'adm')
+                                        ? () async {
+                                            HapticFeedback.lightImpact();
+                                            final res = await Navigator.pushNamed(context, '/editar-frota', arguments: fleet);
+                                            if (res == true || mounted) _fetchData();
+                                          }
+                                        : null,
                                     onDelete: () {
                                       HapticFeedback.mediumImpact();
                                       _showDeleteDialog(context, fleet);
                                     },
                                     onTap: () {
-                                      Navigator.pushNamed(context, '/dashboard-frota', arguments: fleet.id);
+                                      if (_userRole == 'admin') {
+                                        AdminContextService().setFrota(fleet);
+                                      }
+                                      Navigator.pushNamed(context, '/dashboard-frota', arguments: fleet);
                                     },
                                   ),
                                 ),
@@ -248,74 +267,45 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
     );
   }
 
-  Future<bool?> _showDeleteDialog(BuildContext context, FrotaModel fleet) {
-    return showGeneralDialog<bool>(
+  Future<bool?> _showDeleteDialog(BuildContext context, FrotaModel fleet) async {
+    final confirmed = await showDeleteConfirmationModal(
       context: context,
-      barrierColor: Colors.transparent,
-      barrierDismissible: true,
-      barrierLabel: 'Delete',
-      transitionDuration: const Duration(milliseconds: 200),
-      pageBuilder: (context, animation, secondaryAnimation) => const SizedBox.shrink(),
-      transitionBuilder: (context, animation, secondaryAnimation, child) {
-        return Stack(
-          children: [
-            FadeTransition(
-              opacity: animation,
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 8.0, sigmaY: 8.0),
-                child: Container(color: const Color(0x33000000)),
-              ),
-            ),
-            ScaleTransition(
-              scale: CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
-              child: AlertDialog(
-                title: const Text('Excluir Frota'),
-                content: Text('Tem certeza que deseja remover ${fleet.nome}?'),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
-                  ),
-                  TextButton(
-                    onPressed: () async {
-                      try {
-                        await _supabase.deleteFrota(fleet.id);
-                        if (context.mounted) {
-                          Navigator.pop(context, true);
-                          HapticFeedback.mediumImpact();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: const Text('Frota removida com sucesso!', style: TextStyle(color: Colors.white)),
-                              backgroundColor: Colors.green,
-                              behavior: SnackBarBehavior.floating,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                            ),
-                          );
-                          _fetchData();
-                        }
-                      } catch (e) {
-                        if (context.mounted) {
-                          Navigator.pop(context, false);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Erro ao excluir: $e', style: const TextStyle(color: Colors.white)),
-                              backgroundColor: Colors.red,
-                              behavior: SnackBarBehavior.floating,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                            ),
-                          );
-                        }
-                      }
-                    },
-                    child: const Text('Excluir', style: TextStyle(color: Color(0xFFC23147))),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        );
-      },
+      title: 'Excluir Frota',
+      itemName: fleet.nome ?? 'Frota',
+      itemDetail: 'Todos os veículos vinculados a esta frota serão desassociados.',
+      itemIcon: Icons.folder_outlined,
     );
+
+    if (confirmed == true && context.mounted) {
+      try {
+        await _supabase.deleteFrota(fleet.id);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Frota "${fleet.nome ?? "Frota"}" removida com sucesso!', style: const TextStyle(color: Colors.white)),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            ),
+          );
+          _fetchData();
+        }
+        return true;
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Erro ao excluir: $e', style: const TextStyle(color: Colors.white)),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            ),
+          );
+        }
+        return false;
+      }
+    }
+    return false;
   }
 }
 
@@ -323,23 +313,26 @@ class FleetCard extends StatelessWidget {
   final FrotaModel fleet;
   final String gerenteName;
   final int deviceCount;
+  final VoidCallback? onEdit;
   final VoidCallback onDelete;
   final VoidCallback onTap;
+  final VoidCallback? onTapVehicles;
 
   const FleetCard({
     super.key,
     required this.fleet,
     required this.gerenteName,
     required this.deviceCount,
+    this.onEdit,
     required this.onDelete,
     required this.onTap,
+    this.onTapVehicles,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16, right: 12),
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -351,104 +344,142 @@ class FleetCard extends StatelessWidget {
           ),
         ],
       ),
-      child: Row(
-        children: [
-          Hero(
-            tag: 'fleet_icon_${fleet.id}',
-            child: Container(
-              width: 60,
-              height: 60,
-              decoration: BoxDecoration(
-                color: const Color(0xFFC8E569),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              alignment: Alignment.center,
-              child: const Icon(
-                Icons.fire_truck_outlined,
-                color: Color(0xFF333333),
-                size: 32,
-              ),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
               children: [
                 Hero(
-                  tag: 'fleet_title_${fleet.id}',
-                  child: Material(
-                    color: Colors.transparent,
-                    child: Text(
-                      fleet.nome ?? 'Sem Nome',
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
-                      ),
+                  tag: 'fleet_icon_${fleet.id}',
+                  child: Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFC8E569),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      Icons.fire_truck_outlined,
+                      color: Color(0xFF333333),
+                      size: 32,
                     ),
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  'Gerente: $gerenteName',
-                  style: const TextStyle(
-                    color: Colors.grey,
-                    fontSize: 12,
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Hero(
+                        tag: 'fleet_title_${fleet.id}',
+                        child: Material(
+                          color: Colors.transparent,
+                          child: Text(
+                            fleet.nome ?? 'Sem Nome',
+                            style: const TextStyle(
+                              color: Colors.black,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Gerente: $gerenteName',
+                        style: const TextStyle(
+                          color: Colors.grey,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (onEdit != null) ...[
+                          IconButton(
+                            icon: const Icon(Icons.edit_outlined, color: Color(0xFF4A4A4A), size: 20),
+                            onPressed: onEdit,
+                            constraints: const BoxConstraints(),
+                            padding: EdgeInsets.zero,
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, color: Color(0xFFC23147), size: 20),
+                          onPressed: onDelete,
+                          constraints: const BoxConstraints(),
+                          padding: EdgeInsets.zero,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    GestureDetector(
+                      onTap: () {
+                        if (onTapVehicles != null) {
+                          onTapVehicles!();
+                        } else {
+                          Navigator.pushNamed(context, '/listar-dispositivos', arguments: fleet);
+                        }
+                      },
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            'Veículos na frota',
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 10,
+                            ),
+                            textAlign: TextAlign.right,
+                          ),
+                          AnimatedCounterText(
+                            value: deviceCount,
+                            style: const TextStyle(
+                              color: Colors.black,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Material(
+                      color: const Color(0xFFC23147),
+                      borderRadius: BorderRadius.circular(6),
+                      child: InkWell(
+                        onTap: onTap,
+                        borderRadius: BorderRadius.circular(6),
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          child: Text(
+                            'Ver frota',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.delete_outline, color: Color(0xFFC23147)),
-                onPressed: onDelete,
-                constraints: const BoxConstraints(),
-                padding: EdgeInsets.zero,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Veículos na frota',
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontSize: 10,
-                ),
-                textAlign: TextAlign.right,
-              ),
-              AnimatedCounterText(
-                value: deviceCount,
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 12,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Material(
-                color: const Color(0xFFC23147),
-                borderRadius: BorderRadius.circular(6),
-                child: InkWell(
-                  onTap: onTap,
-                  borderRadius: BorderRadius.circular(6),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    child: Text(
-                      'Ver mais',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }

@@ -5,13 +5,16 @@ import '../../services/supabase_service.dart';
 import '../../models/models.dart';
 import '../../widgets/animated_components.dart';
 import '../../widgets/watermark_background.dart';
+import '../../services/admin_context_service.dart';
 
 class DashboardFrotaScreen extends StatefulWidget {
   final String? initialFrotaId;
+  final SupabaseService? supabaseService;
 
   const DashboardFrotaScreen({
     super.key,
     this.initialFrotaId,
+    this.supabaseService,
   });
 
   @override
@@ -19,7 +22,7 @@ class DashboardFrotaScreen extends StatefulWidget {
 }
 
 class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
-  final SupabaseService _supabase = SupabaseService();
+  late final SupabaseService _supabase;
   bool _isLoading = true;
   String _userName = '';
   String _userRole = '';
@@ -34,6 +37,7 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
   @override
   void initState() {
     super.initState();
+    _supabase = widget.supabaseService ?? SupabaseService();
     _checkAccess();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fetchData();
@@ -89,15 +93,29 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
       final allSystemDevices = await _supabase.getDispositivos();
       _totalSystemDevices = allSystemDevices.length;
 
-      // Definir frota selecionada (se passada por argumento ou a primeira da lista)
+      // Definir frota selecionada (se passada por argumento ou contexto do ADM)
       FrotaModel? selected;
       if (!mounted) return;
       final routeArg = ModalRoute.of(context)?.settings.arguments;
-      final argId = (routeArg is String ? routeArg : null) ?? widget.initialFrotaId;
-      if (argId != null) {
-        selected = frotas.where((f) => f.id == argId).firstOrNull;
+      if (routeArg is FrotaModel) {
+        selected = frotas.where((f) => f.id == routeArg.id).firstOrNull ?? routeArg;
+      } else if (routeArg is String) {
+        selected = frotas.where((f) => f.id == routeArg).firstOrNull;
+      } else if (widget.initialFrotaId != null) {
+        selected = frotas.where((f) => f.id == widget.initialFrotaId).firstOrNull;
+      } else if (_userRole == 'admin' && AdminContextService().selectedFrota != null) {
+        final id = AdminContextService().selectedFrota!.id;
+        selected = frotas.where((f) => f.id == id).firstOrNull ?? AdminContextService().selectedFrota;
+      } else if (_userRole == 'admin' && frotas.length == 1) {
+        selected = frotas.first;
+      } else if (_userRole != 'admin' && frotas.isNotEmpty) {
+        selected = frotas.first;
       }
-      selected ??= frotas.isNotEmpty ? frotas.first : null;
+
+      if (_userRole == 'admin' && selected != null) {
+        AdminContextService().setFrota(selected);
+        AdminContextService().clearVehicle();
+      }
 
       // Dispositivos da frota selecionada ou de todas as frotas do gerente/admin
       List<DispositivoModel> activeDevices = [];
@@ -140,6 +158,10 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
   }
 
   void _onSelectFrota(FrotaModel f) async {
+    if (_userRole == 'admin') {
+      AdminContextService().setFrota(f);
+      AdminContextService().clearVehicle();
+    }
     setState(() {
       _selectedFrota = f;
       _isLoading = true;
@@ -166,10 +188,19 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isEmpty = _frotas.isEmpty || _dispositivos.isEmpty;
+
     return Scaffold(
       extendBody: true,
       backgroundColor: const Color(0xFFFFF2E0),
-      bottomNavigationBar: const CustomBottomNavBar(selectedIndex: 2, isVehicleContext: false),
+      bottomNavigationBar: CustomBottomNavBar(
+        selectedIndex: 2,
+        isVehicleContext: false,
+        isDisabled: isEmpty,
+        hasFleetsOverride: _frotas.isNotEmpty,
+        hasDevicesOverride: _dispositivos.isNotEmpty,
+        userRoleOverride: _userRole.isNotEmpty ? _userRole : null,
+      ),
       body: WatermarkBackground(
         child: SafeArea(
           child: _isLoading
@@ -181,19 +212,24 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
   }
 
   Widget _buildContent(BuildContext context) {
-    // 1. Caso: Não há dispositivos cadastrados no sistema (fluxo do ADM)
-    if (_totalSystemDevices == 0 && _userRole == 'admin') {
-      return _buildEmptySystemDevices();
+    // 1. Caso: Gerente sem frota associada
+    if (_frotas.isEmpty && _userRole == 'gerente') {
+      return _buildEmptyFrotaGerente();
     }
 
-    // 2. Caso: Há dispositivos, mas nenhuma frota cadastrada
+    // 2. Caso: Nenhuma frota cadastrada (ADM)
     if (_frotas.isEmpty && _userRole == 'admin') {
       return _buildEmptyFrotasAdmin();
     }
 
-    // 3. Caso: Gerente sem frota associada
-    if (_frotas.isEmpty && _userRole == 'gerente') {
-      return _buildEmptyFrotaGerente();
+    // 3. Caso: Nenhuma frota selecionada (ADM)
+    if (_selectedFrota == null && _userRole == 'admin') {
+      return _buildNoFrotaSelectedAdmin();
+    }
+
+    // 4. Caso: A frota selecionada não tem dispositivos cadastrados
+    if (_selectedFrota != null && _dispositivos.isEmpty) {
+      return _buildEmptyFrotaDevices(context);
     }
 
     return SingleChildScrollView(
@@ -218,106 +254,242 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
     );
   }
 
-  Widget _buildEmptySystemDevices() {
-    final bool isAdmin = _userRole == 'admin';
-    return Padding(
-      padding: const EdgeInsets.all(24.0),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.devices_other_outlined, size: 72, color: Color(0xFFC23147)),
+  Widget _buildEmptyFrotaDevices(BuildContext context) {
+    final bool isAdmin = _userRole.toLowerCase() == 'admin' || _userRole.toLowerCase() == 'adm';
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeader(context),
+          if (_frotas.length > 1) ...[
             const SizedBox(height: 16),
-            const Text(
-              'Nenhum dispositivo cadastrado',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              isAdmin
-                  ? 'É necessário cadastrar um dispositivo antes de criar uma frota no sistema.'
-                  : 'Nenhum dispositivo disponível no momento. A configuração depende do Administrador.',
-              style: const TextStyle(fontSize: 14, color: Colors.black54),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            if (isAdmin)
-              ElevatedButton.icon(
-                onPressed: () => Navigator.pushNamed(context, '/cadastrar-dispositivo').then((_) => _fetchData()),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFC23147),
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                icon: const Icon(Icons.add, color: Colors.white),
-                label: const Text('Cadastrar dispositivo', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              ),
+            _buildFrotaSelector(),
           ],
-        ),
+          const SizedBox(height: 48),
+          Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.devices_other_outlined, size: 72, color: Color(0xFFC23147)),
+                const SizedBox(height: 16),
+                const Text(
+                  'Nenhum dispositivo cadastrado',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  isAdmin
+                      ? 'Esta frota ainda não possui dispositivos vinculados.'
+                      : 'Esta frota ainda não possui dispositivos vinculados.',
+                  style: const TextStyle(fontSize: 14, color: Colors.black54),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                if (isAdmin)
+                  ElevatedButton.icon(
+                    onPressed: () => Navigator.pushNamed(
+                      context,
+                      '/cadastrar-dispositivo',
+                      arguments: _selectedFrota?.id,
+                    ).then((_) => _fetchData()),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFC23147),
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    icon: const Icon(Icons.add, color: Colors.white),
+                    label: const Text('Cadastrar dispositivo', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  )
+                else
+                  ElevatedButton.icon(
+                    onPressed: _fetchData,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFC23147),
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    icon: const Icon(Icons.refresh, color: Colors.white),
+                    label: const Text('Atualizar', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 80),
+        ],
       ),
     );
   }
 
   Widget _buildEmptyFrotasAdmin() {
     return Padding(
-      padding: const EdgeInsets.all(24.0),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.local_shipping_outlined, size: 72, color: Color(0xFFC23147)),
-            const SizedBox(height: 16),
-            const Text(
-              'Nenhuma frota cadastrada',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Existem $_totalSystemDevices dispositivos cadastrados prontos para uso. Crie a primeira frota para associá-los!',
-              style: const TextStyle(fontSize: 14, color: Colors.black54),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: () => Navigator.pushNamed(context, '/criar-frota').then((_) => _fetchData()),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFC23147),
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeader(context),
+          Expanded(
+            child: Center(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.local_shipping_outlined, size: 72, color: Color(0xFFC23147)),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Nenhuma frota cadastrada',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _totalSystemDevices > 0
+                          ? 'Existem $_totalSystemDevices dispositivos cadastrados prontos para uso. Crie uma frota para associá-los!'
+                          : 'Nenhuma frota cadastrada no sistema. Comece criando uma nova frota!',
+                      style: const TextStyle(fontSize: 14, color: Colors.black54),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton.icon(
+                      onPressed: () => Navigator.pushNamed(context, '/criar-frota').then((_) => _fetchData()),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFC23147),
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.add, color: Colors.white),
+                      label: const Text('Criar frota', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
               ),
-              icon: const Icon(Icons.add, color: Colors.white),
-              label: const Text('Criar frota', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 80),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoFrotaSelectedAdmin() {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeader(context),
+          Expanded(
+            child: Center(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.fire_truck_outlined, size: 72, color: Color(0xFFC23147)),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Nenhuma frota selecionada',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Para visualizar métricas, relatórios e veículos no Dashboard, selecione uma frota primeiro.',
+                      style: TextStyle(fontSize: 14, color: Colors.black54),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton.icon(
+                      onPressed: () => Navigator.pushNamed(context, '/listar-frotas'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFC23147),
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.format_list_bulleted, color: Colors.white),
+                      label: const Text('Selecionar frota', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 80),
+        ],
       ),
     );
   }
 
   Widget _buildEmptyFrotaGerente() {
-    return const Padding(
-      padding: EdgeInsets.all(24.0),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.shield_outlined, size: 72, color: Color(0xFFC23147)),
-            SizedBox(height: 16),
-            Text(
-              'Nenhuma frota atribuída',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
-              textAlign: TextAlign.center,
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeader(context),
+          Expanded(
+            child: Center(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.shield_outlined, size: 72, color: Color(0xFFC23147)),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Nenhuma frota atribuída',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Você não possui nenhuma frota sob sua responsabilidade. A configuração e associação deve ser realizada pelo Administrador.',
+                      style: TextStyle(fontSize: 14, color: Colors.black54),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: () => _fetchData(),
+                          icon: const Icon(Icons.refresh, color: Color(0xFFC23147)),
+                          label: const Text(
+                            'Atualizar',
+                            style: TextStyle(color: Color(0xFFC23147), fontWeight: FontWeight.bold),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Color(0xFFC23147)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        ElevatedButton.icon(
+                          onPressed: () async {
+                            await _supabase.signOut();
+                            if (mounted) {
+                              Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+                            }
+                          },
+                          icon: const Icon(Icons.logout, color: Colors.white),
+                          label: const Text(
+                            'Sair da conta',
+                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFC23147),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
             ),
-            SizedBox(height: 8),
-            Text(
-              'Você não possui nenhuma frota sob sua responsabilidade. A configuração e associação deve ser realizada pelo Administrador.',
-              style: TextStyle(fontSize: 14, color: Colors.black54),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -344,7 +516,7 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
-                _userRole.toUpperCase(),
+                _userRole == 'admin' ? 'ADM' : _userRole.toUpperCase(),
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 11,
@@ -355,7 +527,12 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
             const Spacer(),
             Builder(
               builder: (ctx) => GestureDetector(
-                onTap: () => CustomEndDrawer.showMenu(context),
+                onTap: () => CustomEndDrawer.showMenu(
+                  context,
+                  userRoleOverride: _userRole.isNotEmpty ? _userRole : null,
+                  hasFleetsOverride: _frotas.isNotEmpty,
+                  hasDevicesOverride: _dispositivos.isNotEmpty,
+                ),
                 child: SizedBox(
                   width: 48,
                   height: 48,
@@ -584,7 +761,12 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
             ),
             GestureDetector(
-              onTap: () => Navigator.pushNamed(context, '/dashboard-veiculo'),
+              onTap: () {
+                if (_selectedFrota != null && _userRole == 'admin') {
+                  AdminContextService().setFrota(_selectedFrota);
+                }
+                Navigator.pushNamed(context, '/listar-dispositivos', arguments: _selectedFrota);
+              },
               child: const Text(
                 'Ver detalhes >',
                 style: TextStyle(color: Color(0xFFC23147), fontWeight: FontWeight.bold, fontSize: 13),
@@ -598,7 +780,7 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
             width: double.infinity,
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
-            child: const Text('Nenhum veículo vinculado a esta frota.', style: TextStyle(color: Colors.black54), textAlign: TextAlign.center),
+            child: const Text('Nenhum dispositivo cadastrado', style: TextStyle(color: Colors.black54), textAlign: TextAlign.center),
           )
         else
           Container(
@@ -618,7 +800,9 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
                 final isLast = d == _dispositivos.last;
                 return Column(
                   children: [
-                    ListTile(
+                    Material(
+                      color: Colors.transparent,
+                      child: ListTile(
                       leading: const CircleAvatar(
                         backgroundColor: Color(0xFFC8E569),
                         child: Icon(Icons.directions_car, color: Colors.black87),
@@ -631,27 +815,15 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
                         'Modelo: ${d.modeloVeiculo ?? d.modeloDispositivo ?? "N/D"}',
                         style: const TextStyle(fontSize: 12, color: Colors.black54),
                       ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.location_on_outlined, color: Color(0xFFC23147)),
-                            onPressed: () {
-                              Navigator.pushNamed(context, '/gps', arguments: d);
-                            },
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.chevron_right, color: Colors.black45),
-                            onPressed: () {
-                              Navigator.pushNamed(context, '/dashboard-veiculo', arguments: d);
-                            },
-                          ),
-                        ],
-                      ),
+                      trailing: const Icon(Icons.chevron_right, color: Colors.black45),
                       onTap: () {
+                        if (_userRole == 'admin') {
+                          AdminContextService().setDevice(d, frota: _selectedFrota);
+                        }
                         Navigator.pushNamed(context, '/dashboard-veiculo', arguments: d);
                       },
                     ),
+                  ),
                     if (!isLast) const Divider(height: 1, indent: 16, endIndent: 16),
                   ],
                 );

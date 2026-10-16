@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:pdf/pdf.dart';
@@ -9,6 +10,7 @@ import '../../widgets/custom_end_drawer.dart';
 import '../../widgets/watermark_background.dart';
 import '../../services/supabase_service.dart';
 import '../../models/models.dart';
+import '../../services/admin_context_service.dart';
 
 class ViagemData {
   final DispositivoModel dispositivo;
@@ -33,11 +35,13 @@ class ViagemData {
 class RelatoriosScreen extends StatefulWidget {
   final bool isVehicleContext;
   final String? userRole;
+  final SupabaseService? supabaseService;
 
   const RelatoriosScreen({
     super.key,
     this.isVehicleContext = false,
     this.userRole,
+    this.supabaseService,
   });
 
   @override
@@ -45,7 +49,7 @@ class RelatoriosScreen extends StatefulWidget {
 }
 
 class _RelatoriosScreenState extends State<RelatoriosScreen> {
-  final SupabaseService _supabase = SupabaseService();
+  late final SupabaseService _supabase = widget.supabaseService ?? SupabaseService();
   
   UsuarioModel? _perfil;
   List<FrotaModel> _frotas = [];
@@ -100,7 +104,11 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
 
           if (role == 'admin') {
             _frotas = await _supabase.getFrotas();
-            _dispositivos = await _supabase.getDispositivos();
+            if (widget.isVehicleContext && AdminContextService().selectedFrota != null) {
+              _dispositivos = await _supabase.getDispositivosByFrota(AdminContextService().selectedFrota!.id);
+            } else {
+              _dispositivos = await _supabase.getDispositivos();
+            }
           } else if (role == 'gerente') {
             _frotas = await _supabase.getFrotasByGerente(_perfil!.id);
             List<DispositivoModel> allDevices = [];
@@ -115,18 +123,48 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
             _dispositivos = await _supabase.getDispositivosByOperador(_perfil!.id);
           }
 
-          // Checar se veio veículo por argumento de rota
+          // Checar se veio veículo ou frota por argumento de rota
           if (!mounted) return;
           final routeArg = ModalRoute.of(context)?.settings.arguments;
-          final target = routeArg is DispositivoModel ? routeArg : null;
-          if (target != null && _dispositivos.any((d) => d.id == target.id)) {
-            _selectedDispositivoId = target.id;
-          } else if (widget.isVehicleContext && _dispositivos.isNotEmpty) {
-            _selectedDispositivoId ??= _dispositivos.first.id;
+          DispositivoModel? targetDevice = routeArg is DispositivoModel ? routeArg : null;
+          FrotaModel? targetFrota = routeArg is FrotaModel ? routeArg : null;
+
+          if (role == 'admin') {
+            if (widget.isVehicleContext && targetDevice == null && AdminContextService().selectedDevice != null) {
+              targetDevice = AdminContextService().selectedDevice;
+            } else if (!widget.isVehicleContext && targetFrota == null && AdminContextService().selectedFrota != null) {
+              targetFrota = AdminContextService().selectedFrota;
+            }
           }
 
-          if (!widget.isVehicleContext && _frotas.isNotEmpty) {
-            _selectedFrotaId ??= _frotas.first.id;
+          if (widget.isVehicleContext) {
+            if (targetDevice != null && _dispositivos.any((d) => d.id == targetDevice!.id)) {
+              _selectedDispositivoId = targetDevice.id;
+            } else if (targetDevice != null) {
+              _selectedDispositivoId = targetDevice.id;
+            } else if (role != 'admin' && _dispositivos.isNotEmpty) {
+              _selectedDispositivoId = _dispositivos.first.id;
+            } else {
+              _selectedDispositivoId = null;
+            }
+            if (role == 'admin' && _selectedDispositivoId != null) {
+              final d = _dispositivos.where((x) => x.id == _selectedDispositivoId).firstOrNull ?? targetDevice;
+              if (d != null) AdminContextService().setDevice(d, frota: AdminContextService().selectedFrota);
+            }
+          } else {
+            if (targetFrota != null && _frotas.any((f) => f.id == targetFrota!.id)) {
+              _selectedFrotaId = targetFrota.id;
+            } else if (targetFrota != null) {
+              _selectedFrotaId = targetFrota.id;
+            } else if (role != 'admin' && _frotas.isNotEmpty) {
+              _selectedFrotaId = _frotas.first.id;
+            } else {
+              _selectedFrotaId = null;
+            }
+            if (role == 'admin' && _selectedFrotaId != null) {
+              final f = _frotas.where((x) => x.id == _selectedFrotaId).firstOrNull ?? targetFrota;
+              if (f != null) AdminContextService().setFrota(f);
+            }
           }
           
           await _loadReportData();
@@ -314,38 +352,380 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
         child: SafeArea(
           child: _isLoading 
             ? const Center(child: CircularProgressIndicator(color: Color(0xFFC23147)))
-            : SingleChildScrollView(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildHeader(context),
-                    const SizedBox(height: 16),
-                    if (_errorMessage.isNotEmpty)
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        color: Colors.red.withValues(alpha: 0.1),
-                        child: Text(_errorMessage, style: const TextStyle(color: Colors.red)),
-                      ),
-                    _buildFiltrosExtras(),
-                    const SizedBox(height: 24),
-                    _buildPeriodToggle(),
-                    const SizedBox(height: 24),
-                    _buildMetricsGrid(),
-                    const SizedBox(height: 24),
-                    _buildChart1(),
-                    const SizedBox(height: 24),
-                    _buildChart2(),
-                    const SizedBox(height: 24),
-                    _buildViagens(),
-                    const SizedBox(height: 24),
-                    _buildExportButton(),
-                    const SizedBox(height: 80),
-                  ],
-                ),
-              ),
+            : (!widget.isVehicleContext && _frotas.isEmpty)
+                ? _buildNoContextSelectedState('frota', noRegisteredEntities: true)
+                : (widget.isVehicleContext && _dispositivos.isEmpty)
+                    ? _buildNoContextSelectedState('veículo', noRegisteredEntities: true)
+                    : (_perfil?.role == 'admin' && !widget.isVehicleContext && _selectedFrotaId == null)
+                        ? _buildNoContextSelectedState('frota', noRegisteredEntities: false)
+                        : (_perfil?.role == 'admin' && widget.isVehicleContext && _selectedDispositivoId == null)
+                            ? _buildNoContextSelectedState('veículo', noRegisteredEntities: false)
+                            : SingleChildScrollView(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildHeader(context),
+                                    const SizedBox(height: 16),
+                                    if (_errorMessage.isNotEmpty)
+                                      Container(
+                                        padding: const EdgeInsets.all(12),
+                                        margin: const EdgeInsets.only(bottom: 16),
+                                        decoration: BoxDecoration(
+                                          color: Colors.red.withValues(alpha: 0.1),
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        child: Text(_errorMessage, style: const TextStyle(color: Colors.red)),
+                                      ),
+                                    _buildFiltrosExtras(),
+                                    const SizedBox(height: 16),
+                                    _buildPeriodToggle(),
+                                    const SizedBox(height: 20),
+                                    if (_medicoes.isEmpty && _ocorrencias.isEmpty && _viagens.isEmpty)
+                                      _buildEmptyPeriodBanner(),
+                                    _buildMetricsGrid(),
+                                    const SizedBox(height: 24),
+                                    _buildChart1(),
+                                    const SizedBox(height: 24),
+                                    _buildChart2(),
+                                    const SizedBox(height: 24),
+                                    _buildViagens(),
+                                    const SizedBox(height: 24),
+                                    _buildExportButton(),
+                                    const SizedBox(height: 80),
+                                  ],
+                                ),
+                              ),
         ),
       ),
+    );
+  }
+
+  Widget _buildEmptyPeriodBanner() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFFC23147).withValues(alpha: 0.16),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFC23147).withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.info_outline_rounded, color: Color(0xFFC23147), size: 24),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Nenhum dado registrado no período ($_periodoSelecionado)',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: Color(0xFF1E1E1E),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Não foram encontradas medições ou viagens para o filtro de $_periodoSelecionado. Experimente alternar para outro período no seletor acima para auditar datas anteriores.',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF666666),
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoContextSelectedState(String tipo, {bool noRegisteredEntities = false}) {
+    final bool isFrota = tipo == 'frota';
+    final role = _perfil?.role ?? '';
+
+    String title;
+    String description;
+    String badgeLabel;
+    IconData iconData;
+    Widget? actionButton;
+
+    if (noRegisteredEntities) {
+      if (role == 'gerente') {
+        badgeLabel = 'NENHUMA FROTA ATRIBUÍDA';
+        title = 'Você não possui frotas atribuídas';
+        description = 'Para gerar e visualizar relatórios operacionais, uma frota deve ser vinculada à sua gestão pelo Administrador.';
+        iconData = Icons.shield_outlined;
+        actionButton = OutlinedButton.icon(
+          onPressed: () {
+            HapticFeedback.lightImpact();
+            _loadInitialData();
+          },
+          icon: const Icon(Icons.refresh_rounded, color: Color(0xFFC23147)),
+          label: const Text('Atualizar dados', style: TextStyle(color: Color(0xFFC23147), fontWeight: FontWeight.bold)),
+          style: OutlinedButton.styleFrom(
+            side: const BorderSide(color: Color(0xFFC23147), width: 1.5),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+          ),
+        );
+      } else if (role == 'operador') {
+        badgeLabel = 'NENHUM VEÍCULO ATRIBUÍDO';
+        title = 'Nenhum veículo vinculado ao seu perfil';
+        description = 'Você ainda não possui veículos sob sua operação. Solicite ao seu Gerente ou Administrador o vínculo de um veículo.';
+        iconData = Icons.directions_car_outlined;
+        actionButton = OutlinedButton.icon(
+          onPressed: () {
+            HapticFeedback.lightImpact();
+            _loadInitialData();
+          },
+          icon: const Icon(Icons.refresh_rounded, color: Color(0xFFC23147)),
+          label: const Text('Atualizar dados', style: TextStyle(color: Color(0xFFC23147), fontWeight: FontWeight.bold)),
+          style: OutlinedButton.styleFrom(
+            side: const BorderSide(color: Color(0xFFC23147), width: 1.5),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+          ),
+        );
+      } else {
+        // Admin with 0 fleets or 0 devices in database
+        badgeLabel = isFrota ? 'SEM FROTAS CADASTRADAS' : 'SEM VEÍCULOS CADASTRADOS';
+        title = isFrota ? 'Nenhuma frota cadastrada no sistema' : 'Nenhum veículo cadastrado no sistema';
+        description = isFrota 
+            ? 'Cadastre uma frota para começar a monitorar a conformidade, temperaturas e viagens dos veículos.'
+            : 'Cadastre veículos e dispositivos para visualizar telemetria e relatórios em tempo real.';
+        iconData = isFrota ? Icons.local_shipping_outlined : Icons.sensors_outlined;
+        actionButton = ElevatedButton.icon(
+          onPressed: () {
+            HapticFeedback.mediumImpact();
+            if (isFrota) {
+              Navigator.pushNamed(context, '/cadastrar-frota');
+            } else {
+              Navigator.pushNamed(context, '/cadastrar-dispositivo');
+            }
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFFC23147),
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            elevation: 2,
+          ),
+          icon: const Icon(Icons.add, color: Colors.white),
+          label: Text(
+            isFrota ? 'Criar Primeira Frota' : 'Cadastrar Veículo',
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+          ),
+        );
+      }
+    } else {
+      // Normal context selection required (Admin hasn't selected yet)
+      badgeLabel = 'SELEÇÃO NECESSÁRIA';
+      title = isFrota ? 'Nenhuma frota selecionada' : 'Nenhum veículo selecionado';
+      description = isFrota
+          ? 'Para visualizar os indicadores consolidados, conformidade e registros térmicos, selecione uma frota ativa.'
+          : 'Para consultar medições em tempo real, trajetos e ocorrências, selecione um veículo.';
+      iconData = isFrota ? Icons.local_shipping_outlined : Icons.directions_car_outlined;
+      actionButton = ElevatedButton.icon(
+        onPressed: () {
+          HapticFeedback.mediumImpact();
+          if (isFrota) {
+            Navigator.pushNamed(context, '/listar-frotas');
+          } else if (AdminContextService().hasFrota) {
+            Navigator.pushNamed(context, '/listar-dispositivos', arguments: AdminContextService().selectedFrota);
+          } else {
+            Navigator.pushNamed(context, '/listar-frotas');
+          }
+        },
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFFC23147),
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          elevation: 2,
+        ),
+        icon: Icon(isFrota ? Icons.local_shipping : Icons.directions_car, color: Colors.white),
+        label: Text(
+          isFrota ? 'Selecionar Frota' : (AdminContextService().hasFrota ? 'Ver Veículos da Frota' : 'Selecionar Frota'),
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildHeader(context),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.06),
+                  blurRadius: 18,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                // Multi-layer stylized icon badge
+                Container(
+                  width: 96,
+                  height: 96,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFFC23147).withValues(alpha: 0.08),
+                  ),
+                  child: Center(
+                    child: Container(
+                      width: 72,
+                      height: 72,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Color(0xFFC23147), Color(0xFF8E1B2C)],
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFC23147).withValues(alpha: 0.3),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Icon(iconData, size: 36, color: Colors.white),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Pill Badge
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFC23147).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    badgeLabel,
+                    style: const TextStyle(
+                      color: Color(0xFFC23147),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                // Title
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF1E1E1E),
+                    height: 1.25,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 10),
+                // Description
+                Text(
+                  description,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF666666),
+                    height: 1.45,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                // Preview feature card
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF2E0).withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFC23147).withValues(alpha: 0.12)),
+                  ),
+                  child: Column(
+                    children: [
+                      _buildPreviewFeatureRow(Icons.show_chart_rounded, 'Gráficos de temperatura e histórico térmico'),
+                      const SizedBox(height: 10),
+                      _buildPreviewFeatureRow(Icons.verified_outlined, 'Índices de conformidade e controle de rota'),
+                      const SizedBox(height: 10),
+                      _buildPreviewFeatureRow(Icons.picture_as_pdf_outlined, 'Exportação de relatórios auditáveis em PDF'),
+                    ],
+                  ),
+                ),
+                if (actionButton != null) ...[
+                  const SizedBox(height: 24),
+                  actionButton,
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 80),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPreviewFeatureRow(IconData icon, String text) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 4,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Icon(icon, size: 16, color: const Color(0xFFC23147)),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(
+              fontSize: 13,
+              color: Color(0xFF444444),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -353,7 +733,20 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
     return Row(
       children: [
         GestureDetector(
-          onTap: () => Navigator.pop(context),
+          onTap: () {
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context);
+            } else {
+              final role = _perfil?.role;
+              if (role == 'gerente') {
+                Navigator.pushReplacementNamed(context, '/dashboard-gerente');
+              } else if (role == 'operador') {
+                Navigator.pushReplacementNamed(context, '/dashboard-operador');
+              } else {
+                Navigator.pushReplacementNamed(context, '/dashboard-admin');
+              }
+            }
+          },
           child: const Icon(Icons.arrow_back, color: Color(0xFFC23147), size: 28),
         ),
         const SizedBox(width: 8),
@@ -371,7 +764,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
               ),
               if (_perfil != null)
                 Text(
-                  _perfil!.role.toUpperCase(),
+                  (_perfil!.role == 'admin' || _perfil!.role == 'adm') ? 'ADM' : _perfil!.role.toUpperCase(),
                   style: const TextStyle(
                     color: Color(0xFFC23147),
                     fontSize: 12,
@@ -382,7 +775,12 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
           ),
         ),
         GestureDetector(
-          onTap: () => CustomEndDrawer.showMenu(context),
+          onTap: () => CustomEndDrawer.showMenu(
+            context,
+            userRoleOverride: _perfil?.role,
+            hasFleetsOverride: _frotas.isNotEmpty,
+            hasDevicesOverride: _dispositivos.isNotEmpty,
+          ),
           child: SizedBox(
             width: 52,
             height: 52,
@@ -402,54 +800,66 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (_frotas.isNotEmpty) ...[
+        if (!widget.isVehicleContext && _frotas.isNotEmpty) ...[
           const Text('Frota', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFC23147))),
           const SizedBox(height: 4),
-          DropdownButtonFormField<String>(
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
             ),
-            value: _selectedFrotaId, // ignore: deprecated_member_use
-            hint: const Text('Todas as frotas'),
-            items: [
-              const DropdownMenuItem(value: '', child: Text('Todas as frotas')),
-              ..._frotas.map((f) => DropdownMenuItem(value: f.id, child: Text(f.nome ?? 'Sem nome'))),
-            ],
-            onChanged: (val) {
-              setState(() {
-                _selectedFrotaId = (val == null || val.isEmpty) ? null : val;
-                _selectedDispositivoId = null; 
-              });
-              _loadReportData();
-            },
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _frotas.any((f) => f.id == _selectedFrotaId) ? _selectedFrotaId : null,
+                isExpanded: true,
+                hint: const Text('Selecione uma frota'),
+                items: _frotas.map((f) => DropdownMenuItem(value: f.id, child: Text(f.nome ?? 'Sem nome'))).toList(),
+                onChanged: (val) {
+                  final newId = val;
+                  if (_perfil?.role == 'admin' && newId != null) {
+                    final f = _frotas.where((x) => x.id == newId).firstOrNull;
+                    if (f != null) AdminContextService().setFrota(f);
+                  }
+                  setState(() {
+                    _selectedFrotaId = newId;
+                    _selectedDispositivoId = null; 
+                  });
+                  _loadReportData();
+                },
+              ),
+            ),
           ),
           const SizedBox(height: 12),
         ],
-        if (_dispositivos.isNotEmpty) ...[
-          const Text('Dispositivo', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFC23147))),
+        if (widget.isVehicleContext && _dispositivos.isNotEmpty) ...[
+          const Text('Veículo', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFC23147))),
           const SizedBox(height: 4),
-          DropdownButtonFormField<String>(
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
             ),
-            value: _selectedDispositivoId, // ignore: deprecated_member_use
-            hint: const Text('Todos os dispositivos'),
-            items: [
-              const DropdownMenuItem(value: '', child: Text('Todos os dispositivos')),
-              ..._dispositivos.where((d) => _selectedFrotaId == null || d.idFrota == _selectedFrotaId).map((d) => DropdownMenuItem(value: d.id, child: Text(d.nomeDispositivo ?? d.placaVeiculo ?? d.id.substring(0,8)))),
-            ],
-            onChanged: (val) {
-              setState(() {
-                _selectedDispositivoId = (val == null || val.isEmpty) ? null : val;
-              });
-              _loadReportData();
-            },
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _dispositivos.any((d) => d.id == _selectedDispositivoId) ? _selectedDispositivoId : null,
+                isExpanded: true,
+                hint: const Text('Selecione um veículo'),
+                items: _dispositivos.map((d) => DropdownMenuItem(value: d.id, child: Text(d.nomeDispositivo ?? d.placaVeiculo ?? d.id.substring(0,8)))).toList(),
+                onChanged: (val) {
+                  final newId = val;
+                  if (_perfil?.role == 'admin' && newId != null) {
+                    final d = _dispositivos.where((x) => x.id == newId).firstOrNull;
+                    if (d != null) AdminContextService().setDevice(d, frota: AdminContextService().selectedFrota);
+                  }
+                  setState(() {
+                    _selectedDispositivoId = newId;
+                  });
+                  _loadReportData();
+                },
+              ),
+            ),
           ),
         ],
       ],
@@ -499,23 +909,42 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
       crossAxisSpacing: 12,
       mainAxisSpacing: 12,
       shrinkWrap: true,
-      childAspectRatio: 1.5,
+      childAspectRatio: 1.4,
       physics: const NeverScrollableScrollPhysics(),
       children: [
-        _buildMetricCard('Viagens no período', '$_totalViagens'),
-        _buildMetricCard('Tempo na rota atual', '${_tempoRotaAtual ~/ 60}h ${_tempoRotaAtual % 60}m'),
-        _buildMetricCard('Conformidade', '${_conformidade.toStringAsFixed(1)}%'),
-        _buildMetricCard('Alertas recebidos', '$_alertasRecebidos'),
+        _buildMetricCard(
+          'Viagens no período',
+          '$_totalViagens',
+          Icons.alt_route_rounded,
+        ),
+        _buildMetricCard(
+          'Tempo na rota atual',
+          '${_tempoRotaAtual ~/ 60}h ${_tempoRotaAtual % 60}m',
+          Icons.timer_outlined,
+        ),
+        _buildMetricCard(
+          'Conformidade',
+          '${_conformidade.toStringAsFixed(1)}%',
+          Icons.verified_outlined,
+          iconColor: _conformidade >= 90 ? const Color(0xFF8DB600) : const Color(0xFFC23147),
+        ),
+        _buildMetricCard(
+          'Alertas recebidos',
+          '$_alertasRecebidos',
+          Icons.notifications_none_rounded,
+          iconColor: _alertasRecebidos > 0 ? const Color(0xFFC23147) : const Color(0xFF8DB600),
+        ),
       ],
     );
   }
 
-  Widget _buildMetricCard(String title, String value) {
+  Widget _buildMetricCard(String title, String value, IconData icon, {Color? iconColor}) {
+    final color = iconColor ?? const Color(0xFFC23147);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.05),
@@ -526,16 +955,99 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            title,
-            style: const TextStyle(color: Colors.black54, fontSize: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(color: Color(0xFF666666), fontSize: 11, fontWeight: FontWeight.w500),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, size: 14, color: color),
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
           Text(
             value,
-            style: const TextStyle(color: Color(0xFFC23147), fontSize: 24, fontWeight: FontWeight.bold),
+            style: TextStyle(color: color, fontSize: 22, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyChartState({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color color,
+    String? badgeText,
+  }) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: color, size: 22),
+          ),
+          const SizedBox(height: 8),
+          if (badgeText != null) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              margin: const EdgeInsets.only(bottom: 4),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                badgeText,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+          ],
+          Text(
+            title,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+              color: Color(0xFF1E1E1E),
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 3),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 11,
+                color: Color(0xFF757575),
+                height: 1.25,
+              ),
+            ),
           ),
         ],
       ),
@@ -586,10 +1098,23 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
           child: _medicoes.isEmpty
-            ? const Center(child: Text("Sem dados de temperatura", style: TextStyle(color: Colors.black54)))
+            ? _buildEmptyChartState(
+                icon: Icons.show_chart_rounded,
+                title: 'Sem medições de temperatura',
+                subtitle: 'Nenhum registro térmico capturado no período ($_periodoSelecionado).',
+                color: const Color(0xFFC23147),
+                badgeText: 'SEM MEDIÇÕES',
+              )
             : LineChart(
                 LineChartData(
                   gridData: const FlGridData(show: false),
@@ -655,17 +1180,30 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
           child: _ocorrencias.isEmpty
-            ? const Center(child: Text("Nenhum alerta recebido", style: TextStyle(color: Colors.black54)))
+            ? _buildEmptyChartState(
+                icon: Icons.check_circle_outline_rounded,
+                title: 'Nenhum alerta registrado',
+                subtitle: 'Todos os parâmetros operaram em conformidade no período ($_periodoSelecionado).',
+                color: const Color(0xFF8DB600),
+                badgeText: 'CONFORME',
+              )
             : BarChart(
                 BarChartData(
                   gridData: const FlGridData(show: false),
                   titlesData: const FlTitlesData(
                     topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
                     rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)), // Could map X to days
+                    bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
                   ),
                   borderData: FlBorderData(show: false),
                   barGroups: barGroups,
@@ -686,8 +1224,80 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
         ),
         const SizedBox(height: 16),
         if (_viagens.isEmpty)
-           const Center(child: Text("Nenhuma viagem realizada neste período.", style: TextStyle(color: Colors.black54))),
-        ..._viagens.map((v) => _buildViagemCard(v)),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFC23147).withValues(alpha: 0.08),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.alt_route_rounded,
+                    color: Color(0xFFC23147),
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Nenhuma viagem registrada',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: Color(0xFF1E1E1E),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Não há registros de viagens ativas ou concluídas para o período selecionado ($_periodoSelecionado).',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF757575),
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF2E0),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.lightbulb_outline_rounded, size: 16, color: Color(0xFFC23147)),
+                      SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          'Viagens são registradas automaticamente via telemetria contínua.',
+                          style: TextStyle(fontSize: 11, color: Color(0xFF555555)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          ..._viagens.map((v) => _buildViagemCard(v)),
       ],
     );
   }
@@ -773,6 +1383,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
   }
 
   Widget _buildExportButton() {
+    final bool hasNoData = _medicoes.isEmpty && _ocorrencias.isEmpty && _viagens.isEmpty;
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton.icon(
@@ -781,13 +1392,14 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
           backgroundColor: const Color(0xFFC23147),
           padding: const EdgeInsets.symmetric(vertical: 16),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
           ),
+          elevation: 2,
         ),
-        icon: const Icon(Icons.download, color: Colors.white),
-        label: const Text(
-          'Exportar PDF',
-          style: TextStyle(
+        icon: const Icon(Icons.download_rounded, color: Colors.white),
+        label: Text(
+          hasNoData ? 'Exportar Relatório do Período (PDF)' : 'Exportar Relatório Completo (PDF)',
+          style: const TextStyle(
             color: Colors.white,
             fontSize: 16,
             fontWeight: FontWeight.bold,

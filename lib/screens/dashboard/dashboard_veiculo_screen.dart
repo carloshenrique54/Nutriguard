@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../widgets/custom_bottom_nav_bar.dart';
 import '../../widgets/custom_end_drawer.dart';
 import '../../services/supabase_service.dart';
 import '../../models/models.dart';
 import '../../widgets/watermark_background.dart';
+import '../../services/admin_context_service.dart';
 
 class DashboardVeiculoScreen extends StatefulWidget {
   final DispositivoModel? initialDevice;
@@ -26,9 +28,12 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
   DispositivoModel? _selectedDevice;
   MedicaoModel? _latestMedicao;
   List<OcorrenciaModel> _alerts = [];
+  bool _gerenteHasFleets = true;
 
   bool _hasActiveTrip = false;
   String _activeTripDuration = '0h 0m';
+  UsuarioModel? _currentPerfil;
+  String? _currentUserEmail;
 
   @override
   void initState() {
@@ -36,6 +41,22 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fetchData();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_selectedDevice == null) {
+      final routeArg = ModalRoute.of(context)?.settings.arguments;
+      if (routeArg is DispositivoModel) {
+        _selectedDevice = routeArg;
+      } else if (widget.initialDevice != null) {
+        _selectedDevice = widget.initialDevice;
+      }
+      if (_selectedDevice != null && !AdminContextService().hasDevice) {
+        AdminContextService().setDevice(_selectedDevice);
+      }
+    }
   }
 
   Future<void> _fetchData() async {
@@ -46,7 +67,9 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
         if (mounted) Navigator.pushReplacementNamed(context, '/login');
         return;
       }
+      _currentUserEmail = user.email;
       final perfil = await _supabase.getUsuarioPerfil(user.id);
+      _currentPerfil = perfil;
       final role = perfil?.role ?? '';
       _userRole = role;
 
@@ -58,41 +81,86 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
         argDevice = routeArg;
       } else if (widget.initialDevice != null) {
         argDevice = widget.initialDevice;
+      } else if (_selectedDevice != null) {
+        argDevice = _selectedDevice;
+      } else if (role == 'admin' && AdminContextService().selectedDevice != null) {
+        argDevice = AdminContextService().selectedDevice;
+      }
+
+      // Se ADM tem argDevice com frota, resolve e sincroniza a frota de origem com o AdminContextService
+      if (role == 'admin' && argDevice != null) {
+        FrotaModel? matchedFrota = AdminContextService().selectedFrota;
+        if (argDevice.idFrota != null && (matchedFrota == null || matchedFrota.id != argDevice.idFrota)) {
+          try {
+            final allFrotas = await _supabase.getFrotas();
+            matchedFrota = allFrotas.where((f) => f.id == argDevice!.idFrota).firstOrNull;
+          } catch (_) {}
+        }
+        AdminContextService().setDevice(argDevice, frota: matchedFrota ?? AdminContextService().selectedFrota);
       }
 
       // 1. Filtrar veículos de acordo com a Matriz de Permissões:
-      // ADM: Todos os veículos
+      // ADM: Veículos pertencentes à frota selecionada no contexto
       // Gerente: Veículos de suas frotas
       // Operador: Apenas o veículo vinculado a si mesmo
       List<DispositivoModel> devices = [];
       if (role == 'admin') {
-        devices = await _supabase.getDispositivos();
+        final frotaId = AdminContextService().selectedFrota?.id ?? argDevice?.idFrota;
+        if (frotaId != null) {
+          try {
+            devices = await _supabase.getDispositivosByFrota(frotaId);
+          } catch (_) {}
+        }
+        if (argDevice != null && !devices.any((d) => d.id == argDevice!.id)) {
+          devices.add(argDevice);
+        }
       } else if (role == 'gerente') {
         final frotas = await _supabase.getFrotasByGerente(user.id);
+        _gerenteHasFleets = frotas.isNotEmpty;
         for (var f in frotas) {
           final devs = await _supabase.getDispositivosByFrota(f.id);
           devices.addAll(devs);
         }
+        if (argDevice != null && !devices.any((d) => d.id == argDevice!.id)) {
+          devices.add(argDevice);
+        }
       } else {
         // Operador
-        devices = await _supabase.getDispositivosByOperador(user.id);
+        final targetOperadorId = (perfil?.id != null && perfil!.id.trim().isNotEmpty) ? perfil.id : user.id;
+        devices = await _supabase.getDispositivosByOperador(targetOperadorId);
+        if (devices.isEmpty && targetOperadorId != user.id) {
+          final fallbackDevs = await _supabase.getDispositivosByOperador(user.id);
+          if (fallbackDevs.isNotEmpty) {
+            devices = fallbackDevs;
+          }
+        }
+        if (argDevice != null && !devices.any((d) => d.id == argDevice!.id)) {
+          devices.add(argDevice);
+        }
       }
 
       _accessibleDevices = devices;
 
       // 2. Determinar o veículo selecionado
-      final target = argDevice;
-      if (target != null && devices.any((d) => d.id == target.id)) {
-        _selectedDevice = devices.firstWhere((d) => d.id == target.id);
+      if (argDevice != null) {
+        _selectedDevice = devices.firstWhere((d) => d.id == argDevice!.id, orElse: () => argDevice!);
       } else if (devices.isNotEmpty) {
         _selectedDevice = devices.first;
       } else {
         _selectedDevice = null;
       }
 
+      if (role == 'admin' && _selectedDevice != null) {
+        AdminContextService().setDevice(_selectedDevice, frota: AdminContextService().selectedFrota);
+      }
+
       // 3. Carregar dados de telemetria se tiver veículo selecionado
       if (_selectedDevice != null) {
-        await _loadTelemetryForDevice(_selectedDevice!);
+        try {
+          await _loadTelemetryForDevice(_selectedDevice!);
+        } catch (err) {
+          debugPrint('Erro ao carregar telemetria do veículo: $err');
+        }
       }
 
       if (mounted) setState(() => _isLoading = false);
@@ -132,6 +200,9 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
   }
 
   void _onSwitchDevice(DispositivoModel d) async {
+    if (_userRole == 'admin') {
+      AdminContextService().setDevice(d, frota: AdminContextService().selectedFrota);
+    }
     setState(() {
       _selectedDevice = d;
       _isLoading = true;
@@ -142,6 +213,8 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isEmpty = _accessibleDevices.isEmpty && _selectedDevice == null;
+
     return Scaffold(
       extendBody: true,
       backgroundColor: const Color(0xFFFFF2E0),
@@ -149,6 +222,9 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
         selectedIndex: 2,
         isVehicleContext: true,
         currentDevice: _selectedDevice,
+        isDisabled: isEmpty,
+        hasDevicesOverride: !isEmpty,
+        userRoleOverride: _userRole.isNotEmpty ? _userRole : null,
       ),
       body: WatermarkBackground(
         child: SafeArea(
@@ -161,8 +237,13 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
   }
 
   Widget _buildBody(BuildContext context) {
-    // 1. Checar se existem veículos acessíveis
-    if (_accessibleDevices.isEmpty) {
+    // 1. Checar se é ADM e não há veículo selecionado
+    if (_userRole == 'admin' && _selectedDevice == null) {
+      return _buildNoDeviceSelectedAdmin();
+    }
+
+    // 2. Checar se existem veículos acessíveis
+    if (_accessibleDevices.isEmpty && _selectedDevice == null) {
       return _buildEmptyState();
     }
 
@@ -209,38 +290,176 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
     }
 
     return Padding(
-      padding: const EdgeInsets.all(24.0),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.directions_car_outlined, size: 72, color: Color(0xFFC23147)),
-            const SizedBox(height: 16),
-            Text(
-              title,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              description,
-              style: const TextStyle(fontSize: 14, color: Colors.black54),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            if (isAdmin)
-              ElevatedButton.icon(
-                onPressed: () => Navigator.pushNamed(context, '/cadastrar-dispositivo').then((_) => _fetchData()),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFC23147),
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeader(context),
+          Expanded(
+            child: Center(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.directions_car_outlined, size: 72, color: Color(0xFFC23147)),
+                    const SizedBox(height: 16),
+                    Text(
+                      title,
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      description,
+                      style: const TextStyle(fontSize: 14, color: Colors.black54),
+                      textAlign: TextAlign.center,
+                    ),
+                    if (!isAdmin && !isGerente) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFC23147).withOpacity(0.2)),
+                          boxShadow: const [
+                            BoxShadow(color: Color(0x0A000000), blurRadius: 8, offset: Offset(0, 2)),
+                          ],
+                        ),
+                        child: Column(
+                          children: [
+                            Text(
+                              'Usuário conectado: ${_currentPerfil?.nome ?? "Operador"}',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black87),
+                            ),
+                            if (_currentUserEmail != null && _currentUserEmail!.isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                _currentUserEmail!,
+                                style: const TextStyle(fontSize: 12, color: Colors.black54),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              HapticFeedback.lightImpact();
+                              _fetchData();
+                            },
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFFC23147),
+                              side: const BorderSide(color: Color(0xFFC23147)),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            ),
+                            icon: const Icon(Icons.refresh, size: 18),
+                            label: const Text('Recarregar'),
+                          ),
+                          const SizedBox(width: 12),
+                          ElevatedButton.icon(
+                            onPressed: () async {
+                              HapticFeedback.mediumImpact();
+                              await _supabase.signOut();
+                              if (mounted) Navigator.pushReplacementNamed(context, '/login');
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFC23147),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            ),
+                            icon: const Icon(Icons.logout, size: 18),
+                            label: const Text('Trocar de Conta'),
+                          ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                    if (isAdmin)
+                      ElevatedButton.icon(
+                        onPressed: () => Navigator.pushNamed(context, '/cadastrar-dispositivo').then((_) => _fetchData()),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFC23147),
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        icon: const Icon(Icons.add, color: Colors.white),
+                        label: const Text('Cadastrar Dispositivo', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      ),
+                  ],
                 ),
-                icon: const Icon(Icons.add, color: Colors.white),
-                label: const Text('Cadastrar Dispositivo', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
               ),
-          ],
-        ),
+            ),
+          ),
+          const SizedBox(height: 80),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoDeviceSelectedAdmin() {
+    final hasFrota = AdminContextService().hasFrota;
+    final frotaNome = AdminContextService().currentFrotaName;
+
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeader(context),
+          Expanded(
+            child: Center(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.directions_car_outlined, size: 72, color: Color(0xFFC23147)),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Nenhum veículo selecionado',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      hasFrota
+                          ? 'Você está no contexto da frota "$frotaNome". Para acessar a telemetria detalhada, selecione um veículo na lista de veículos da frota.'
+                          : 'Nenhuma frota ou veículo foi selecionado. Como administrador, inicie escolhendo uma frota para navegar pelo sistema.',
+                      style: const TextStyle(fontSize: 14, color: Colors.black54),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        if (hasFrota) {
+                          Navigator.pushNamed(context, '/listar-dispositivos', arguments: AdminContextService().selectedFrota);
+                        } else {
+                          Navigator.pushNamed(context, '/listar-frotas');
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFC23147),
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: Icon(hasFrota ? Icons.directions_car : Icons.local_shipping, color: Colors.white),
+                      label: Text(
+                        hasFrota ? 'Ver veículos da frota' : 'Selecionar frota',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 80),
+        ],
       ),
     );
   }
@@ -248,34 +467,79 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
   Widget _buildHeader(BuildContext context) {
     return Row(
       children: [
-        const Text(
-          'Dashboard — Veículo',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFFC23147),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: const Color(0xFFC23147),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            _userRole.toUpperCase(),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text(
+                  'Dashboard — Veículo',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFC23147),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFC23147),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    (_userRole == 'admin' || _userRole == 'adm') ? 'ADM' : _userRole.toUpperCase(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ),
+            if (_userRole == 'admin' && AdminContextService().hasFrota)
+              GestureDetector(
+                onTap: () {
+                  AdminContextService().clearVehicle();
+                  Navigator.pushNamed(context, '/dashboard-frota', arguments: AdminContextService().selectedFrota);
+                },
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 4.0),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.arrow_back, size: 14, color: Color(0xFFC23147)),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Frota: ${AdminContextService().currentFrotaName}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFFC23147),
+                          fontWeight: FontWeight.w600,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
         ),
         const Spacer(),
         Builder(
           builder: (ctx) => GestureDetector(
-            onTap: () => CustomEndDrawer.showMenu(context),
+            onTap: () {
+              final bool isEmpty = _accessibleDevices.isEmpty && _selectedDevice == null;
+              CustomEndDrawer.showMenu(
+                context,
+                userRoleOverride: _userRole.isNotEmpty ? _userRole : null,
+                hasFleetsOverride: _userRole == 'gerente'
+                    ? _gerenteHasFleets
+                    : (_userRole == 'admin' && AdminContextService().hasFrota ? true : null),
+                hasDevicesOverride: !isEmpty,
+              );
+            },
             child: SizedBox(
               width: 48,
               height: 48,
@@ -314,7 +578,7 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
         ),
         child: DropdownButtonHideUnderline(
           child: DropdownButton<DispositivoModel>(
-            value: _selectedDevice,
+            value: _accessibleDevices.any((d) => d.id == _selectedDevice?.id) ? _selectedDevice : null,
             isExpanded: true,
             icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFFC23147)),
             items: _accessibleDevices.map((d) {

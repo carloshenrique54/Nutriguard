@@ -6,6 +6,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../../widgets/custom_bottom_nav_bar.dart';
 import '../../widgets/custom_end_drawer.dart';
+import '../../services/admin_context_service.dart';
 
 class GpsScreen extends StatefulWidget {
   final DispositivoModel? initialDevice;
@@ -68,6 +69,8 @@ class _GpsScreenState extends State<GpsScreen> {
         argDevice = routeArg;
       } else if (widget.initialDevice != null) {
         argDevice = widget.initialDevice;
+      } else if ((_userRole == 'admin' || _userRole == 'adm') && AdminContextService().hasDevice) {
+        argDevice = AdminContextService().selectedDevice;
       }
 
       // Buscar veículos de acordo com a matriz de permissões
@@ -306,28 +309,31 @@ class _GpsScreenState extends State<GpsScreen> {
                   ),
                 ],
               ),
-              child: ListTile(
-                leading: const CircleAvatar(
-                  backgroundColor: Color(0xFFC8E569),
-                  child: Icon(Icons.directions_car, color: Colors.black87),
-                ),
-                title: Text(
-                  d.placaVeiculo ?? d.nomeDispositivo ?? 'Veículo',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                ),
-                subtitle: Text(
-                  '${d.modeloVeiculo ?? "Dispositivo"} • ${hasLocation ? "Sinal GPS ativo" : "Sem sinal recente"}',
-                  style: TextStyle(fontSize: 12, color: hasLocation ? Colors.green[700] : Colors.black54),
-                ),
-                trailing: ElevatedButton.icon(
-                  onPressed: () => _onSelectVehicle(d),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFC23147),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              child: Material(
+                color: Colors.transparent,
+                child: ListTile(
+                  leading: const CircleAvatar(
+                    backgroundColor: Color(0xFFC8E569),
+                    child: Icon(Icons.directions_car, color: Colors.black87),
                   ),
-                  icon: const Icon(Icons.map, size: 16, color: Colors.white),
-                  label: const Text('Rastrear', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                  title: Text(
+                    d.placaVeiculo ?? d.nomeDispositivo ?? 'Veículo',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                  subtitle: Text(
+                    '${d.modeloVeiculo ?? "Dispositivo"} • ${hasLocation ? "Sinal GPS ativo" : "Sem sinal recente"}',
+                    style: TextStyle(fontSize: 12, color: hasLocation ? Colors.green[700] : Colors.black54),
+                  ),
+                  trailing: ElevatedButton.icon(
+                    onPressed: () => _onSelectVehicle(d),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFC23147),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: const Icon(Icons.map, size: 16, color: Colors.white),
+                    label: const Text('Rastrear', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                  ),
                 ),
               ),
             );
@@ -419,7 +425,7 @@ class _GpsScreenState extends State<GpsScreen> {
             borderRadius: BorderRadius.circular(12),
           ),
           child: Text(
-            _userRole.toUpperCase(),
+            (_userRole == 'admin' || _userRole == 'adm') ? 'ADM' : _userRole.toUpperCase(),
             style: const TextStyle(
               color: Colors.white,
               fontSize: 11,
