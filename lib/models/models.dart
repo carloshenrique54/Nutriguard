@@ -183,8 +183,12 @@ class DispositivoModel {
       temperaturaMaxima: json['temperatura_maxima'],
       umidadeMinima: json['umidade_minima'],
       umidadeMaxima: json['umidade_maxima'],
-      sensibilidadeVibracao: json['sensibilidade_vibracao'],
-      limiteVibracao: json['limite_vibracao'],
+      sensibilidadeVibracao: json['sensibilidade_vibracao'] is num
+          ? (json['sensibilidade_vibracao'] as num).toInt()
+          : int.tryParse(json['sensibilidade_vibracao']?.toString() ?? ''),
+      limiteVibracao: json['limite_vibracao'] is num
+          ? (json['limite_vibracao'] as num).toInt()
+          : int.tryParse(json['limite_vibracao']?.toString() ?? ''),
       intervaloDados: json['intervalo_dados'],
       bateriaMinima: json['bateria_minima'],
       createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at']) : null,
