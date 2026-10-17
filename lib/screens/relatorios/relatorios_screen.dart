@@ -59,6 +59,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
   String? _selectedFrotaId;
   String? _selectedDispositivoId;
   String _selectedTelemetriaParametro = 'Temperatura';
+  bool _isBarChart = false;
 
   bool _isLoading = true;
   String _errorMessage = '';
@@ -937,10 +938,10 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
 
     return GridView.count(
       crossAxisCount: 2,
-      crossAxisSpacing: 14,
-      mainAxisSpacing: 14,
+      crossAxisSpacing: 10,
+      mainAxisSpacing: 10,
       shrinkWrap: true,
-      childAspectRatio: 1.15,
+      childAspectRatio: 1.65,
       physics: const NeverScrollableScrollPhysics(),
       children: [
         _buildMetricCard(
@@ -973,47 +974,48 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
     required IconData icon,
   }) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            width: 36,
-            height: 36,
+            width: 28,
+            height: 28,
             decoration: BoxDecoration(
               color: const Color(0xFFC23147),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(7),
             ),
-            child: Icon(icon, color: Colors.white, size: 20),
+            child: Icon(icon, color: Colors.white, size: 16),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           Text(
             title,
             style: const TextStyle(
               color: Color(0xFF666666),
               fontSize: 11,
-              fontWeight: FontWeight.w400,
+              fontWeight: FontWeight.w500,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           Text(
             value,
             style: const TextStyle(
               color: Color(0xFFC23147),
-              fontSize: 22,
+              fontSize: 19,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -1154,39 +1156,107 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
     }
     final int totalMin = tEnd.difference(t0).inMinutes;
 
+    const int numSlots = 7;
+    final double slotWidthMin = totalMin / (numSlots - 1);
+
     List<String> timeLabels = [];
-    for (int i = 0; i < 7; i++) {
-      DateTime slotTime = t0.add(Duration(minutes: (totalMin * (i / 6)).round()));
-      if (i == 0) {
-        timeLabels.add('${DateFormat('H:mm').format(slotTime)}\n(Início)');
-      } else if (i == 6) {
-        timeLabels.add('${DateFormat('H:mm').format(slotTime)}\n(Agora)');
-      } else {
-        timeLabels.add(DateFormat('H:mm').format(slotTime));
-      }
-    }
-
     List<FlSpot> spots = [];
-    for (var m in sorted) {
-      double? y;
-      if (_selectedTelemetriaParametro == 'Umidade') {
-        y = m.umidade?.toDouble();
-      } else if (_selectedTelemetriaParametro == 'Vibração') {
-        y = m.vibracao?.toDouble();
+    List<BarChartGroupData> barGroups = [];
+    bool hasAnyAlert = false;
+    double maxYFound = limit;
+    double minYFound = limit;
+
+    for (int i = 0; i < numSlots; i++) {
+      DateTime slotCenter = t0.add(Duration(minutes: (slotWidthMin * i).round()));
+      DateTime windowStart = slotCenter.subtract(Duration(minutes: (slotWidthMin / 2).round()));
+      DateTime windowEnd = slotCenter.add(Duration(minutes: (slotWidthMin / 2).round()));
+
+      timeLabels.add(DateFormat('H:mm').format(slotCenter));
+
+      List<double> slotVals = [];
+      for (var m in sorted) {
+        final reg = m.registradoEm!;
+        if (!reg.isBefore(windowStart) && !reg.isAfter(windowEnd)) {
+          double? v;
+          if (_selectedTelemetriaParametro == 'Umidade') {
+            v = m.umidade?.toDouble();
+          } else if (_selectedTelemetriaParametro == 'Vibração') {
+            v = m.vibracao?.toDouble();
+          } else {
+            v = m.temperatura?.toDouble();
+          }
+          if (v != null) slotVals.add(v);
+        }
+      }
+
+      double avgY;
+      if (slotVals.isNotEmpty) {
+        avgY = slotVals.reduce((a, b) => a + b) / slotVals.length;
       } else {
-        y = m.temperatura?.toDouble();
+        double? nearestVal;
+        int minDiff = 99999999;
+        for (var m in sorted) {
+          int diff = (m.registradoEm!.difference(slotCenter).inMinutes).abs();
+          if (diff < minDiff) {
+            minDiff = diff;
+            if (_selectedTelemetriaParametro == 'Umidade') {
+              nearestVal = m.umidade?.toDouble();
+            } else if (_selectedTelemetriaParametro == 'Vibração') {
+              nearestVal = m.vibracao?.toDouble();
+            } else {
+              nearestVal = m.temperatura?.toDouble();
+            }
+          }
+        }
+        avgY = nearestVal ?? (limit * 0.6);
       }
-      if (y != null) {
-        int mMin = m.registradoEm!.difference(t0).inMinutes;
-        double x = (mMin / totalMin) * 6.0;
-        spots.add(FlSpot(x.clamp(0.0, 6.0), y));
-      }
+
+      final roundedY = double.parse(avgY.toStringAsFixed(1));
+      if (roundedY > maxYFound) maxYFound = roundedY;
+      if (roundedY < minYFound) minYFound = roundedY;
+      if (roundedY > limit) hasAnyAlert = true;
+
+      spots.add(FlSpot(i.toDouble(), roundedY));
+
+      final bool isOverLimit = roundedY > limit;
+      barGroups.add(
+        BarChartGroupData(
+          x: i,
+          barRods: [
+            BarChartRodData(
+              toY: roundedY,
+              color: isOverLimit ? const Color(0xFFC23147) : const Color(0xFF8DB600),
+              width: 14,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(5)),
+            ),
+          ],
+        ),
+      );
     }
 
-    if (spots.isEmpty) {
-      spots = [FlSpot(0, limit * 0.6), FlSpot(6, limit * 0.6)];
-    } else if (spots.length == 1) {
-      spots = [FlSpot(0, spots.first.y), FlSpot(6, spots.first.y)];
+    double minY = 0.0;
+    double maxY = 12.0;
+    double yInterval = 4.0;
+    String unitSuffix = '°';
+
+    if (_selectedTelemetriaParametro == 'Umidade') {
+      minY = 0.0;
+      maxY = 100.0;
+      yInterval = 25.0;
+      unitSuffix = '%';
+    } else if (_selectedTelemetriaParametro == 'Vibração') {
+      minY = 0.0;
+      maxY = (maxYFound > 2.0 ? maxYFound + 0.8 : 3.0).ceilToDouble();
+      yInterval = 1.0;
+      unitSuffix = 'G';
+    } else {
+      // Temperatura
+      minY = 0.0;
+      maxY = (maxYFound > limit ? maxYFound + 3.0 : limit + 4.0).ceilToDouble();
+      if (maxY < 12.0) maxY = 12.0;
+      yInterval = (maxY / 3).roundToDouble();
+      if (yInterval < 2) yInterval = 2;
+      unitSuffix = '°';
     }
 
     return Column(
@@ -1195,7 +1265,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
         _buildTelemetryHeader(paramTitle),
         const SizedBox(height: 12),
         Container(
-          height: 195,
+          height: 215,
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
           decoration: BoxDecoration(
             color: Colors.white,
@@ -1208,93 +1278,239 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
               ),
             ],
           ),
-          child: Stack(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Positioned(
-                top: 0,
-                left: 2,
-                child: Text(
-                  'Limite: $limitLabel',
-                  style: const TextStyle(
-                    fontSize: 10,
-                    color: Color(0xFF666666),
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.only(top: 16.0),
-                child: LineChart(
-                  LineChartData(
-                    minX: 0,
-                    maxX: 6,
-                    gridData: const FlGridData(show: false),
-                    borderData: FlBorderData(show: false),
-                    extraLinesData: ExtraLinesData(
-                      horizontalLines: [
-                        HorizontalLine(
-                          y: limit,
-                          color: const Color(0xFFE57373),
-                          strokeWidth: 1.2,
-                          dashArray: [4, 4],
-                        ),
-                      ],
-                    ),
-                    titlesData: FlTitlesData(
-                      topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                      rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                      leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                      bottomTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          reservedSize: 32,
-                          interval: 1,
-                          getTitlesWidget: (value, meta) {
-                            int idx = value.round();
-                            if (idx >= 0 && idx < timeLabels.length) {
-                              return Padding(
-                                padding: const EdgeInsets.only(top: 4.0),
-                                child: Text(
-                                  timeLabels[idx],
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    fontSize: 9,
-                                    color: Color(0xFF777777),
-                                    height: 1.1,
-                                  ),
-                                ),
-                              );
-                            }
-                            return const SizedBox.shrink();
-                          },
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFC23147),
+                          borderRadius: BorderRadius.circular(2),
                         ),
                       ),
-                    ),
-                    lineBarsData: [
-                      LineChartBarData(
-                        spots: spots,
-                        isCurved: true,
-                        curveSmoothness: 0.35,
-                        color: const Color(0xFF9ECA38),
-                        barWidth: 2.2,
-                        isStrokeCapRound: true,
-                        belowBarData: BarAreaData(show: false),
-                        dotData: FlDotData(
-                          show: true,
-                          checkToShowDot: (spot, barData) => spot.y > limit,
-                          getDotPainter: (spot, percent, barData, index) {
-                            return FlDotCirclePainter(
-                              radius: 5,
-                              color: const Color(0xFFC23147),
-                              strokeWidth: 2,
-                              strokeColor: Colors.white,
-                            );
-                          },
+                      const SizedBox(width: 5),
+                      Text(
+                        'Limite: $limitLabel',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF555555),
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
                   ),
-                ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: hasAnyAlert
+                          ? const Color(0xFFFDE8EC)
+                          : const Color(0xFFF1F8E9),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: hasAnyAlert
+                            ? const Color(0xFFF8BBD0)
+                            : const Color(0xFFD4E7B5),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          hasAnyAlert ? Icons.warning_amber_rounded : Icons.check_circle_outline,
+                          size: 11,
+                          color: hasAnyAlert ? const Color(0xFFC23147) : const Color(0xFF2E7D32),
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          hasAnyAlert ? 'Alerta registrado' : 'Dentro do limite',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.bold,
+                            color: hasAnyAlert ? const Color(0xFFC23147) : const Color(0xFF2E7D32),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Expanded(
+                child: _isBarChart
+                    ? BarChart(
+                        BarChartData(
+                          minY: minY,
+                          maxY: maxY,
+                          gridData: FlGridData(
+                            show: true,
+                            drawVerticalLine: false,
+                            horizontalInterval: yInterval,
+                            getDrawingHorizontalLine: (val) => FlLine(
+                              color: Colors.black.withValues(alpha: 0.05),
+                              strokeWidth: 1,
+                              dashArray: [4, 4],
+                            ),
+                          ),
+                          borderData: FlBorderData(show: false),
+                          extraLinesData: ExtraLinesData(
+                            horizontalLines: [
+                              HorizontalLine(
+                                y: limit,
+                                color: const Color(0xFFC23147).withValues(alpha: 0.6),
+                                strokeWidth: 1.2,
+                                dashArray: [4, 4],
+                              ),
+                            ],
+                          ),
+                          titlesData: FlTitlesData(
+                            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                            leftTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                reservedSize: 28,
+                                interval: yInterval,
+                                getTitlesWidget: (value, meta) {
+                                  return Text(
+                                    '${value.toInt()}$unitSuffix',
+                                    style: const TextStyle(fontSize: 9.5, color: Color(0xFF888888)),
+                                  );
+                                },
+                              ),
+                            ),
+                            bottomTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                reservedSize: 22,
+                                getTitlesWidget: (value, meta) {
+                                  int idx = value.round();
+                                  if (idx >= 0 && idx < timeLabels.length) {
+                                    return Padding(
+                                      padding: const EdgeInsets.only(top: 4.0),
+                                      child: Text(
+                                        timeLabels[idx],
+                                        style: const TextStyle(fontSize: 9.5, color: Color(0xFF777777)),
+                                      ),
+                                    );
+                                  }
+                                  return const SizedBox.shrink();
+                                },
+                              ),
+                            ),
+                          ),
+                          barGroups: barGroups,
+                        ),
+                      )
+                    : LineChart(
+                        LineChartData(
+                          minX: 0,
+                          maxX: 6,
+                          minY: minY,
+                          maxY: maxY,
+                          gridData: FlGridData(
+                            show: true,
+                            drawVerticalLine: false,
+                            horizontalInterval: yInterval,
+                            getDrawingHorizontalLine: (val) => FlLine(
+                              color: Colors.black.withValues(alpha: 0.05),
+                              strokeWidth: 1,
+                              dashArray: [4, 4],
+                            ),
+                          ),
+                          borderData: FlBorderData(show: false),
+                          extraLinesData: ExtraLinesData(
+                            horizontalLines: [
+                              HorizontalLine(
+                                y: limit,
+                                color: const Color(0xFFC23147).withValues(alpha: 0.6),
+                                strokeWidth: 1.2,
+                                dashArray: [4, 4],
+                              ),
+                            ],
+                          ),
+                          titlesData: FlTitlesData(
+                            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                            leftTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                reservedSize: 28,
+                                interval: yInterval,
+                                getTitlesWidget: (value, meta) {
+                                  return Text(
+                                    '${value.toInt()}$unitSuffix',
+                                    style: const TextStyle(fontSize: 9.5, color: Color(0xFF888888)),
+                                  );
+                                },
+                              ),
+                            ),
+                            bottomTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                reservedSize: 22,
+                                interval: 1,
+                                getTitlesWidget: (value, meta) {
+                                  int idx = value.round();
+                                  if (idx >= 0 && idx < timeLabels.length) {
+                                    return Padding(
+                                      padding: const EdgeInsets.only(top: 4.0),
+                                      child: Text(
+                                        timeLabels[idx],
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          fontSize: 9.5,
+                                          color: Color(0xFF777777),
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                  return const SizedBox.shrink();
+                                },
+                              ),
+                            ),
+                          ),
+                          lineBarsData: [
+                            LineChartBarData(
+                              spots: spots,
+                              isCurved: true,
+                              curveSmoothness: 0.20,
+                              color: const Color(0xFF8DB600),
+                              barWidth: 2.4,
+                              isStrokeCapRound: true,
+                              belowBarData: BarAreaData(
+                                show: true,
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    const Color(0xFF8DB600).withValues(alpha: 0.22),
+                                    const Color(0xFF8DB600).withValues(alpha: 0.01),
+                                  ],
+                                ),
+                              ),
+                              dotData: FlDotData(
+                                show: true,
+                                getDotPainter: (spot, percent, barData, index) {
+                                  final isOver = spot.y > limit;
+                                  return FlDotCirclePainter(
+                                    radius: isOver ? 4.5 : 3.0,
+                                    color: isOver ? const Color(0xFFC23147) : const Color(0xFF8DB600),
+                                    strokeWidth: 1.5,
+                                    strokeColor: Colors.white,
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
               ),
             ],
           ),
@@ -1315,6 +1531,59 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
           ),
         ),
         const Spacer(),
+        // Toggle Linha / Barras
+        Container(
+          height: 30,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 5,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              InkWell(
+                onTap: () => setState(() => _isBarChart = false),
+                borderRadius: const BorderRadius.horizontal(left: Radius.circular(8)),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: !_isBarChart ? const Color(0xFFC23147).withValues(alpha: 0.12) : Colors.transparent,
+                    borderRadius: const BorderRadius.horizontal(left: Radius.circular(8)),
+                  ),
+                  child: Icon(
+                    Icons.show_chart_rounded,
+                    size: 17,
+                    color: !_isBarChart ? const Color(0xFFC23147) : Colors.black45,
+                  ),
+                ),
+              ),
+              InkWell(
+                onTap: () => setState(() => _isBarChart = true),
+                borderRadius: const BorderRadius.horizontal(right: Radius.circular(8)),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _isBarChart ? const Color(0xFFC23147).withValues(alpha: 0.12) : Colors.transparent,
+                    borderRadius: const BorderRadius.horizontal(right: Radius.circular(8)),
+                  ),
+                  child: Icon(
+                    Icons.bar_chart_rounded,
+                    size: 17,
+                    color: _isBarChart ? const Color(0xFFC23147) : Colors.black45,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           decoration: BoxDecoration(
