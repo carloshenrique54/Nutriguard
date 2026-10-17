@@ -9,6 +9,7 @@ import '../../services/supabase_service.dart';
 import '../../services/trip_service.dart';
 import '../../widgets/custom_end_drawer.dart';
 import '../../widgets/watermark_background.dart';
+import '../../widgets/responsive_layout.dart';
 
 class IniciarViagemScreen extends StatefulWidget {
   final DispositivoModel? initialDevice;
@@ -386,28 +387,31 @@ class _IniciarViagemScreenState extends State<IniciarViagemScreen> {
               ? const Center(
                   child: CircularProgressIndicator(color: Color(0xFFC23147)),
                 )
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildOperatorHeader(),
-                      const SizedBox(height: 16),
-                      if (_activeTrip != null) ...[
-                        _buildActiveTripAlert(),
+              : ResponsiveContentWrapper(
+                  maxWidth: ResponsiveBreakpoints.maxFormWidth + 120,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildOperatorHeader(),
                         const SizedBox(height: 16),
+                        if (_activeTrip != null) ...[
+                          _buildActiveTripAlert(),
+                          const SizedBox(height: 16),
+                        ],
+                        if (_dispositivo == null) ...[
+                          _buildNoDeviceCard(),
+                        ] else ...[
+                          _buildVehicleCard(),
+                          const SizedBox(height: 16),
+                          _buildFormCard(),
+                          const SizedBox(height: 24),
+                          _buildActionButtons(),
+                          const SizedBox(height: 32),
+                        ],
                       ],
-                      if (_dispositivo == null) ...[
-                        _buildNoDeviceCard(),
-                      ] else ...[
-                        _buildVehicleCard(),
-                        const SizedBox(height: 16),
-                        _buildFormCard(),
-                        const SizedBox(height: 24),
-                        _buildActionButtons(),
-                        const SizedBox(height: 32),
-                      ],
-                    ],
+                    ),
                   ),
                 ),
         ),

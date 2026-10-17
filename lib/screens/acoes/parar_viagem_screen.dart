@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../services/supabase_service.dart';
 import '../../services/trip_service.dart';
 import '../../widgets/watermark_background.dart';
+import '../../widgets/responsive_layout.dart';
 
 class PararViagemScreen extends StatefulWidget {
   final String? initialOperatorId;
@@ -164,22 +165,25 @@ class _PararViagemScreenState extends State<PararViagemScreen> {
       backgroundColor: const Color(0xFFFFF2E0),
       body: WatermarkBackground(
         child: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildHeader(context),
-                const SizedBox(height: 16),
-                _buildBackButton(context),
-                const SizedBox(height: 16),
-                _buildMotivoSection(anexosText),
-                const SizedBox(height: 16),
-                _buildLocalParadaSection(),
-                const SizedBox(height: 20),
-                _buildSubmitButton(),
-                const SizedBox(height: 40),
-              ],
+          child: ResponsiveContentWrapper(
+            maxWidth: ResponsiveBreakpoints.maxFormWidth,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildHeader(context),
+                  const SizedBox(height: 16),
+                  _buildBackButton(context),
+                  const SizedBox(height: 16),
+                  _buildMotivoSection(anexosText),
+                  const SizedBox(height: 16),
+                  _buildLocalParadaSection(),
+                  const SizedBox(height: 20),
+                  _buildSubmitButton(),
+                  const SizedBox(height: 40),
+                ],
+              ),
             ),
           ),
         ),

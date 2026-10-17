@@ -237,100 +237,116 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
       decoration: const BoxDecoration(
         color: Color(0xFFC8E569),
       ),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          // Background layout for spacing
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              _buildNavItem(
-                context: context,
-                index: 0,
-                icon: Icons.notifications_none,
-                label: 'Alertas',
-                routeName: alertasRoute,
-                isEnabled: _isItemEnabled(0),
-                isActive: showBubble && widget.selectedIndex == 0,
-              ),
-              _buildNavItem(
-                context: context,
-                index: 1,
-                icon: Icons.description_outlined,
-                label: 'Relatórios',
-                routeName: relatoriosRoute,
-                isEnabled: _isItemEnabled(1),
-                isActive: showBubble && widget.selectedIndex == 1,
-              ),
-              _buildNavItem(
-                context: context,
-                index: 2,
-                icon: Icons.dashboard_rounded,
-                label: 'Dashboard',
-                routeName: dashboardRoute,
-                isEnabled: _isItemEnabled(2),
-                isActive: showBubble && widget.selectedIndex == 2,
-              ),
-              _buildNavItem(
-                context: context,
-                index: 3,
-                icon: Icons.access_time,
-                label: 'Histórico',
-                routeName: historicoRoute,
-                isEnabled: _isItemEnabled(3),
-                isActive: showBubble && widget.selectedIndex == 3,
-              ),
-              _buildNavItem(
-                context: context,
-                index: 4,
-                icon: Icons.location_on_outlined,
-                label: 'GPS',
-                routeName: gpsRoute,
-                isEnabled: _isItemEnabled(4),
-                isActive: showBubble && widget.selectedIndex == 4,
-              ),
-            ],
-          ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 650),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final double barWidth = constraints.maxWidth;
+              final double itemWidth = barWidth / 5;
 
-          // Animated Bubble
-          if (showBubble)
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 400),
-              curve: Curves.easeOutBack,
-              bottom: _isInit ? 20 : 0,
-              left: _calculateLeftPosition(context, widget.selectedIndex!),
-              child: Container(
-                width: 56,
-                height: 56,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFC23147),
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Color(0x4DC23147),
-                      blurRadius: 12,
-                      offset: Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Center(
-                  child: Icon(
-                    _getIconForIndex(widget.selectedIndex!),
-                    color: Colors.white,
-                    size: 28,
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  // Background layout for spacing
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      _buildNavItem(
+                        context: context,
+                        index: 0,
+                        itemWidth: itemWidth,
+                        icon: Icons.notifications_none,
+                        label: 'Alertas',
+                        routeName: alertasRoute,
+                        isEnabled: _isItemEnabled(0),
+                        isActive: showBubble && widget.selectedIndex == 0,
+                      ),
+                      _buildNavItem(
+                        context: context,
+                        index: 1,
+                        itemWidth: itemWidth,
+                        icon: Icons.description_outlined,
+                        label: 'Relatórios',
+                        routeName: relatoriosRoute,
+                        isEnabled: _isItemEnabled(1),
+                        isActive: showBubble && widget.selectedIndex == 1,
+                      ),
+                      _buildNavItem(
+                        context: context,
+                        index: 2,
+                        itemWidth: itemWidth,
+                        icon: Icons.dashboard_rounded,
+                        label: 'Dashboard',
+                        routeName: dashboardRoute,
+                        isEnabled: _isItemEnabled(2),
+                        isActive: showBubble && widget.selectedIndex == 2,
+                      ),
+                      _buildNavItem(
+                        context: context,
+                        index: 3,
+                        itemWidth: itemWidth,
+                        icon: Icons.access_time,
+                        label: 'Histórico',
+                        routeName: historicoRoute,
+                        isEnabled: _isItemEnabled(3),
+                        isActive: showBubble && widget.selectedIndex == 3,
+                      ),
+                      _buildNavItem(
+                        context: context,
+                        index: 4,
+                        itemWidth: itemWidth,
+                        icon: Icons.location_on_outlined,
+                        label: 'GPS',
+                        routeName: gpsRoute,
+                        isEnabled: _isItemEnabled(4),
+                        isActive: showBubble && widget.selectedIndex == 4,
+                      ),
+                    ],
                   ),
-                ),
-              ),
-            ),
-        ],
+
+                  // Animated Bubble
+                  if (showBubble)
+                    AnimatedPositioned(
+                      duration: const Duration(milliseconds: 400),
+                      curve: Curves.easeOutBack,
+                      bottom: _isInit ? 20 : 0,
+                      left: _calculateLeftPosition(barWidth, widget.selectedIndex!),
+                      child: Container(
+                        width: 56,
+                        height: 56,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFC23147),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Color(0x4DC23147),
+                              blurRadius: 12,
+                              offset: Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Center(
+                          child: Icon(
+                            _getIconForIndex(widget.selectedIndex!),
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
       ),
     );
   }
 
-  double _calculateLeftPosition(BuildContext context, int index) {
-    final width = MediaQuery.of(context).size.width;
-    final itemWidth = width / 5;
+  double _calculateLeftPosition(double barWidth, int index) {
+    final itemWidth = barWidth / 5;
     return (itemWidth * index) + (itemWidth / 2) - 28;
   }
 
@@ -348,6 +364,7 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
   Widget _buildNavItem({
     required BuildContext context,
     required int index,
+    required double itemWidth,
     required IconData icon,
     required String label,
     required String routeName,
@@ -363,7 +380,7 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
           : null,
       behavior: HitTestBehavior.opaque,
       child: SizedBox(
-        width: MediaQuery.of(context).size.width / 5,
+        width: itemWidth,
         child: Padding(
           padding: const EdgeInsets.only(bottom: 12.0),
           child: Column(

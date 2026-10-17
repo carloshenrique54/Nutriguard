@@ -6,6 +6,7 @@ import '../../models/models.dart';
 import '../../widgets/animated_components.dart';
 import '../../widgets/watermark_background.dart';
 import '../../services/admin_context_service.dart';
+import '../../widgets/responsive_layout.dart';
 
 class DashboardFrotaScreen extends StatefulWidget {
   final String? initialFrotaId;
@@ -214,24 +215,52 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
   Widget _buildContent(BuildContext context) {
     // 1. Caso: Gerente sem frota associada
     if (_frotas.isEmpty && _userRole == 'gerente') {
-      return _buildEmptyFrotaGerente();
+      return ResponsiveContentWrapper(
+        maxWidth: 700,
+        child: _buildEmptyFrotaGerente(),
+      );
     }
 
     // 2. Caso: Nenhuma frota cadastrada (ADM)
     if (_frotas.isEmpty && _userRole == 'admin') {
-      return _buildEmptyFrotasAdmin();
+      return ResponsiveContentWrapper(
+        maxWidth: 700,
+        child: _buildEmptyFrotasAdmin(),
+      );
     }
 
     // 3. Caso: Nenhuma frota selecionada (ADM)
     if (_selectedFrota == null && _userRole == 'admin') {
-      return _buildNoFrotaSelectedAdmin();
+      return ResponsiveContentWrapper(
+        maxWidth: 700,
+        child: _buildNoFrotaSelectedAdmin(),
+      );
     }
 
     // 4. Caso: A frota selecionada não tem dispositivos cadastrados
     if (_selectedFrota != null && _dispositivos.isEmpty) {
-      return _buildEmptyFrotaDevices(context);
+      return ResponsiveContentWrapper(
+        maxWidth: 700,
+        child: _buildEmptyFrotaDevices(context),
+      );
     }
 
+    return ResponsiveContentWrapper(
+      maxWidth: 1200,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final bool isDesktop = constraints.maxWidth >= ResponsiveBreakpoints.desktop;
+          if (isDesktop) {
+            return _buildDesktopLayout(context);
+          } else {
+            return _buildMobileLayout(context);
+          }
+        },
+      ),
+    );
+  }
+
+  Widget _buildMobileLayout(BuildContext context) {
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
       child: Column(
@@ -252,6 +281,56 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
           _buildRecentEvents(),
           const SizedBox(height: 18),
           _buildVeiculosList(),
+          const SizedBox(height: 80),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopLayout(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeader(context),
+          const SizedBox(height: 14),
+          _buildFrotaSelector(),
+          const SizedBox(height: 18),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Coluna Esquerda: Gestão, Limites térmicos, Indicadores e Outras frotas
+              Expanded(
+                flex: 5,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildManagementCard(),
+                    const SizedBox(height: 16),
+                    _buildSplitCard(),
+                    const SizedBox(height: 16),
+                    _buildTwoColumnCards(),
+                    const SizedBox(height: 18),
+                    _buildOutrasFrotasSection(),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 20),
+              // Coluna Direita: Alertas recentes e Lista/Tabela de veículos
+              Expanded(
+                flex: 5,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildRecentEvents(),
+                    const SizedBox(height: 18),
+                    _buildVeiculosList(),
+                  ],
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 80),
         ],
       ),

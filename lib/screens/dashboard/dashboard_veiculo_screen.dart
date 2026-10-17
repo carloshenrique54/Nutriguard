@@ -8,6 +8,7 @@ import '../../widgets/watermark_background.dart';
 import '../../services/admin_context_service.dart';
 import '../../services/trip_service.dart';
 import '../../widgets/dashboard_charts.dart';
+import '../../widgets/responsive_layout.dart';
 
 class DashboardVeiculoScreen extends StatefulWidget {
   final DispositivoModel? initialDevice;
@@ -313,14 +314,36 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
   Widget _buildBody(BuildContext context) {
     // 1. Checar se é ADM e não há veículo selecionado
     if (_userRole == 'admin' && _selectedDevice == null) {
-      return _buildNoDeviceSelectedAdmin();
+      return ResponsiveContentWrapper(
+        maxWidth: 700,
+        child: _buildNoDeviceSelectedAdmin(),
+      );
     }
 
     // 2. Checar se existem veículos acessíveis
     if (_accessibleDevices.isEmpty && _selectedDevice == null) {
-      return _buildEmptyState();
+      return ResponsiveContentWrapper(
+        maxWidth: 700,
+        child: _buildEmptyState(),
+      );
     }
 
+    return ResponsiveContentWrapper(
+      maxWidth: 1200,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final bool isDesktop = constraints.maxWidth >= ResponsiveBreakpoints.desktop;
+          if (isDesktop) {
+            return _buildDesktopLayout(context);
+          } else {
+            return _buildMobileLayout(context);
+          }
+        },
+      ),
+    );
+  }
+
+  Widget _buildMobileLayout(BuildContext context) {
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
       child: Column(
@@ -345,6 +368,60 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
           _buildGpsQuickBanner(),
           const SizedBox(height: 18),
           _buildRecentEvents(),
+          const SizedBox(height: 80),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopLayout(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeader(context),
+          const SizedBox(height: 14),
+          _buildDeviceSelector(),
+          const SizedBox(height: 18),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Coluna Esquerda: Viagem, Temperatura, Limites/Tempo, GPS
+              Expanded(
+                flex: 5,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (_userRole == 'operador') ...[
+                      _buildOperatorTripSection(),
+                      const SizedBox(height: 16),
+                    ],
+                    _buildTemperatureCard(),
+                    const SizedBox(height: 16),
+                    _buildSplitCard(),
+                    const SizedBox(height: 16),
+                    _buildGpsQuickBanner(),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 20),
+              // Coluna Direita: Métricas complementares, Banner de Alerta, Eventos Recentes
+              Expanded(
+                flex: 5,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildInfoGrid(),
+                    const SizedBox(height: 16),
+                    _buildStatusBanner(),
+                    const SizedBox(height: 16),
+                    _buildRecentEvents(),
+                  ],
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 80),
         ],
       ),
@@ -991,13 +1068,17 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
                   style: TextStyle(color: Colors.black87, fontSize: 15, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  tempDisplay,
-                  style: const TextStyle(
-                    color: Colors.black,
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    height: 1.1,
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    tempDisplay,
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      height: 1.1,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -1095,6 +1176,7 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
                       const Text(
                         'Limite definido',
                         style: TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.w600),
+                        overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 2),
                       Text(
@@ -1136,6 +1218,7 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
                       const Text(
                         'Última atualização',
                         style: TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.w600),
+                        overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 2),
                       Text(
@@ -1240,7 +1323,10 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
                       ),
                     ),
                     const Spacer(),
-                    Row(
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 6,
+                      runSpacing: 4,
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -1253,18 +1339,15 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
                             style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Color(0xFF2E7D32)),
                           ),
                         ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('Limite definido:', style: TextStyle(fontSize: 8, color: Colors.black54)),
-                              Text(
-                                '${dev?.umidadeMaxima ?? 40}%',
-                                style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
-                              ),
-                            ],
-                          ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Limite definido:', style: TextStyle(fontSize: 8, color: Colors.black54)),
+                            Text(
+                              '${dev?.umidadeMaxima ?? 40}%',
+                              style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
+                            ),
+                          ],
                         ),
                       ],
                     ),
