@@ -6,13 +6,11 @@
 --   2. No menu lateral esquerdo, clique em "SQL Editor"
 --   3. Cole todo o conteúdo deste arquivo e clique no botão verde "Run"
 --
--- Destaques da Estrutura (conforme o diagrama do banco):
---   ✓ Todos os IDs (PKs e FKs) são UUIDs gerados aleatoriamente (gen_random_uuid()).
---   ✓ O campo 'cpf' é texto independente com o documento formatado ('123.456.789-00').
---   ✓ 'sensibilidade_vibracao' e 'limite_vibracao' são do tipo int8 (bigint).
---   ✓ 'intervalo_dados' é float8.
---   ✓ 'medicoes.id' conecta com 'ocorrencias.id_medicao'.
---   ✓ 'dispositivo_credenciais' incluída com token_hash.
+-- Respostas às dúvidas sobre RLS:
+--   - SIM, é para rodar com RLS habilitado! O script configura automaticamente
+--     todas as políticas RLS para leitura e escrita dos usuários autenticados.
+--   - No SQL Editor, o script roda com privilégios administrativos (service_role),
+--     populando os dados com segurança mesmo com RLS ativo.
 -- ==============================================================================
 
 -- Habilita extensões para geração de UUID e criptografia de senhas
@@ -48,7 +46,7 @@ create table if not exists public."Frotas" (
     updated_at timestamptz not null default now()
 );
 
--- Tabela: Dispositivos (sensibilidade e limite de vibração são int8)
+-- Tabela: Dispositivos (sensibilidade_vibracao e limite_vibracao sao int8)
 create table if not exists public."Dispositivos" (
     id uuid primary key default gen_random_uuid(),
     id_operador uuid references public."Usuarios"(id) on delete set null,
@@ -99,9 +97,14 @@ create table if not exists public."ocorrencias" (
     tipo text not null,
     valor_registrado numeric,
     limite_configurado numeric,
-    status text default 'pendente',
+    status text default 'Pendente',
     criado_em timestamptz not null default now()
 );
+
+-- Flexibiliza ou alinha a constraint ocorrencias_status_check
+alter table public."ocorrencias" drop constraint if exists ocorrencias_status_check;
+alter table public."ocorrencias" add constraint ocorrencias_status_check
+  check (status in ('Resolvido', 'Pendente', 'resolvido', 'pendente', 'Ativo', 'ativo'));
 
 -- Tabela: fins_viagem
 create table if not exists public.fins_viagem (
@@ -119,7 +122,7 @@ create table if not exists public.fins_viagem (
 );
 
 -- ==============================================================================
--- 2. BLINDAGEM DA TRIGGER handle_new_user (EVITA ERRO 23502 DE CPF NULL)
+-- 2. BLINDAGEM DA TRIGGER handle_new_user
 -- ==============================================================================
 create or replace function public.handle_new_user()
 returns trigger
@@ -184,12 +187,43 @@ values (
 )
 on conflict (id) do update set public = true;
 
--- Permissões
+-- Habilita RLS em todas as tabelas
+alter table public."Usuarios" enable row level security;
+alter table public."Frotas" enable row level security;
+alter table public."Dispositivos" enable row level security;
+alter table public.dispositivo_credenciais enable row level security;
+alter table public."medicoes" enable row level security;
+alter table public."ocorrencias" enable row level security;
+alter table public.fins_viagem enable row level security;
+
+-- Políticas RLS para usuários autenticados
+drop policy if exists "usuarios_all_auth" on public."Usuarios";
+create policy "usuarios_all_auth" on public."Usuarios" for all to authenticated using (true) with check (true);
+
+drop policy if exists "frotas_all_auth" on public."Frotas";
+create policy "frotas_all_auth" on public."Frotas" for all to authenticated using (true) with check (true);
+
+drop policy if exists "dispositivos_all_auth" on public."Dispositivos";
+create policy "dispositivos_all_auth" on public."Dispositivos" for all to authenticated using (true) with check (true);
+
+drop policy if exists "dispositivo_credenciais_all_auth" on public.dispositivo_credenciais;
+create policy "dispositivo_credenciais_all_auth" on public.dispositivo_credenciais for all to authenticated using (true) with check (true);
+
+drop policy if exists "medicoes_all_auth" on public."medicoes";
+create policy "medicoes_all_auth" on public."medicoes" for all to authenticated using (true) with check (true);
+
+drop policy if exists "ocorrencias_all_auth" on public."ocorrencias";
+create policy "ocorrencias_all_auth" on public."ocorrencias" for all to authenticated using (true) with check (true);
+
+drop policy if exists "fins_viagem_all_auth" on public.fins_viagem;
+create policy "fins_viagem_all_auth" on public.fins_viagem for all to authenticated using (true) with check (true);
+
+-- Permissões gerais de schema
 grant select, insert, update, delete on all tables in schema public to authenticated;
 grant select on all tables in schema public to anon;
 
 -- ==============================================================================
--- 3. LIMPEZA DOS DADOS OPERACIONAIS (TRUNCATE)
+-- 3. LIMPEZA DOS DADOS OPERACIONAIS
 -- ==============================================================================
 truncate table public.fins_viagem cascade;
 truncate table public."ocorrencias" cascade;
@@ -230,11 +264,7 @@ declare
   -- Senha padrão para todos: '123456'
   v_senha_hash text := crypt('123456', gen_salt('bf'));
 begin
-  -- --------------------------------------------------------------------------
   -- 4.1. Usuários no Auth do Supabase com CPF no metadata
-  -- --------------------------------------------------------------------------
-
-  -- 1) Admin
   if exists (select 1 from auth.users where email = 'admin@nutriguard.com') then
     select id into v_admin_id from auth.users where email = 'admin@nutriguard.com';
     update auth.users set
@@ -258,7 +288,6 @@ begin
     );
   end if;
 
-  -- 2) Gerente Sul
   if exists (select 1 from auth.users where email = 'gerente.sul@nutriguard.com') then
     select id into v_gerente1_id from auth.users where email = 'gerente.sul@nutriguard.com';
     update auth.users set
@@ -282,7 +311,6 @@ begin
     );
   end if;
 
-  -- 3) Gerente Sudeste
   if exists (select 1 from auth.users where email = 'gerente.sudeste@nutriguard.com') then
     select id into v_gerente2_id from auth.users where email = 'gerente.sudeste@nutriguard.com';
     update auth.users set
@@ -306,7 +334,6 @@ begin
     );
   end if;
 
-  -- 4) Operador Lucas
   if exists (select 1 from auth.users where email = 'operador.lucas@nutriguard.com') then
     select id into v_operador1_id from auth.users where email = 'operador.lucas@nutriguard.com';
     update auth.users set
@@ -330,7 +357,6 @@ begin
     );
   end if;
 
-  -- 5) Operadora Juliana
   if exists (select 1 from auth.users where email = 'operadora.juliana@nutriguard.com') then
     select id into v_operador2_id from auth.users where email = 'operadora.juliana@nutriguard.com';
     update auth.users set
@@ -354,7 +380,7 @@ begin
     );
   end if;
 
-  -- 4.2. Preenchimento de Usuarios (id = UUID do auth; cpf = texto independente)
+  -- 4.2. Preenchimento de Usuarios (cpf como texto formatado independente)
   insert into public."Usuarios" (
     id, nome, email, cpf, telefone, cargo, data_nascimento, numero_cnh, validade_cnh, foto_url, created_at, updated_at
   ) values
@@ -398,7 +424,7 @@ begin
     (v_frota_sudeste_id, 'Frota Sudeste - Cargas Congeladas', v_gerente2_id, now() - interval '45 days', now()),
     (v_frota_urbana_id, 'Frota Urbana - Distribuição e Medicamentos', v_gerente2_id, now() - interval '30 days', now());
 
-  -- 4.4. Dispositivos (sensibilidade_vibracao e limite_vibracao são int8 inteiros!)
+  -- 4.4. Dispositivos (sensibilidade_vibracao e limite_vibracao como int8 inteiros)
   insert into public."Dispositivos" (
     id, id_frota, id_operador, nome_dispositivo, numero_serie, modelo_dispositivo,
     modelo_veiculo, placa_veiculo, temperatura_minima, temperatura_maxima,
@@ -468,25 +494,25 @@ begin
     (gen_random_uuid(), v_disp4_id, 5.2, 42.0, 0.18, false, -23.5489, -46.6388, 89.0, now() - interval '2 hours'),
     (v_med4_alerta_bat,  v_disp4_id, 5.5, 43.0, 0.22, false, -23.5600, -46.6500, 19.5, now() - interval '20 minutes');
 
-  -- 4.7. Ocorrências (id_medicao apontando para a medição que violou a regra)
+  -- 4.7. Ocorrências (status 'Resolvido' e 'Pendente' compatíveis com o Flutter e com a constraint)
   insert into public."ocorrencias" (
     id, id_dispositivo, id_medicao, tipo, valor_registrado, limite_configurado, status, criado_em
   ) values
     (
       gen_random_uuid(), v_disp1_id, v_med1_alerta_temp,
-      'Alerta Térmico: Temperatura acima do limite máximo', 6.4, 6.0, 'resolvido', now() - interval '1 hour'
+      'Alerta Térmico: Temperatura acima do limite máximo', 6.4, 6.0, 'Resolvido', now() - interval '1 hour'
     ),
     (
       gen_random_uuid(), v_disp1_id, v_med1_alerta_porta,
-      'Porta aberta detectada por mais de 3 minutos', 1.0, 0.0, 'resolvido', now() - interval '55 minutes'
+      'Porta aberta detectada por mais de 3 minutos', 1.0, 0.0, 'Resolvido', now() - interval '55 minutes'
     ),
     (
       gen_random_uuid(), v_disp2_id, v_med2_alerta_vib,
-      'Pico de vibração em pista irregular (Trecho Serra)', 1.85, 2.00, 'pendente', now() - interval '1 hour'
+      'Pico de vibração em pista irregular (Trecho Serra)', 1.85, 2.00, 'Pendente', now() - interval '1 hour'
     ),
     (
       gen_random_uuid(), v_disp4_id, v_med4_alerta_bat,
-      'Sensor IoT com nível de bateria baixo (19.5%)', 19.5, 20.0, 'pendente', now() - interval '20 minutes'
+      'Sensor IoT com nível de bateria baixo (19.5%)', 19.5, 20.0, 'Pendente', now() - interval '20 minutes'
     );
 
   -- 4.8. Fins de Viagem / Relatórios de Parada (id_operador -> Usuarios.id, id_dispositivo -> Dispositivos.id)
