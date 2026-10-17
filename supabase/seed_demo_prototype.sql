@@ -200,34 +200,40 @@ values (
 )
 on conflict (id) do update set public = true;
 
--- Funções auxiliares para RLS (com SECURITY DEFINER para evitar recursão)
-create or replace function public.meu_cargo()
-returns text
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select coalesce(cargo::text, 'operador')
-  from public."Usuarios"
-  where id = auth.uid()
-  limit 1;
-$$;
+-- Funções auxiliares para RLS (garantidas caso ainda não existam no banco)
+do $$
+begin
+  if not exists (
+    select 1 from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'meu_cargo'
+  ) then
+    create function public.meu_cargo()
+    returns text
+    language sql
+    stable
+    security definer
+    set search_path = public
+    as 'select coalesce(cargo::text, ''operador'') from public."Usuarios" where id = auth.uid() limit 1;';
+  end if;
+end $$;
 
-create or replace function public.sou_gerente_da_frota(p_id_frota uuid)
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1
-    from public."Frotas"
-    where id = p_id_frota
-      and id_gerente = auth.uid()
-  );
-$$;
+do $$
+begin
+  if not exists (
+    select 1 from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'sou_gerente_da_frota'
+  ) then
+    create function public.sou_gerente_da_frota(p_frota uuid)
+    returns boolean
+    language sql
+    stable
+    security definer
+    set search_path = public
+    as 'select exists (select 1 from public."Frotas" where id = p_frota and id_gerente = auth.uid());';
+  end if;
+end $$;
 
 -- Habilita RLS em todas as tabelas
 alter table public."Usuarios" enable row level security;
