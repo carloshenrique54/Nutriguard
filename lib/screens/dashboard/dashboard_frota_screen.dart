@@ -7,6 +7,7 @@ import '../../widgets/animated_components.dart';
 import '../../widgets/watermark_background.dart';
 import '../../services/admin_context_service.dart';
 import '../../widgets/responsive_layout.dart';
+import '../../services/trip_service.dart';
 
 class DashboardFrotaScreen extends StatefulWidget {
   final String? initialFrotaId;
@@ -34,15 +35,45 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
   Map<String, int> _frotaDeviceCounts = {};
   List<OcorrenciaModel> _alerts = [];
   int _totalSystemDevices = 0;
+  Set<String> _devicesInTrip = {};
 
   @override
   void initState() {
     super.initState();
     _supabase = widget.supabaseService ?? SupabaseService();
+    TripService().tripStateNotifier.addListener(_onTripStateChanged);
     _checkAccess();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fetchData();
     });
+  }
+
+  @override
+  void dispose() {
+    TripService().tripStateNotifier.removeListener(_onTripStateChanged);
+    super.dispose();
+  }
+
+  void _onTripStateChanged() {
+    if (mounted) {
+      _updateActiveTrips(_dispositivos);
+    }
+  }
+
+  Future<void> _updateActiveTrips(List<DispositivoModel> devices) async {
+    final tripService = TripService();
+    final Set<String> inTrip = {};
+    for (final d in devices) {
+      final active = await tripService.isDeviceInTrip(d.id, operatorId: d.idOperador);
+      if (active) {
+        inTrip.add(d.id);
+      }
+    }
+    if (mounted) {
+      setState(() {
+        _devicesInTrip = inTrip;
+      });
+    }
   }
 
   Future<void> _checkAccess() async {
@@ -151,6 +182,7 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
           _alerts = ocorrencias.take(5).toList();
           _isLoading = false;
         });
+        _updateActiveTrips(activeDevices);
       }
     } catch (e) {
       debugPrint('Erro ao carregar Dashboard Frota: $e');
@@ -181,6 +213,7 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
           _alerts = ocorrencias.take(5).toList();
           _isLoading = false;
         });
+        _updateActiveTrips(devs);
       }
     } catch (e) {
       if (mounted) setState(() => _isLoading = false);
@@ -953,8 +986,7 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
 
   Widget _buildTwoColumnCards() {
     final devCount = _dispositivos.length;
-    final onlineCount = devCount > 0 ? (devCount >= 3 ? devCount - 1 : devCount) : 0;
-    final totalAssigned = devCount > 0 ? devCount + 6 : 0;
+    final emViagemCount = _devicesInTrip.length;
 
     return Row(
       children: [
@@ -1056,9 +1088,9 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Veiculos online hoje', style: TextStyle(fontSize: 11, color: Colors.black54, fontWeight: FontWeight.w500)),
+                          const Text('Veículos em viagem', style: TextStyle(fontSize: 11, color: Colors.black54, fontWeight: FontWeight.w500)),
                           Text(
-                            devCount > 0 ? '$onlineCount/$totalAssigned' : '0/0',
+                            devCount > 0 ? '$emViagemCount/$devCount' : '0/0',
                             style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
                           ),
                         ],
@@ -1066,7 +1098,32 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 10),
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 6,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: emViagemCount > 0 ? const Color(0xFFD7EBB0) : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        emViagemCount > 0 ? '$emViagemCount em trânsito' : 'Nenhum em trânsito',
+                        style: TextStyle(
+                          color: emViagemCount > 0 ? const Color(0xFF2E7D32) : Colors.black54,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      devCount > 0 ? '${devCount - emViagemCount} parado(s)' : 'Sem veículos',
+                      style: const TextStyle(fontSize: 9, color: Colors.black54),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -1330,18 +1387,43 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
             child: Column(
               children: _dispositivos.map((d) {
                 final isLast = d == _dispositivos.last;
+                final isInTrip = _devicesInTrip.contains(d.id);
                 return Column(
                   children: [
                     Material(
                       color: Colors.transparent,
                       child: ListTile(
-                        leading: const CircleAvatar(
-                          backgroundColor: Color(0xFFC8E569),
-                          child: Icon(Icons.directions_car, color: Colors.black87),
+                        leading: CircleAvatar(
+                          backgroundColor: isInTrip ? const Color(0xFFD7EBB0) : const Color(0xFFC8E569),
+                          child: Icon(Icons.directions_car, color: isInTrip ? const Color(0xFF2E7D32) : Colors.black87),
                         ),
-                        title: Text(
-                          d.placaVeiculo ?? d.nomeDispositivo ?? 'Veículo',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        title: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                d.placaVeiculo ?? d.nomeDispositivo ?? 'Veículo',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isInTrip ? const Color(0xFFE8F5E9) : const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: isInTrip ? const Color(0xFF81C784) : const Color(0xFFCBD5E1),
+                                ),
+                              ),
+                              child: Text(
+                                isInTrip ? 'Em viagem' : 'Parado',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: isInTrip ? const Color(0xFF2E7D32) : Colors.black54,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                         subtitle: Text(
                           'Modelo: ${d.modeloVeiculo ?? d.modeloDispositivo ?? "N/D"}',

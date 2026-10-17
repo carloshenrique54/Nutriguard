@@ -100,6 +100,31 @@ class TripService {
     );
   }
 
+  Future<bool> isDeviceInTrip(String deviceId, {String? operatorId}) async {
+    final cleanDevId = deviceId.trim();
+    final prefs = await SharedPreferences.getInstance();
+
+    if (operatorId != null && operatorId.trim().isNotEmpty) {
+      final active = prefs.getBool('trip_active_${operatorId.trim()}') ?? false;
+      if (active) return true;
+    }
+
+    if (cleanDevId.isNotEmpty) {
+      if (prefs.getBool('trip_device_active_$cleanDevId') == true) {
+        return true;
+      }
+      for (final key in prefs.getKeys()) {
+        if (key.startsWith('trip_device_id_') && prefs.getString(key) == cleanDevId) {
+          final opId = key.substring('trip_device_id_'.length);
+          if (prefs.getBool('trip_active_$opId') == true) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
   Future<void> startTrip({
     required String operatorId,
     required String deviceId,
@@ -114,6 +139,7 @@ class TripService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('trip_active_$cleanId', true);
     await prefs.setString('trip_device_id_$cleanId', deviceId.trim());
+    await prefs.setBool('trip_device_active_${deviceId.trim()}', true);
     await prefs.setString('trip_destination_$cleanId', destination.trim());
     await prefs.setString('trip_started_at_$cleanId', DateTime.now().toIso8601String());
     if (vehiclePlate != null) {
@@ -136,6 +162,10 @@ class TripService {
     if (cleanId.isNotEmpty) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('trip_active_$cleanId', false);
+      final devId = prefs.getString('trip_device_id_$cleanId');
+      if (devId != null && devId.isNotEmpty) {
+        await prefs.setBool('trip_device_active_$devId', false);
+      }
     }
     tripStateNotifier.value = false;
   }
@@ -153,6 +183,10 @@ class TripService {
     if (cleanId.isNotEmpty) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('trip_active_$cleanId', false);
+      final devId = prefs.getString('trip_device_id_$cleanId');
+      if (devId != null && devId.isNotEmpty) {
+        await prefs.setBool('trip_device_active_$devId', false);
+      }
       await prefs.setString('trip_stop_motivo_$cleanId', motivo.trim());
       await prefs.setString('trip_stop_rua_$cleanId', rua.trim());
       await prefs.setString('trip_stop_bairro_$cleanId', bairro.trim());
@@ -198,6 +232,10 @@ class TripService {
     final cleanId = operatorId.trim();
     if (cleanId.isEmpty) return;
     final prefs = await SharedPreferences.getInstance();
+    final devId = prefs.getString('trip_device_id_$cleanId');
+    if (devId != null && devId.isNotEmpty) {
+      await prefs.remove('trip_device_active_$devId');
+    }
     await prefs.remove('trip_active_$cleanId');
     await prefs.remove('trip_device_id_$cleanId');
     await prefs.remove('trip_destination_$cleanId');
