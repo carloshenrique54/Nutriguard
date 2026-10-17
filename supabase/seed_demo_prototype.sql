@@ -1,5 +1,5 @@
 -- ==============================================================================
--- NUTRIGUARD - SCRIPT SQL DE RESET E CARGA COMPLETA (PROTÓTIPO / APRESENTAÇÃO)
+-- NUTRIGUARD - SCRIPT DE RESET E CARGA COMPLETA (PROTÓTIPO / DEMONSTRAÇÃO)
 -- ==============================================================================
 -- Como executar no Supabase:
 --   1. Acesse o painel do seu projeto no Supabase (https://supabase.com/dashboard)
@@ -10,6 +10,8 @@
 --   ✓ Todos os IDs (PKs e FKs) são UUIDs gerados aleatoriamente (gen_random_uuid()).
 --   ✓ O campo 'cpf' é um texto independente com a numeração do documento ('123.456.789-00'),
 --     e NÃO se confunde com o UUID da tabela.
+--   ✓ Previne o erro 23502 ("null value in column cpf violates not-null constraint")
+--     passando o CPF no raw_user_meta_data do auth e blindando a trigger handle_new_user.
 --   ✓ Todas as relações do diagrama são satisfeitas:
 --       - auth.users.id -> Usuarios.id
 --       - Usuarios.id -> Frotas.id_gerente
@@ -28,7 +30,7 @@ create extension if not exists "uuid-ossp";
 create extension if not exists "pgcrypto";
 
 -- ==============================================================================
--- 1. GARANTE A EXISTÊNCIA DAS TABELAS CONFORME O DIAGRAMA
+-- 1. GARANTE A ESTRUTURA DAS TABELAS CONFORME O DIAGRAMA
 -- ==============================================================================
 
 -- Tabela: Usuarios
@@ -36,7 +38,7 @@ create table if not exists public."Usuarios" (
     id uuid primary key references auth.users(id) on delete cascade,
     nome text not null,
     email text,
-    cpf text,
+    cpf text not null,
     telefone text,
     cargo varchar(50) default 'operador',
     data_nascimento date,
@@ -126,23 +128,80 @@ create table if not exists public.fins_viagem (
     atualizado_em timestamptz not null default now()
 );
 
--- Bucket de fotos e anexos de fins de viagem
+-- ==============================================================================
+-- 2. BLINDAGEM DA TRIGGER handle_new_user (EVITA ERRO 23502 DE CPF NULL)
+-- ==============================================================================
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_nome text;
+  v_cpf text;
+  v_telefone text;
+  v_cargo text;
+  v_data_nascimento date;
+  v_numero_cnh text;
+  v_validade_cnh date;
+begin
+  v_nome := coalesce(nullif(new.raw_user_meta_data->>'nome', ''), split_part(new.email, '@', 1));
+  -- Garante CPF default caso o Auth não forneça no metadata inicial
+  v_cpf := coalesce(nullif(new.raw_user_meta_data->>'cpf', ''), '000.000.000-00');
+  v_telefone := nullif(new.raw_user_meta_data->>'telefone', '');
+  v_cargo := coalesce(nullif(new.raw_user_meta_data->>'cargo', ''), 'operador');
+
+  begin
+    v_data_nascimento := nullif(new.raw_user_meta_data->>'data_nascimento', '')::date;
+  exception when others then
+    v_data_nascimento := null;
+  end;
+
+  v_numero_cnh := nullif(new.raw_user_meta_data->>'numero_cnh', '');
+
+  begin
+    v_validade_cnh := nullif(new.raw_user_meta_data->>'validade_cnh', '')::date;
+  exception when others then
+    v_validade_cnh := null;
+  end;
+
+  insert into public."Usuarios" (
+    id, nome, email, cpf, telefone, cargo, data_nascimento, numero_cnh, validade_cnh, created_at, updated_at
+  ) values (
+    new.id, v_nome, new.email, v_cpf, v_telefone, v_cargo, v_data_nascimento, v_numero_cnh, v_validade_cnh, now(), now()
+  )
+  on conflict (id) do update set
+    nome = excluded.nome,
+    cpf = coalesce(excluded.cpf, public."Usuarios".cpf),
+    telefone = coalesce(excluded.telefone, public."Usuarios".telefone),
+    cargo = excluded.cargo,
+    data_nascimento = coalesce(excluded.data_nascimento, public."Usuarios".data_nascimento),
+    numero_cnh = coalesce(excluded.numero_cnh, public."Usuarios".numero_cnh),
+    validade_cnh = coalesce(excluded.validade_cnh, public."Usuarios".validade_cnh),
+    updated_at = now();
+
+  return new;
+exception when others then
+  -- Nunca aborta a transação do Auth mesmo se houver conflito de índice
+  return new;
+end;
+$$;
+
+-- Bucket de fotos e anexos
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
-    'anexos-viagem',
-    'anexos-viagem',
-    true,
-    10485760,
+    'anexos-viagem', 'anexos-viagem', true, 10485760,
     array['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf']
 )
 on conflict (id) do update set public = true;
 
--- Permissões de schema e tabelas para autenticados e anônimos
+-- Permissões gerais
 grant select, insert, update, delete on all tables in schema public to authenticated;
 grant select on all tables in schema public to anon;
 
 -- ==============================================================================
--- 2. LIMPEZA TOTAL DAS TABELAS OPERACIONAIS (RESET DOS DADOS)
+-- 3. LIMPEZA DOS DADOS OPERACIONAIS (TRUNCATE SEGURO)
 -- ==============================================================================
 truncate table public.fins_viagem cascade;
 truncate table public."ocorrencias" cascade;
@@ -152,45 +211,54 @@ truncate table public."Dispositivos" cascade;
 truncate table public."Frotas" cascade;
 
 -- ==============================================================================
--- 3. BLOCO PL/PGSQL: GERAÇÃO DE DADOS COM UUIDs ALEATÓRIOS E RELACIONAMENTOS REAIS
+-- 4. INSERÇÃO COM UUIDs ALEATÓRIOS E RELAÇÕES CONECTADAS
 -- ==============================================================================
 do $$
 declare
-  -- UUIDs gerados aleatoriamente para os usuários de demonstração
+  -- UUIDs aleatórios para usuários
   v_admin_id uuid := gen_random_uuid();
   v_gerente1_id uuid := gen_random_uuid();
   v_gerente2_id uuid := gen_random_uuid();
   v_operador1_id uuid := gen_random_uuid();
   v_operador2_id uuid := gen_random_uuid();
 
-  -- UUIDs gerados aleatoriamente para as Frotas
+  -- UUIDs aleatórios para Frotas
   v_frota_sul_id uuid := gen_random_uuid();
   v_frota_sudeste_id uuid := gen_random_uuid();
   v_frota_urbana_id uuid := gen_random_uuid();
 
-  -- UUIDs gerados aleatoriamente para os Dispositivos IoT
+  -- UUIDs aleatórios para Dispositivos
   v_disp1_id uuid := gen_random_uuid();
   v_disp2_id uuid := gen_random_uuid();
   v_disp3_id uuid := gen_random_uuid();
   v_disp4_id uuid := gen_random_uuid();
 
-  -- UUIDs gerados aleatoriamente para medições críticas (que geram ocorrências vinculadas)
+  -- UUIDs aleatórios para medições que geram ocorrências
   v_med1_alerta_temp uuid := gen_random_uuid();
   v_med1_alerta_porta uuid := gen_random_uuid();
   v_med2_alerta_vib uuid := gen_random_uuid();
   v_med4_alerta_bat uuid := gen_random_uuid();
 
-  -- Senha padrão para todos os usuários de teste: '123456'
+  -- Senha padrão para todos: '123456'
   v_senha_hash text := crypt('123456', gen_salt('bf'));
 begin
   -- --------------------------------------------------------------------------
-  -- 3.1. Cadastrar / Atualizar usuários no Auth do Supabase
+  -- 4.1. Usuários no Auth do Supabase (passando CPF no raw_user_meta_data)
   -- --------------------------------------------------------------------------
 
-  -- 1) Admin Geral (admin@nutriguard.com)
+  -- 1) Admin
   if exists (select 1 from auth.users where email = 'admin@nutriguard.com') then
     select id into v_admin_id from auth.users where email = 'admin@nutriguard.com';
-    update auth.users set encrypted_password = v_senha_hash, raw_user_meta_data = '{"nome":"Carlos Henrique (ADM)","cargo":"admin"}' where id = v_admin_id;
+    update auth.users set
+      encrypted_password = v_senha_hash,
+      raw_user_meta_data = jsonb_build_object(
+        'nome', 'Carlos Henrique (ADM)',
+        'cargo', 'admin',
+        'cpf', '123.456.789-00',
+        'telefone', '(11) 98765-4321',
+        'numero_cnh', '12345678900'
+      )
+    where id = v_admin_id;
   else
     insert into auth.users (
       instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -199,15 +267,30 @@ begin
       '00000000-0000-0000-0000-000000000000', v_admin_id, 'authenticated', 'authenticated',
       'admin@nutriguard.com', v_senha_hash, now(),
       '{"provider":"email","providers":["email"]}',
-      '{"nome":"Carlos Henrique (ADM)","cargo":"admin"}',
+      jsonb_build_object(
+        'nome', 'Carlos Henrique (ADM)',
+        'cargo', 'admin',
+        'cpf', '123.456.789-00',
+        'telefone', '(11) 98765-4321',
+        'numero_cnh', '12345678900'
+      ),
       now(), now()
     );
   end if;
 
-  -- 2) Gerente Sul (gerente.sul@nutriguard.com)
+  -- 2) Gerente Sul
   if exists (select 1 from auth.users where email = 'gerente.sul@nutriguard.com') then
     select id into v_gerente1_id from auth.users where email = 'gerente.sul@nutriguard.com';
-    update auth.users set encrypted_password = v_senha_hash, raw_user_meta_data = '{"nome":"Mariana Silveira","cargo":"gerente"}' where id = v_gerente1_id;
+    update auth.users set
+      encrypted_password = v_senha_hash,
+      raw_user_meta_data = jsonb_build_object(
+        'nome', 'Mariana Silveira',
+        'cargo', 'gerente',
+        'cpf', '234.567.890-11',
+        'telefone', '(41) 99876-5432',
+        'numero_cnh', '23456789011'
+      )
+    where id = v_gerente1_id;
   else
     insert into auth.users (
       instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -216,15 +299,30 @@ begin
       '00000000-0000-0000-0000-000000000000', v_gerente1_id, 'authenticated', 'authenticated',
       'gerente.sul@nutriguard.com', v_senha_hash, now(),
       '{"provider":"email","providers":["email"]}',
-      '{"nome":"Mariana Silveira","cargo":"gerente"}',
+      jsonb_build_object(
+        'nome', 'Mariana Silveira',
+        'cargo', 'gerente',
+        'cpf', '234.567.890-11',
+        'telefone', '(41) 99876-5432',
+        'numero_cnh', '23456789011'
+      ),
       now(), now()
     );
   end if;
 
-  -- 3) Gerente Sudeste (gerente.sudeste@nutriguard.com)
+  -- 3) Gerente Sudeste
   if exists (select 1 from auth.users where email = 'gerente.sudeste@nutriguard.com') then
     select id into v_gerente2_id from auth.users where email = 'gerente.sudeste@nutriguard.com';
-    update auth.users set encrypted_password = v_senha_hash, raw_user_meta_data = '{"nome":"Roberto Costa","cargo":"gerente"}' where id = v_gerente2_id;
+    update auth.users set
+      encrypted_password = v_senha_hash,
+      raw_user_meta_data = jsonb_build_object(
+        'nome', 'Roberto Costa',
+        'cargo', 'gerente',
+        'cpf', '345.678.901-22',
+        'telefone', '(19) 98123-4567',
+        'numero_cnh', '34567890122'
+      )
+    where id = v_gerente2_id;
   else
     insert into auth.users (
       instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -233,15 +331,30 @@ begin
       '00000000-0000-0000-0000-000000000000', v_gerente2_id, 'authenticated', 'authenticated',
       'gerente.sudeste@nutriguard.com', v_senha_hash, now(),
       '{"provider":"email","providers":["email"]}',
-      '{"nome":"Roberto Costa","cargo":"gerente"}',
+      jsonb_build_object(
+        'nome', 'Roberto Costa',
+        'cargo', 'gerente',
+        'cpf', '345.678.901-22',
+        'telefone', '(19) 98123-4567',
+        'numero_cnh', '34567890122'
+      ),
       now(), now()
     );
   end if;
 
-  -- 4) Operador Lucas (operador.lucas@nutriguard.com)
+  -- 4) Operador Lucas
   if exists (select 1 from auth.users where email = 'operador.lucas@nutriguard.com') then
     select id into v_operador1_id from auth.users where email = 'operador.lucas@nutriguard.com';
-    update auth.users set encrypted_password = v_senha_hash, raw_user_meta_data = '{"nome":"Lucas Mendes","cargo":"operador"}' where id = v_operador1_id;
+    update auth.users set
+      encrypted_password = v_senha_hash,
+      raw_user_meta_data = jsonb_build_object(
+        'nome', 'Lucas Mendes',
+        'cargo', 'operador',
+        'cpf', '456.789.012-33',
+        'telefone', '(11) 97654-3210',
+        'numero_cnh', '45678901233'
+      )
+    where id = v_operador1_id;
   else
     insert into auth.users (
       instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -250,15 +363,30 @@ begin
       '00000000-0000-0000-0000-000000000000', v_operador1_id, 'authenticated', 'authenticated',
       'operador.lucas@nutriguard.com', v_senha_hash, now(),
       '{"provider":"email","providers":["email"]}',
-      '{"nome":"Lucas Mendes","cargo":"operador"}',
+      jsonb_build_object(
+        'nome', 'Lucas Mendes',
+        'cargo', 'operador',
+        'cpf', '456.789.012-33',
+        'telefone', '(11) 97654-3210',
+        'numero_cnh', '45678901233'
+      ),
       now(), now()
     );
   end if;
 
-  -- 5) Operadora Juliana (operadora.juliana@nutriguard.com)
+  -- 5) Operadora Juliana
   if exists (select 1 from auth.users where email = 'operadora.juliana@nutriguard.com') then
     select id into v_operador2_id from auth.users where email = 'operadora.juliana@nutriguard.com';
-    update auth.users set encrypted_password = v_senha_hash, raw_user_meta_data = '{"nome":"Juliana Oliveira","cargo":"operador"}' where id = v_operador2_id;
+    update auth.users set
+      encrypted_password = v_senha_hash,
+      raw_user_meta_data = jsonb_build_object(
+        'nome', 'Juliana Oliveira',
+        'cargo', 'operador',
+        'cpf', '567.890.123-44',
+        'telefone', '(41) 99123-8877',
+        'numero_cnh', '56789012344'
+      )
+    where id = v_operador2_id;
   else
     insert into auth.users (
       instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -267,105 +395,59 @@ begin
       '00000000-0000-0000-0000-000000000000', v_operador2_id, 'authenticated', 'authenticated',
       'operadora.juliana@nutriguard.com', v_senha_hash, now(),
       '{"provider":"email","providers":["email"]}',
-      '{"nome":"Juliana Oliveira","cargo":"operador"}',
+      jsonb_build_object(
+        'nome', 'Juliana Oliveira',
+        'cargo', 'operador',
+        'cpf', '567.890.123-44',
+        'telefone', '(41) 99123-8877',
+        'numero_cnh', '56789012344'
+      ),
       now(), now()
     );
   end if;
 
   -- --------------------------------------------------------------------------
-  -- 3.2. Preenchimento da tabela public."Usuarios"
-  --      Nota: 'id' é o UUID aleatório vindo de auth.users.id
-  --            'cpf' é apenas o texto do documento formatado (NÃO É O UUID)
+  -- 4.2. Preenchimento de Usuarios (id = UUID do auth; cpf = texto independente)
   -- --------------------------------------------------------------------------
   insert into public."Usuarios" (
     id, nome, email, cpf, telefone, cargo, data_nascimento, numero_cnh, validade_cnh, foto_url, created_at, updated_at
   ) values
   (
-    v_admin_id,
-    'Carlos Henrique',
-    'admin@nutriguard.com',
-    '123.456.789-00',
-    '(11) 98765-4321',
-    'admin',
-    '1988-04-12',
-    '12345678900',
-    '2030-12-31',
-    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-    now() - interval '60 days',
-    now()
+    v_admin_id, 'Carlos Henrique', 'admin@nutriguard.com', '123.456.789-00', '(11) 98765-4321',
+    'admin', '1988-04-12', '12345678900', '2030-12-31',
+    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150', now() - interval '60 days', now()
   ),
   (
-    v_gerente1_id,
-    'Mariana Silveira',
-    'gerente.sul@nutriguard.com',
-    '234.567.890-11',
-    '(41) 99876-5432',
-    'gerente',
-    '1990-08-23',
-    '23456789011',
-    '2028-10-15',
-    'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150',
-    now() - interval '45 days',
-    now()
+    v_gerente1_id, 'Mariana Silveira', 'gerente.sul@nutriguard.com', '234.567.890-11', '(41) 99876-5432',
+    'gerente', '1990-08-23', '23456789011', '2028-10-15',
+    'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150', now() - interval '45 days', now()
   ),
   (
-    v_gerente2_id,
-    'Roberto Costa',
-    'gerente.sudeste@nutriguard.com',
-    '345.678.901-22',
-    '(19) 98123-4567',
-    'gerente',
-    '1985-02-17',
-    '34567890122',
-    '2027-05-20',
-    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
-    now() - interval '40 days',
-    now()
+    v_gerente2_id, 'Roberto Costa', 'gerente.sudeste@nutriguard.com', '345.678.901-22', '(19) 98123-4567',
+    'gerente', '1985-02-17', '34567890122', '2027-05-20',
+    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150', now() - interval '40 days', now()
   ),
   (
-    v_operador1_id,
-    'Lucas Mendes',
-    'operador.lucas@nutriguard.com',
-    '456.789.012-33',
-    '(11) 97654-3210',
-    'operador',
-    '1995-11-05',
-    '45678901233',
-    '2029-08-10',
-    'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150',
-    now() - interval '30 days',
-    now()
+    v_operador1_id, 'Lucas Mendes', 'operador.lucas@nutriguard.com', '456.789.012-33', '(11) 97654-3210',
+    'operador', '1995-11-05', '45678901233', '2029-08-10',
+    'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150', now() - interval '30 days', now()
   ),
   (
-    v_operador2_id,
-    'Juliana Oliveira',
-    'operadora.juliana@nutriguard.com',
-    '567.890.123-44',
-    '(41) 99123-8877',
-    'operador',
-    '1997-03-30',
-    '56789012344',
-    '2031-01-25',
-    'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
-    now() - interval '25 days',
-    now()
+    v_operador2_id, 'Juliana Oliveira', 'operadora.juliana@nutriguard.com', '567.890.123-44', '(41) 99123-8877',
+    'operador', '1997-03-30', '56789012344', '2031-01-25',
+    'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150', now() - interval '25 days', now()
   )
   on conflict (id) do update set
-    nome = excluded.nome,
-    cargo = excluded.cargo,
-    cpf = excluded.cpf,
-    telefone = excluded.telefone,
-    data_nascimento = excluded.data_nascimento,
-    numero_cnh = excluded.numero_cnh,
-    validade_cnh = excluded.validade_cnh,
-    foto_url = excluded.foto_url,
-    updated_at = now();
+    nome = excluded.nome, cargo = excluded.cargo, cpf = excluded.cpf,
+    telefone = excluded.telefone, data_nascimento = excluded.data_nascimento,
+    numero_cnh = excluded.numero_cnh, validade_cnh = excluded.validade_cnh,
+    foto_url = excluded.foto_url, updated_at = now();
 
-  -- Preserva seu usuário de login atual (se já cadastrado) mantendo cargo de admin
+  -- Mantém outros usuários logados como admin
   update public."Usuarios" set cargo = 'admin' where cargo is null or cargo = '';
 
   -- --------------------------------------------------------------------------
-  -- 3.3. Frotas (id é UUID aleatório; id_gerente aponta para Usuarios.id)
+  -- 4.3. Frotas (id_gerente aponta para Usuarios.id)
   -- --------------------------------------------------------------------------
   insert into public."Frotas" (id, nome, id_gerente, created_at, updated_at)
   values
@@ -374,11 +456,7 @@ begin
     (v_frota_urbana_id, 'Frota Urbana - Distribuição e Medicamentos', v_gerente2_id, now() - interval '30 days', now());
 
   -- --------------------------------------------------------------------------
-  -- 3.4. Dispositivos e Veículos IoT
-  --      - id: UUID aleatório
-  --      - id_frota: FK para Frotas.id
-  --      - id_operador: FK para Usuarios.id
-  --      - sensibilidade_vibracao e limite_vibracao: text
+  -- 4.4. Dispositivos (id_frota -> Frotas.id, id_operador -> Usuarios.id)
   -- --------------------------------------------------------------------------
   insert into public."Dispositivos" (
     id, id_frota, id_operador, nome_dispositivo, numero_serie, modelo_dispositivo,
@@ -387,88 +465,32 @@ begin
     intervalo_dados, bateria_minima, created_at, updated_at
   ) values
     (
-      v_disp1_id,
-      v_frota_sul_id,
-      v_operador1_id,
-      'Sensor IoT TermoGuard #01',
-      'TG-SUL-4019',
-      'NutriSensor Pro v2',
-      'Mercedes-Benz Sprinter 416 CDI',
-      'BRA-2E19',
-      2.0,
-      6.0,
-      30.0,
-      50.0,
-      '2',
-      '2.0',
-      30,
-      20.0,
-      now() - interval '30 days',
-      now()
+      v_disp1_id, v_frota_sul_id, v_operador1_id,
+      'Sensor IoT TermoGuard #01', 'TG-SUL-4019', 'NutriSensor Pro v2',
+      'Mercedes-Benz Sprinter 416 CDI', 'BRA-2E19', 2.0, 6.0, 30.0, 50.0,
+      '2', '2.0', 30, 20.0, now() - interval '30 days', now()
     ),
     (
-      v_disp2_id,
-      v_frota_sul_id,
-      v_operador2_id,
-      'Sensor IoT TermoGuard #02',
-      'TG-SUL-4020',
-      'NutriSensor Pro v2',
-      'Volkswagen Delivery 11.180',
-      'SUL-8K42',
-      2.0,
-      6.0,
-      30.0,
-      50.0,
-      '2',
-      '2.0',
-      30,
-      20.0,
-      now() - interval '25 days',
-      now()
+      v_disp2_id, v_frota_sul_id, v_operador2_id,
+      'Sensor IoT TermoGuard #02', 'TG-SUL-4020', 'NutriSensor Pro v2',
+      'Volkswagen Delivery 11.180', 'SUL-8K42', 2.0, 6.0, 30.0, 50.0,
+      '2', '2.0', 30, 20.0, now() - interval '25 days', now()
     ),
     (
-      v_disp3_id,
-      v_frota_sudeste_id,
-      v_operador1_id,
-      'Sensor IoT TermoGuard #03',
-      'TG-SUD-9011',
-      'NutriSensor Cryo v3',
-      'Volvo FH 540 Globetrotter',
-      'RIO-4A20',
-      -18.0,
-      -12.0,
-      20.0,
-      40.0,
-      '3',
-      '3.0',
-      15,
-      25.0,
-      now() - interval '20 days',
-      now()
+      v_disp3_id, v_frota_sudeste_id, v_operador1_id,
+      'Sensor IoT TermoGuard #03', 'TG-SUD-9011', 'NutriSensor Cryo v3',
+      'Volvo FH 540 Globetrotter', 'RIO-4A20', -18.0, -12.0, 20.0, 40.0,
+      '3', '3.0', 15, 25.0, now() - interval '20 days', now()
     ),
     (
-      v_disp4_id,
-      v_frota_urbana_id,
-      v_operador2_id,
-      'Sensor IoT TermoGuard #04',
-      'TG-URB-1104',
-      'NutriSensor Pharma v1',
-      'Iveco Daily 35S15',
-      'SPK-9F33',
-      2.0,
-      8.0,
-      35.0,
-      55.0,
-      '1',
-      '1.5',
-      30,
-      20.0,
-      now() - interval '15 days',
-      now()
+      v_disp4_id, v_frota_urbana_id, v_operador2_id,
+      'Sensor IoT TermoGuard #04', 'TG-URB-1104', 'NutriSensor Pharma v1',
+      'Iveco Daily 35S15', 'SPK-9F33', 2.0, 8.0, 35.0, 55.0,
+      '1', '1.5', 30, 20.0, now() - interval '15 days', now()
     );
 
   -- --------------------------------------------------------------------------
-  -- 3.5. Credenciais dos Dispositivos (tabela dispositivo_credenciais)
+  -- 4.5. Credenciais dos Sensores IoT
   -- --------------------------------------------------------------------------
   insert into public.dispositivo_credenciais (id_dispositivo, token_hash, created_at)
   values
@@ -478,130 +500,83 @@ begin
     (v_disp4_id, encode(digest('token_iot_disp_04_secret', 'sha256'), 'hex'), now() - interval '15 days');
 
   -- --------------------------------------------------------------------------
-  -- 3.6. Medições de Telemetria (medicoes)
-  --      - id_dispositivo aponta para Dispositivos.id
-  --      - Alimenta os gráficos de temperatura, umidade, vibração e status
+  -- 4.6. Medições de Telemetria (medicoes)
   -- --------------------------------------------------------------------------
   insert into public."medicoes" (
     id, id_dispositivo, temperatura, umidade, vibracao, porta_aberta,
     latitude, longitude, bateria, registrado_em
   ) values
-    -- Série Veículo 1 (BRA-2E19) - Foco em transporte com pico recente
+    -- Histórico Sprinter (BRA-2E19)
     (gen_random_uuid(), v_disp1_id, 4.2, 36.0, 0.22, false, -23.5505, -46.6333, 98.0, now() - interval '6 hours'),
     (gen_random_uuid(), v_disp1_id, 4.5, 35.5, 0.28, false, -23.5560, -46.6380, 96.0, now() - interval '5 hours'),
     (gen_random_uuid(), v_disp1_id, 4.8, 38.0, 0.35, false, -23.5650, -46.6450, 95.0, now() - interval '4 hours'),
     (gen_random_uuid(), v_disp1_id, 5.1, 39.0, 0.42, false, -23.5800, -46.6600, 93.0, now() - interval '3 hours'),
     (gen_random_uuid(), v_disp1_id, 5.6, 41.0, 0.38, false, -23.6000, -46.6800, 90.0, now() - interval '2 hours'),
-    -- Medição com alerta térmico (6.4°C acima do limite 6.0°C)
     (v_med1_alerta_temp, v_disp1_id, 6.4, 44.0, 0.55, true,  -23.6200, -46.7000, 88.0, now() - interval '1 hour'),
-    -- Medição com alerta de porta aberta em trânsito
     (v_med1_alerta_porta, v_disp1_id, 5.8, 39.0, 0.31, true, -23.6300, -46.7100, 86.0, now() - interval '55 minutes'),
-    -- Medição atual normalizada
     (gen_random_uuid(), v_disp1_id, 4.9, 36.5, 0.25, false, -23.6400, -46.7150, 85.0, now() - interval '5 minutes'),
 
-    -- Série Veículo 2 (SUL-8K42)
+    -- Histórico Delivery (SUL-8K42)
     (gen_random_uuid(), v_disp2_id, 3.8, 34.0, 0.20, false, -25.4284, -49.2733, 94.0, now() - interval '4 hours'),
     (gen_random_uuid(), v_disp2_id, 4.0, 35.0, 0.24, false, -25.4400, -49.2800, 92.0, now() - interval '3 hours'),
-    -- Medição com pico de vibração na serra
     (v_med2_alerta_vib,  v_disp2_id, 4.2, 33.0, 1.85, false, -25.4600, -49.3000, 90.0, now() - interval '1 hour'),
     (gen_random_uuid(), v_disp2_id, 3.9, 32.0, 0.30, false, -25.4800, -49.3100, 88.0, now() - interval '10 minutes'),
 
-    -- Série Veículo 3 (RIO-4A20 - Congelados)
+    -- Histórico Volvo FH (RIO-4A20 Congelados)
     (gen_random_uuid(), v_disp3_id, -16.5, 25.0, 0.40, false, -22.9068, -43.1729, 99.0, now() - interval '6 hours'),
     (gen_random_uuid(), v_disp3_id, -15.8, 26.0, 0.45, false, -22.8800, -43.2500, 97.0, now() - interval '3 hours'),
     (gen_random_uuid(), v_disp3_id, -15.2, 28.0, 0.38, false, -22.8500, -43.3000, 95.0, now() - interval '15 minutes'),
 
-    -- Série Veículo 4 (SPK-9F33 - Medicamentos Urbana)
+    -- Histórico Iveco Daily (SPK-9F33 Medicamentos)
     (gen_random_uuid(), v_disp4_id, 5.2, 42.0, 0.18, false, -23.5489, -46.6388, 89.0, now() - interval '2 hours'),
-    -- Medição com nível de bateria baixo
     (v_med4_alerta_bat,  v_disp4_id, 5.5, 43.0, 0.22, false, -23.5600, -46.6500, 19.5, now() - interval '20 minutes');
 
   -- --------------------------------------------------------------------------
-  -- 3.7. Ocorrências / Alertas (id_medicao aponta para a medição que disparou)
+  -- 4.7. Ocorrências (id_medicao apontando para a medição que violou a regra)
   -- --------------------------------------------------------------------------
   insert into public."ocorrencias" (
     id, id_dispositivo, id_medicao, tipo, valor_registrado, limite_configurado, status, criado_em
   ) values
     (
-      gen_random_uuid(),
-      v_disp1_id,
-      v_med1_alerta_temp,
-      'Alerta Térmico: Temperatura acima do limite máximo',
-      6.4,
-      6.0,
-      'resolvido',
-      now() - interval '1 hour'
+      gen_random_uuid(), v_disp1_id, v_med1_alerta_temp,
+      'Alerta Térmico: Temperatura acima do limite máximo', 6.4, 6.0, 'resolvido', now() - interval '1 hour'
     ),
     (
-      gen_random_uuid(),
-      v_disp1_id,
-      v_med1_alerta_porta,
-      'Porta aberta detectada por mais de 3 minutos',
-      1.0,
-      0.0,
-      'resolvido',
-      now() - interval '55 minutes'
+      gen_random_uuid(), v_disp1_id, v_med1_alerta_porta,
+      'Porta aberta detectada por mais de 3 minutos', 1.0, 0.0, 'resolvido', now() - interval '55 minutes'
     ),
     (
-      gen_random_uuid(),
-      v_disp2_id,
-      v_med2_alerta_vib,
-      'Pico de vibração em pista irregular (Trecho Serra)',
-      1.85,
-      2.00,
-      'pendente',
-      now() - interval '1 hour'
+      gen_random_uuid(), v_disp2_id, v_med2_alerta_vib,
+      'Pico de vibração em pista irregular (Trecho Serra)', 1.85, 2.00, 'pendente', now() - interval '1 hour'
     ),
     (
-      gen_random_uuid(),
-      v_disp4_id,
-      v_med4_alerta_bat,
-      'Sensor IoT com nível de bateria baixo (19.5%)',
-      19.5,
-      20.0,
-      'pendente',
-      now() - interval '20 minutes'
+      gen_random_uuid(), v_disp4_id, v_med4_alerta_bat,
+      'Sensor IoT com nível de bateria baixo (19.5%)', 19.5, 20.0, 'pendente', now() - interval '20 minutes'
     );
 
   -- --------------------------------------------------------------------------
-  -- 3.8. Fins de Viagem / Relatórios de Parada com Fotos
-  --      - id_operador aponta para Usuarios.id
-  --      - id_dispositivo aponta para Dispositivos.id
+  -- 4.8. Fins de Viagem / Relatórios de Parada (id_operador -> Usuarios.id, id_dispositivo -> Dispositivos.id)
   -- --------------------------------------------------------------------------
   insert into public.fins_viagem (
     id, id_operador, id_dispositivo, motivo, rua, bairro, cidade, cep, anexos, criado_em, atualizado_em
   ) values
     (
-      gen_random_uuid(),
-      v_operador1_id,
-      v_disp1_id,
+      gen_random_uuid(), v_operador1_id, v_disp1_id,
       'Entrega finalizada com sucesso no Centro de Distribuição. Lote de laticínios conferido e sem nenhuma violação térmica.',
-      'Av. das Nações Unidas, 14401',
-      'Chácara Santo Antônio',
-      'São Paulo',
-      '04794-000',
-      array['comprovante_entrega_assinado.png', 'termometro_doca.png'],
-      now() - interval '1 day',
-      now() - interval '1 day'
+      'Av. das Nações Unidas, 14401', 'Chácara Santo Antônio', 'São Paulo', '04794-000',
+      array['comprovante_entrega_assinado.png', 'termometro_doca.png'], now() - interval '1 day', now() - interval '1 day'
     ),
     (
-      gen_random_uuid(),
-      v_operador2_id,
-      v_disp2_id,
+      gen_random_uuid(), v_operador2_id, v_disp2_id,
       'Pausa regulamentar de descanso e almoço do motorista no posto de serviços da rodovia.',
-      'Rodovia Régis Bittencourt, KM 348',
-      'Zona Rural',
-      'Miracatu',
-      '11850-000',
-      array['foto_patio_graal.png'],
-      now() - interval '3 hours',
-      now() - interval '3 hours'
+      'Rodovia Régis Bittencourt, KM 348', 'Zona Rural', 'Miracatu', '11850-000',
+      array['foto_patio_graal.png'], now() - interval '3 hours', now() - interval '3 hours'
     );
 
 end $$;
 
 -- ==============================================================================
--- 4. CONSULTA DE RESUMO PARA VERIFICAR OS DADOS CARREGADOS
+-- 5. VERIFICAÇÃO RESUMIDA DOS DADOS CARREGADOS
 -- ==============================================================================
 select
   'RESET E CARGA CONCLUÍDOS COM SUCESSO!' as status,
