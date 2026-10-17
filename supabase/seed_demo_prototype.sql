@@ -103,8 +103,26 @@ create table if not exists public.fins_viagem (
     atualizado_em timestamptz not null default now()
 );
 
--- Remove qualquer constraint restritiva antiga de status que cause erro
+-- Remove quaisquer constraints restritivas antigas em ocorrencias (status, tipo, etc.)
 alter table public."ocorrencias" drop constraint if exists ocorrencias_status_check;
+alter table public."ocorrencias" drop constraint if exists ocorrencias_tipo_check;
+
+do $$
+declare
+  r record;
+begin
+  for r in (
+    select conname
+    from pg_constraint con
+    join pg_class rel on rel.oid = con.conrelid
+    join pg_namespace nsp on nsp.oid = rel.relnamespace
+    where nsp.nspname = 'public'
+      and rel.relname = 'ocorrencias'
+      and con.contype = 'c'
+  ) loop
+    execute format('alter table public."ocorrencias" drop constraint if exists %I', r.conname);
+  end loop;
+end $$;
 
 -- ==============================================================================
 -- 2. LIMPEZA TOTAL IMEDIATA DAS TABELAS OPERACIONAIS (TRUNCATE PRIMEIRO)
