@@ -683,10 +683,8 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
                     ],
                   ),
                 ),
-                if (actionButton != null) ...[
-                  const SizedBox(height: 24),
-                  actionButton,
-                ],
+                const SizedBox(height: 24),
+                actionButton,
               ],
             ),
           ),

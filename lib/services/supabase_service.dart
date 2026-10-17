@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/models.dart';
@@ -780,6 +779,25 @@ class SupabaseService {
     return (data as List).map((e) => MedicaoModel.fromJson(e)).toList();
   }
 
+  Future<MedicaoModel?> getLatestMedicao(String dispositivoId) async {
+    try {
+      final cleanId = dispositivoId.trim();
+      if (cleanId.isEmpty) return null;
+      final data = await _client
+          .from('medicoes')
+          .select()
+          .eq('id_dispositivo', cleanId)
+          .order('registrado_em', ascending: false)
+          .limit(1);
+      if ((data as List).isNotEmpty) {
+        return MedicaoModel.fromJson(data.first);
+      }
+    } catch (e) {
+      debugPrint('Erro ao buscar medicao mais recente para $dispositivoId: $e');
+    }
+    return null;
+  }
+
   Future<List<OcorrenciaModel>> getOcorrenciasFiltro(List<String> dispositivoIds, DateTime inicio, DateTime fim) async {
     if (dispositivoIds.isEmpty) return [];
     final data = await _client
@@ -790,5 +808,48 @@ class SupabaseService {
         .lte('criado_em', fim.toUtc().toIso8601String())
         .order('criado_em', ascending: true);
     return (data as List).map((e) => OcorrenciaModel.fromJson(e)).toList();
+  }
+
+  // --- Fins de Viagem / Paradas ---
+  Future<String?> uploadAnexoViagem(String operatorId, Uint8List fileBytes, String fileName) async {
+    try {
+      final safeName = fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+      final path = 'viagens/$operatorId-${DateTime.now().millisecondsSinceEpoch}-$safeName';
+      await _client.storage.from('anexos-viagem').uploadBinary(path, fileBytes);
+      return _client.storage.from('anexos-viagem').getPublicUrl(path);
+    } catch (e) {
+      debugPrint('Aviso: upload de anexo de viagem não concluído: $e');
+      return null;
+    }
+  }
+
+  Future<bool> salvarFimViagem({
+    required String operatorId,
+    String? deviceId,
+    required String motivo,
+    required String rua,
+    required String bairro,
+    required String cidade,
+    String? cep,
+    List<String> anexos = const [],
+  }) async {
+    try {
+      final cleanOpId = operatorId.trim();
+      final payload = {
+        if (cleanOpId.isNotEmpty) 'id_operador': cleanOpId,
+        if (deviceId != null && deviceId.trim().isNotEmpty) 'id_dispositivo': deviceId.trim(),
+        'motivo': motivo.trim(),
+        'rua': rua.trim(),
+        'bairro': bairro.trim(),
+        'cidade': cidade.trim(),
+        if (cep != null && cep.trim().isNotEmpty) 'cep': cep.trim(),
+        'anexos': anexos,
+      };
+      await _client.from('fins_viagem').insert(payload);
+      return true;
+    } catch (e) {
+      debugPrint('Aviso: fins_viagem não inserido no Supabase (tabela pode ainda não ter sido executada): $e');
+      return false;
+    }
   }
 }

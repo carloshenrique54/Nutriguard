@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../../widgets/auth_components.dart';
 import '../../services/supabase_service.dart';
+import '../../services/trip_service.dart';
 
 class CadastroScreen extends StatefulWidget {
   const CadastroScreen({super.key});
@@ -42,7 +43,7 @@ class _CadastroScreenState extends State<CadastroScreen> {
 
     setState(() => _isLoading = true);
     try {
-      await _supabaseService.signUp(
+      final response = await _supabaseService.signUp(
         email: _emailCtrl.text.trim(),
         password: _senhaCtrl.text.trim(),
         nome: _nomeCtrl.text.trim(),
@@ -51,11 +52,23 @@ class _CadastroScreenState extends State<CadastroScreen> {
         cargo: 'operador', // default
       );
 
+      final user = response.user;
+      if (user != null) {
+        await TripService().resetTrip(user.id);
+      }
+
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cadastro realizado! Faça login.'), backgroundColor: Colors.green),
-      );
-      Navigator.pop(context); // Voltar para a tela de login
+      if (response.session != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cadastro realizado com sucesso!'), backgroundColor: Colors.green),
+        );
+        Navigator.pushNamedAndRemoveUntil(context, '/iniciar-viagem', (route) => false);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cadastro realizado! Faça login para iniciar a viagem.'), backgroundColor: Colors.green),
+        );
+        Navigator.pop(context); // Voltar para a tela de login
+      }
     } catch (e) {
       if (!mounted) return;
       final msg = SupabaseService.formatarErro(e);

@@ -17,6 +17,7 @@ import 'screens/listagens/listar_dispositivos_screen.dart';
 import 'screens/listagens/listar_operadores_screen.dart';
 import 'screens/listagens/listar_frotas_screen.dart';
 import 'screens/acoes/iniciar_viagem_screen.dart';
+import 'screens/acoes/parar_viagem_screen.dart';
 import 'screens/acoes/configuracoes_screen.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -82,6 +83,7 @@ class NutriGuardApp extends StatelessWidget {
         '/listar-gerentes': (context) => const ListarOperadoresScreen(title: 'Gerentes'),
         '/listar-operadores': (context) => const ListarOperadoresScreen(title: 'Operadores'),
         '/iniciar-viagem': (context) => const IniciarViagemScreen(),
+        '/parar-viagem': (context) => const PararViagemScreen(),
 
         // Listagens e Ações extras
         '/listar-frotas': (context) => const ListarFrotasScreen(),

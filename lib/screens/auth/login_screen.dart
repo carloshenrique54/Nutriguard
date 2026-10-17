@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../widgets/auth_components.dart';
 import '../../services/supabase_service.dart';
+import '../../services/trip_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -45,7 +46,13 @@ class _LoginScreenState extends State<LoginScreen> {
       } else if (role == 'gerente') {
         Navigator.pushReplacementNamed(context, '/dashboard-frota');
       } else if (role == 'operador') {
-        Navigator.pushReplacementNamed(context, '/dashboard-veiculo');
+        final tripActive = await TripService().isTripActive(currentUserId);
+        if (!mounted) return;
+        if (!tripActive) {
+          Navigator.pushReplacementNamed(context, '/iniciar-viagem');
+        } else {
+          Navigator.pushReplacementNamed(context, '/dashboard-veiculo');
+        }
       } else {
         Navigator.pushReplacementNamed(context, '/dashboard-frota');
       }
