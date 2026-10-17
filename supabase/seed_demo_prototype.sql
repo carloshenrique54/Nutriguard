@@ -182,6 +182,35 @@ values (
 )
 on conflict (id) do update set public = true;
 
+-- Funções auxiliares para RLS (com SECURITY DEFINER para evitar recursão)
+create or replace function public.meu_cargo()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(cargo::text, 'operador')
+  from public."Usuarios"
+  where id = auth.uid()
+  limit 1;
+$$;
+
+create or replace function public.sou_gerente_da_frota(p_id_frota uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public."Frotas"
+    where id = p_id_frota
+      and id_gerente = auth.uid()
+  );
+$$;
+
 -- Habilita RLS em todas as tabelas
 alter table public."Usuarios" enable row level security;
 alter table public."Frotas" enable row level security;
@@ -191,29 +220,31 @@ alter table public."medicoes" enable row level security;
 alter table public."ocorrencias" enable row level security;
 alter table public.fins_viagem enable row level security;
 
--- Políticas RLS para usuários autenticados
+-- Remove políticas temporárias permissivas caso tenham sido criadas anteriormente
 drop policy if exists "usuarios_all_auth" on public."Usuarios";
-create policy "usuarios_all_auth" on public."Usuarios" for all to authenticated using (true) with check (true);
-
 drop policy if exists "frotas_all_auth" on public."Frotas";
-create policy "frotas_all_auth" on public."Frotas" for all to authenticated using (true) with check (true);
-
 drop policy if exists "dispositivos_all_auth" on public."Dispositivos";
-create policy "dispositivos_all_auth" on public."Dispositivos" for all to authenticated using (true) with check (true);
-
 drop policy if exists "dispositivo_credenciais_all_auth" on public.dispositivo_credenciais;
-create policy "dispositivo_credenciais_all_auth" on public.dispositivo_credenciais for all to authenticated using (true) with check (true);
-
 drop policy if exists "medicoes_all_auth" on public."medicoes";
-create policy "medicoes_all_auth" on public."medicoes" for all to authenticated using (true) with check (true);
-
 drop policy if exists "ocorrencias_all_auth" on public."ocorrencias";
-create policy "ocorrencias_all_auth" on public."ocorrencias" for all to authenticated using (true) with check (true);
-
 drop policy if exists "fins_viagem_all_auth" on public.fins_viagem;
-create policy "fins_viagem_all_auth" on public.fins_viagem for all to authenticated using (true) with check (true);
+
+-- Garante que se faltar alguma política essencial de exclusão de usuário por admin, seja criada
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies 
+    where schemaname = 'public' and tablename = 'Usuarios' and policyname = 'usuarios_delete_admin'
+  ) then
+    create policy usuarios_delete_admin on public."Usuarios" 
+      for delete to authenticated 
+      using (((select public.meu_cargo()) = 'admin'::text));
+  end if;
+end $$;
 
 -- Permissões gerais de schema
+grant usage on schema public to authenticated;
+grant usage on schema public to anon;
 grant select, insert, update, delete on all tables in schema public to authenticated;
 grant select on all tables in schema public to anon;
 
