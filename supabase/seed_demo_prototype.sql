@@ -8,21 +8,11 @@
 --
 -- Destaques da Estrutura (conforme o diagrama do banco):
 --   ✓ Todos os IDs (PKs e FKs) são UUIDs gerados aleatoriamente (gen_random_uuid()).
---   ✓ O campo 'cpf' é um texto independente com a numeração do documento ('123.456.789-00'),
---     e NÃO se confunde com o UUID da tabela.
---   ✓ Previne o erro 23502 ("null value in column cpf violates not-null constraint")
---     passando o CPF no raw_user_meta_data do auth e blindando a trigger handle_new_user.
---   ✓ Todas as relações do diagrama são satisfeitas:
---       - auth.users.id -> Usuarios.id
---       - Usuarios.id -> Frotas.id_gerente
---       - Usuarios.id -> Dispositivos.id_operador
---       - Usuarios.id -> fins_viagem.id_operador
---       - Frotas.id -> Dispositivos.id_frota
---       - Dispositivos.id -> dispositivo_credenciais.id_dispositivo
---       - Dispositivos.id -> medicoes.id_dispositivo
---       - Dispositivos.id -> ocorrencias.id_dispositivo
---       - Dispositivos.id -> fins_viagem.id_dispositivo
---       - medicoes.id -> ocorrencias.id_medicao (alerta aponta para a medição que disparou o limite)
+--   ✓ O campo 'cpf' é texto independente com o documento formatado ('123.456.789-00').
+--   ✓ 'sensibilidade_vibracao' e 'limite_vibracao' são do tipo int8 (bigint).
+--   ✓ 'intervalo_dados' é float8.
+--   ✓ 'medicoes.id' conecta com 'ocorrencias.id_medicao'.
+--   ✓ 'dispositivo_credenciais' incluída com token_hash.
 -- ==============================================================================
 
 -- Habilita extensões para geração de UUID e criptografia de senhas
@@ -58,7 +48,7 @@ create table if not exists public."Frotas" (
     updated_at timestamptz not null default now()
 );
 
--- Tabela: Dispositivos
+-- Tabela: Dispositivos (sensibilidade e limite de vibração são int8)
 create table if not exists public."Dispositivos" (
     id uuid primary key default gen_random_uuid(),
     id_operador uuid references public."Usuarios"(id) on delete set null,
@@ -72,9 +62,9 @@ create table if not exists public."Dispositivos" (
     temperatura_maxima numeric default 8.0,
     umidade_minima numeric default 30.0,
     umidade_maxima numeric default 60.0,
-    sensibilidade_vibracao text default '2',
-    limite_vibracao text default '2.0',
-    intervalo_dados float8 default 30,
+    sensibilidade_vibracao int8 default 2,
+    limite_vibracao int8 default 2,
+    intervalo_dados float8 default 30.0,
     bateria_minima numeric default 20.0,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
@@ -147,7 +137,6 @@ declare
   v_validade_cnh date;
 begin
   v_nome := coalesce(nullif(new.raw_user_meta_data->>'nome', ''), split_part(new.email, '@', 1));
-  -- Garante CPF default caso o Auth não forneça no metadata inicial
   v_cpf := coalesce(nullif(new.raw_user_meta_data->>'cpf', ''), '000.000.000-00');
   v_telefone := nullif(new.raw_user_meta_data->>'telefone', '');
   v_cargo := coalesce(nullif(new.raw_user_meta_data->>'cargo', ''), 'operador');
@@ -183,7 +172,6 @@ begin
 
   return new;
 exception when others then
-  -- Nunca aborta a transação do Auth mesmo se houver conflito de índice
   return new;
 end;
 $$;
@@ -196,12 +184,12 @@ values (
 )
 on conflict (id) do update set public = true;
 
--- Permissões gerais
+-- Permissões
 grant select, insert, update, delete on all tables in schema public to authenticated;
 grant select on all tables in schema public to anon;
 
 -- ==============================================================================
--- 3. LIMPEZA DOS DADOS OPERACIONAIS (TRUNCATE SEGURO)
+-- 3. LIMPEZA DOS DADOS OPERACIONAIS (TRUNCATE)
 -- ==============================================================================
 truncate table public.fins_viagem cascade;
 truncate table public."ocorrencias" cascade;
@@ -243,7 +231,7 @@ declare
   v_senha_hash text := crypt('123456', gen_salt('bf'));
 begin
   -- --------------------------------------------------------------------------
-  -- 4.1. Usuários no Auth do Supabase (passando CPF no raw_user_meta_data)
+  -- 4.1. Usuários no Auth do Supabase com CPF no metadata
   -- --------------------------------------------------------------------------
 
   -- 1) Admin
@@ -252,11 +240,7 @@ begin
     update auth.users set
       encrypted_password = v_senha_hash,
       raw_user_meta_data = jsonb_build_object(
-        'nome', 'Carlos Henrique (ADM)',
-        'cargo', 'admin',
-        'cpf', '123.456.789-00',
-        'telefone', '(11) 98765-4321',
-        'numero_cnh', '12345678900'
+        'nome', 'Carlos Henrique (ADM)', 'cargo', 'admin', 'cpf', '123.456.789-00', 'telefone', '(11) 98765-4321', 'numero_cnh', '12345678900'
       )
     where id = v_admin_id;
   else
@@ -268,11 +252,7 @@ begin
       'admin@nutriguard.com', v_senha_hash, now(),
       '{"provider":"email","providers":["email"]}',
       jsonb_build_object(
-        'nome', 'Carlos Henrique (ADM)',
-        'cargo', 'admin',
-        'cpf', '123.456.789-00',
-        'telefone', '(11) 98765-4321',
-        'numero_cnh', '12345678900'
+        'nome', 'Carlos Henrique (ADM)', 'cargo', 'admin', 'cpf', '123.456.789-00', 'telefone', '(11) 98765-4321', 'numero_cnh', '12345678900'
       ),
       now(), now()
     );
@@ -284,11 +264,7 @@ begin
     update auth.users set
       encrypted_password = v_senha_hash,
       raw_user_meta_data = jsonb_build_object(
-        'nome', 'Mariana Silveira',
-        'cargo', 'gerente',
-        'cpf', '234.567.890-11',
-        'telefone', '(41) 99876-5432',
-        'numero_cnh', '23456789011'
+        'nome', 'Mariana Silveira', 'cargo', 'gerente', 'cpf', '234.567.890-11', 'telefone', '(41) 99876-5432', 'numero_cnh', '23456789011'
       )
     where id = v_gerente1_id;
   else
@@ -300,11 +276,7 @@ begin
       'gerente.sul@nutriguard.com', v_senha_hash, now(),
       '{"provider":"email","providers":["email"]}',
       jsonb_build_object(
-        'nome', 'Mariana Silveira',
-        'cargo', 'gerente',
-        'cpf', '234.567.890-11',
-        'telefone', '(41) 99876-5432',
-        'numero_cnh', '23456789011'
+        'nome', 'Mariana Silveira', 'cargo', 'gerente', 'cpf', '234.567.890-11', 'telefone', '(41) 99876-5432', 'numero_cnh', '23456789011'
       ),
       now(), now()
     );
@@ -316,11 +288,7 @@ begin
     update auth.users set
       encrypted_password = v_senha_hash,
       raw_user_meta_data = jsonb_build_object(
-        'nome', 'Roberto Costa',
-        'cargo', 'gerente',
-        'cpf', '345.678.901-22',
-        'telefone', '(19) 98123-4567',
-        'numero_cnh', '34567890122'
+        'nome', 'Roberto Costa', 'cargo', 'gerente', 'cpf', '345.678.901-22', 'telefone', '(19) 98123-4567', 'numero_cnh', '34567890122'
       )
     where id = v_gerente2_id;
   else
@@ -332,11 +300,7 @@ begin
       'gerente.sudeste@nutriguard.com', v_senha_hash, now(),
       '{"provider":"email","providers":["email"]}',
       jsonb_build_object(
-        'nome', 'Roberto Costa',
-        'cargo', 'gerente',
-        'cpf', '345.678.901-22',
-        'telefone', '(19) 98123-4567',
-        'numero_cnh', '34567890122'
+        'nome', 'Roberto Costa', 'cargo', 'gerente', 'cpf', '345.678.901-22', 'telefone', '(19) 98123-4567', 'numero_cnh', '34567890122'
       ),
       now(), now()
     );
@@ -348,11 +312,7 @@ begin
     update auth.users set
       encrypted_password = v_senha_hash,
       raw_user_meta_data = jsonb_build_object(
-        'nome', 'Lucas Mendes',
-        'cargo', 'operador',
-        'cpf', '456.789.012-33',
-        'telefone', '(11) 97654-3210',
-        'numero_cnh', '45678901233'
+        'nome', 'Lucas Mendes', 'cargo', 'operador', 'cpf', '456.789.012-33', 'telefone', '(11) 97654-3210', 'numero_cnh', '45678901233'
       )
     where id = v_operador1_id;
   else
@@ -364,11 +324,7 @@ begin
       'operador.lucas@nutriguard.com', v_senha_hash, now(),
       '{"provider":"email","providers":["email"]}',
       jsonb_build_object(
-        'nome', 'Lucas Mendes',
-        'cargo', 'operador',
-        'cpf', '456.789.012-33',
-        'telefone', '(11) 97654-3210',
-        'numero_cnh', '45678901233'
+        'nome', 'Lucas Mendes', 'cargo', 'operador', 'cpf', '456.789.012-33', 'telefone', '(11) 97654-3210', 'numero_cnh', '45678901233'
       ),
       now(), now()
     );
@@ -380,11 +336,7 @@ begin
     update auth.users set
       encrypted_password = v_senha_hash,
       raw_user_meta_data = jsonb_build_object(
-        'nome', 'Juliana Oliveira',
-        'cargo', 'operador',
-        'cpf', '567.890.123-44',
-        'telefone', '(41) 99123-8877',
-        'numero_cnh', '56789012344'
+        'nome', 'Juliana Oliveira', 'cargo', 'operador', 'cpf', '567.890.123-44', 'telefone', '(41) 99123-8877', 'numero_cnh', '56789012344'
       )
     where id = v_operador2_id;
   else
@@ -396,19 +348,13 @@ begin
       'operadora.juliana@nutriguard.com', v_senha_hash, now(),
       '{"provider":"email","providers":["email"]}',
       jsonb_build_object(
-        'nome', 'Juliana Oliveira',
-        'cargo', 'operador',
-        'cpf', '567.890.123-44',
-        'telefone', '(41) 99123-8877',
-        'numero_cnh', '56789012344'
+        'nome', 'Juliana Oliveira', 'cargo', 'operador', 'cpf', '567.890.123-44', 'telefone', '(41) 99123-8877', 'numero_cnh', '56789012344'
       ),
       now(), now()
     );
   end if;
 
-  -- --------------------------------------------------------------------------
   -- 4.2. Preenchimento de Usuarios (id = UUID do auth; cpf = texto independente)
-  -- --------------------------------------------------------------------------
   insert into public."Usuarios" (
     id, nome, email, cpf, telefone, cargo, data_nascimento, numero_cnh, validade_cnh, foto_url, created_at, updated_at
   ) values
@@ -443,21 +389,16 @@ begin
     numero_cnh = excluded.numero_cnh, validade_cnh = excluded.validade_cnh,
     foto_url = excluded.foto_url, updated_at = now();
 
-  -- Mantém outros usuários logados como admin
   update public."Usuarios" set cargo = 'admin' where cargo is null or cargo = '';
 
-  -- --------------------------------------------------------------------------
-  -- 4.3. Frotas (id_gerente aponta para Usuarios.id)
-  -- --------------------------------------------------------------------------
+  -- 4.3. Frotas (id_gerente -> Usuarios.id)
   insert into public."Frotas" (id, nome, id_gerente, created_at, updated_at)
   values
     (v_frota_sul_id, 'Frota Sul - Refrigerados Lácteos', v_gerente1_id, now() - interval '60 days', now()),
     (v_frota_sudeste_id, 'Frota Sudeste - Cargas Congeladas', v_gerente2_id, now() - interval '45 days', now()),
     (v_frota_urbana_id, 'Frota Urbana - Distribuição e Medicamentos', v_gerente2_id, now() - interval '30 days', now());
 
-  -- --------------------------------------------------------------------------
-  -- 4.4. Dispositivos (id_frota -> Frotas.id, id_operador -> Usuarios.id)
-  -- --------------------------------------------------------------------------
+  -- 4.4. Dispositivos (sensibilidade_vibracao e limite_vibracao são int8 inteiros!)
   insert into public."Dispositivos" (
     id, id_frota, id_operador, nome_dispositivo, numero_serie, modelo_dispositivo,
     modelo_veiculo, placa_veiculo, temperatura_minima, temperatura_maxima,
@@ -468,30 +409,28 @@ begin
       v_disp1_id, v_frota_sul_id, v_operador1_id,
       'Sensor IoT TermoGuard #01', 'TG-SUL-4019', 'NutriSensor Pro v2',
       'Mercedes-Benz Sprinter 416 CDI', 'BRA-2E19', 2.0, 6.0, 30.0, 50.0,
-      '2', '2.0', 30, 20.0, now() - interval '30 days', now()
+      2, 2, 30.0, 20.0, now() - interval '30 days', now()
     ),
     (
       v_disp2_id, v_frota_sul_id, v_operador2_id,
       'Sensor IoT TermoGuard #02', 'TG-SUL-4020', 'NutriSensor Pro v2',
       'Volkswagen Delivery 11.180', 'SUL-8K42', 2.0, 6.0, 30.0, 50.0,
-      '2', '2.0', 30, 20.0, now() - interval '25 days', now()
+      2, 2, 30.0, 20.0, now() - interval '25 days', now()
     ),
     (
       v_disp3_id, v_frota_sudeste_id, v_operador1_id,
       'Sensor IoT TermoGuard #03', 'TG-SUD-9011', 'NutriSensor Cryo v3',
       'Volvo FH 540 Globetrotter', 'RIO-4A20', -18.0, -12.0, 20.0, 40.0,
-      '3', '3.0', 15, 25.0, now() - interval '20 days', now()
+      3, 3, 15.0, 25.0, now() - interval '20 days', now()
     ),
     (
       v_disp4_id, v_frota_urbana_id, v_operador2_id,
       'Sensor IoT TermoGuard #04', 'TG-URB-1104', 'NutriSensor Pharma v1',
       'Iveco Daily 35S15', 'SPK-9F33', 2.0, 8.0, 35.0, 55.0,
-      '1', '1.5', 30, 20.0, now() - interval '15 days', now()
+      1, 2, 30.0, 20.0, now() - interval '15 days', now()
     );
 
-  -- --------------------------------------------------------------------------
   -- 4.5. Credenciais dos Sensores IoT
-  -- --------------------------------------------------------------------------
   insert into public.dispositivo_credenciais (id_dispositivo, token_hash, created_at)
   values
     (v_disp1_id, encode(digest('token_iot_disp_01_secret', 'sha256'), 'hex'), now() - interval '30 days'),
@@ -499,9 +438,7 @@ begin
     (v_disp3_id, encode(digest('token_iot_disp_03_secret', 'sha256'), 'hex'), now() - interval '20 days'),
     (v_disp4_id, encode(digest('token_iot_disp_04_secret', 'sha256'), 'hex'), now() - interval '15 days');
 
-  -- --------------------------------------------------------------------------
   -- 4.6. Medições de Telemetria (medicoes)
-  -- --------------------------------------------------------------------------
   insert into public."medicoes" (
     id, id_dispositivo, temperatura, umidade, vibracao, porta_aberta,
     latitude, longitude, bateria, registrado_em
@@ -531,9 +468,7 @@ begin
     (gen_random_uuid(), v_disp4_id, 5.2, 42.0, 0.18, false, -23.5489, -46.6388, 89.0, now() - interval '2 hours'),
     (v_med4_alerta_bat,  v_disp4_id, 5.5, 43.0, 0.22, false, -23.5600, -46.6500, 19.5, now() - interval '20 minutes');
 
-  -- --------------------------------------------------------------------------
   -- 4.7. Ocorrências (id_medicao apontando para a medição que violou a regra)
-  -- --------------------------------------------------------------------------
   insert into public."ocorrencias" (
     id, id_dispositivo, id_medicao, tipo, valor_registrado, limite_configurado, status, criado_em
   ) values
@@ -554,9 +489,7 @@ begin
       'Sensor IoT com nível de bateria baixo (19.5%)', 19.5, 20.0, 'pendente', now() - interval '20 minutes'
     );
 
-  -- --------------------------------------------------------------------------
   -- 4.8. Fins de Viagem / Relatórios de Parada (id_operador -> Usuarios.id, id_dispositivo -> Dispositivos.id)
-  -- --------------------------------------------------------------------------
   insert into public.fins_viagem (
     id, id_operador, id_dispositivo, motivo, rua, bairro, cidade, cep, anexos, criado_em, atualizado_em
   ) values
