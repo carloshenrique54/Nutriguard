@@ -1026,9 +1026,8 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
                   ],
                 ),
                 const SizedBox(height: 10),
-                Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 6,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
@@ -1041,6 +1040,7 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
                         style: TextStyle(color: Color(0xFF2E7D32), fontSize: 9, fontWeight: FontWeight.bold),
                       ),
                     ),
+                    const SizedBox(height: 6),
                     RichText(
                       text: const TextSpan(
                         text: 'Limite definido: ',
@@ -1099,9 +1099,8 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
                   ],
                 ),
                 const SizedBox(height: 10),
-                Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 6,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
@@ -1118,6 +1117,7 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
                         ),
                       ),
                     ),
+                    const SizedBox(height: 6),
                     Text(
                       devCount > 0 ? '${devCount - emViagemCount} parado(s)' : 'Sem veículos',
                       style: const TextStyle(fontSize: 9, color: Colors.black54),
@@ -1299,7 +1299,7 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
     required String time,
   }) {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Container(
           padding: const EdgeInsets.all(8),
@@ -1311,27 +1311,51 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black87)),
-                  const SizedBox(width: 6),
-                  Text(veiculoTag, style: const TextStyle(fontSize: 10, color: Colors.black54)),
-                ],
+              Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: Colors.black87,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                veiculoTag,
+                style: const TextStyle(fontSize: 10.5, color: Colors.black54),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 3),
               Text(
                 metricsText,
-                style: const TextStyle(fontSize: 11, color: Color(0xFFC23147), fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: Color(0xFFC23147),
+                  fontWeight: FontWeight.w600,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
         ),
+        const SizedBox(width: 8),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.access_time, size: 14, color: Color(0xFFC23147)),
+            const Icon(Icons.access_time, size: 13, color: Color(0xFFC23147)),
             const SizedBox(width: 3),
-            Text(time, style: const TextStyle(fontSize: 11, color: Color(0xFFC23147), fontWeight: FontWeight.bold)),
+            Text(
+              time,
+              style: const TextStyle(
+                fontSize: 11,
+                color: Color(0xFFC23147),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ],
         ),
       ],
