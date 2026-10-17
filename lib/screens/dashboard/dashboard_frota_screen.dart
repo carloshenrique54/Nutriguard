@@ -1299,7 +1299,7 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
     required String time,
   }) {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
           padding: const EdgeInsets.all(8),
@@ -1311,15 +1311,38 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                  color: Colors.black87,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: Colors.black87,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.access_time, size: 12, color: Color(0xFFC23147)),
+                      const SizedBox(width: 3),
+                      Text(
+                        time,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFFC23147),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
               const SizedBox(height: 2),
               Text(
@@ -1341,22 +1364,6 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
               ),
             ],
           ),
-        ),
-        const SizedBox(width: 8),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.access_time, size: 13, color: Color(0xFFC23147)),
-            const SizedBox(width: 3),
-            Text(
-              time,
-              style: const TextStyle(
-                fontSize: 11,
-                color: Color(0xFFC23147),
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
         ),
       ],
     );

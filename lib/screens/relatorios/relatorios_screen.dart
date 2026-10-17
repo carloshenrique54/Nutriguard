@@ -11,6 +11,7 @@ import '../../widgets/watermark_background.dart';
 import '../../services/supabase_service.dart';
 import '../../models/models.dart';
 import '../../services/admin_context_service.dart';
+import '../../services/trip_service.dart';
 
 class ViagemData {
   final DispositivoModel dispositivo;
@@ -59,7 +60,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
   String? _selectedFrotaId;
   String? _selectedDispositivoId;
   String _selectedTelemetriaParametro = 'Temperatura';
-  bool _isBarChart = false;
+  bool _isBarChart = true;
 
   bool _isLoading = true;
   String _errorMessage = '';
@@ -70,6 +71,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
 
   int _totalViagens = 0;
   int _tempoRotaAtual = 0;
+  int _tempoMedioViagem = 0;
   double _conformidade = 0;
   int _alertasRecebidos = 0;
 
@@ -211,7 +213,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
       _medicoes = await _supabase.getMedicoesFiltro(deviceIds, inicio, fim);
       _ocorrencias = await _supabase.getOcorrenciasFiltro(deviceIds, inicio, fim);
 
-      _calculateMetrics(targetDevices);
+      await _calculateMetrics(targetDevices);
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao buscar relatórios: $e')));
     } finally {
@@ -219,9 +221,10 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
     }
   }
 
-  void _calculateMetrics(List<DispositivoModel> devices) {
+  Future<void> _calculateMetrics(List<DispositivoModel> devices) async {
     _viagens.clear();
     _tempoRotaAtual = 0;
+    _tempoMedioViagem = 0;
     _alertasRecebidos = _ocorrencias.length;
 
     int totalValidas = 0;
@@ -238,7 +241,9 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
         
         DateTime inicio = meds.first.registradoEm!;
         DateTime fim = meds.last.registradoEm!;
-        bool ativa = DateTime.now().difference(fim).inHours < 2;
+        
+        // Verifica se o dispositivo está com uma viagem realmente ativa no TripService
+        bool ativa = await TripService().isDeviceInTrip(d.id, operatorId: d.idOperador);
         int duracao = fim.difference(inicio).inMinutes;
 
         if (ativa && duracao > _tempoRotaAtual) {
@@ -276,11 +281,54 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
     _totalViagens = _viagens.length;
     _conformidade = totalValidas > 0 ? (dentroLimite / totalValidas) * 100 : 100.0;
     
-    if (_viagens.isEmpty) _conformidade = 0.0;
+    if (_viagens.isEmpty) {
+      _conformidade = 0.0;
+      _tempoMedioViagem = 0;
+    } else {
+      int totalDuracao = 0;
+      for (var v in _viagens) {
+        totalDuracao += v.duracaoMinutos;
+      }
+      _tempoMedioViagem = totalDuracao ~/ _viagens.length;
+    }
   }
 
   Future<void> _exportToPDF() async {
     final pdf = pw.Document();
+
+    // Pre-calcula estatísticas de telemetria para o PDF
+    MedicaoModel? latestMed;
+    double? avgTemp;
+    double? minTemp;
+    double? maxTemp;
+    double? avgUmid;
+    double? maxVib;
+
+    if (_medicoes.isNotEmpty) {
+      final sortedMeds = List<MedicaoModel>.from(_medicoes)
+        ..sort((a, b) => (a.registradoEm ?? DateTime(2000)).compareTo(b.registradoEm ?? DateTime(2000)));
+      latestMed = sortedMeds.last;
+
+      final temps = sortedMeds.where((m) => m.temperatura != null).map((m) => m.temperatura!.toDouble()).toList();
+      if (temps.isNotEmpty) {
+        avgTemp = temps.reduce((a, b) => a + b) / temps.length;
+        minTemp = temps.reduce((a, b) => a < b ? a : b);
+        maxTemp = temps.reduce((a, b) => a > b ? a : b);
+      }
+
+      final umids = sortedMeds.where((m) => m.umidade != null).map((m) => m.umidade!.toDouble()).toList();
+      if (umids.isNotEmpty) {
+        avgUmid = umids.reduce((a, b) => a + b) / umids.length;
+      }
+
+      final vibs = sortedMeds.where((m) => m.vibracao != null).map((m) => m.vibracao!.toDouble()).toList();
+      if (vibs.isNotEmpty) {
+        maxVib = vibs.reduce((a, b) => a > b ? a : b);
+      }
+    }
+
+    final sortedOcorrencias = List<OcorrenciaModel>.from(_ocorrencias)
+      ..sort((a, b) => (b.criadoEm ?? DateTime(2000)).compareTo(a.criadoEm ?? DateTime(2000)));
 
     pdf.addPage(
       pw.MultiPage(
@@ -298,24 +346,57 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
                 ]
               )
             ),
-            pw.SizedBox(height: 20),
-            pw.Text('Filtros Aplicados:', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
-            pw.Text('Período: $_periodoSelecionado', style: const pw.TextStyle(fontSize: 12)),
+            pw.SizedBox(height: 16),
+            pw.Text('Filtros Aplicados:', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+            pw.Text('Período: $_periodoSelecionado', style: const pw.TextStyle(fontSize: 11)),
             if (_selectedFrotaId != null && _selectedFrotaId!.isNotEmpty)
-               pw.Text('Frota ID: $_selectedFrotaId', style: const pw.TextStyle(fontSize: 12)),
+               pw.Text('Frota ID: $_selectedFrotaId', style: const pw.TextStyle(fontSize: 11)),
             if (_selectedDispositivoId != null && _selectedDispositivoId!.isNotEmpty)
-               pw.Text('Dispositivo ID: $_selectedDispositivoId', style: const pw.TextStyle(fontSize: 12)),
-            pw.SizedBox(height: 20),
-            pw.Text('Resumo dos Indicadores:', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+               pw.Text('Dispositivo ID: $_selectedDispositivoId', style: const pw.TextStyle(fontSize: 11)),
+            pw.SizedBox(height: 16),
+            pw.Text('Resumo dos Indicadores:', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
             pw.Bullet(text: 'Viagens no período: $_totalViagens'),
-            pw.Bullet(text: 'Tempo na rota atual: ${_tempoRotaAtual ~/ 60}h ${_tempoRotaAtual % 60}m'),
+            pw.Bullet(
+              text: widget.isVehicleContext
+                  ? (_tempoRotaAtual > 0
+                      ? 'Tempo na rota atual: ${_tempoRotaAtual ~/ 60}h ${_tempoRotaAtual % 60}m'
+                      : 'Tempo médio de viagem: ${_tempoMedioViagem ~/ 60}h ${_tempoMedioViagem % 60}m')
+                  : 'Tempo médio de viagem: ${_tempoMedioViagem ~/ 60}h ${_tempoMedioViagem % 60}m',
+            ),
             pw.Bullet(text: 'Conformidade: ${_conformidade.toStringAsFixed(1)}%'),
             pw.Bullet(text: 'Alertas Recebidos: $_alertasRecebidos'),
-            pw.SizedBox(height: 20),
-            pw.Text('Lista de Viagens:', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
-            pw.SizedBox(height: 10),
+            pw.SizedBox(height: 16),
+            pw.Text('Telemetria e Condições Ambientais:', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+            pw.Bullet(text: 'Temperatura: ${latestMed?.temperatura != null ? "${latestMed!.temperatura!.toStringAsFixed(1)}°C (última)" : "N/D"} | Média: ${avgTemp?.toStringAsFixed(1) ?? "N/D"}°C | Mín: ${minTemp?.toStringAsFixed(1) ?? "N/D"}°C | Máx: ${maxTemp?.toStringAsFixed(1) ?? "N/D"}°C'),
+            pw.Bullet(text: 'Umidade: ${latestMed?.umidade != null ? "${latestMed!.umidade!.toStringAsFixed(0)}% (última)" : "N/D"} | Média: ${avgUmid?.toStringAsFixed(0) ?? "N/D"}%'),
+            pw.Bullet(text: 'Vibração: ${latestMed?.vibracao != null ? "${latestMed!.vibracao!.toStringAsFixed(2)}G (última)" : "N/D"} | Pico máx: ${maxVib?.toStringAsFixed(2) ?? "N/D"}G'),
+            pw.Bullet(text: 'Bateria e Compartimento: ${latestMed?.bateria != null ? "${latestMed!.bateria!.toStringAsFixed(0)}%" : "N/D"} | Porta: ${latestMed?.portaAberta == true ? "Aberta" : "Fechada"}'),
+            pw.SizedBox(height: 16),
+            pw.Text('Alertas e Ocorrências Recentes (${_ocorrencias.length}):', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+            pw.SizedBox(height: 8),
+            if (sortedOcorrencias.isEmpty)
+              pw.Text('Nenhum alerta registrado neste período.', style: pw.TextStyle(fontStyle: pw.FontStyle.italic, color: PdfColors.grey, fontSize: 11))
+            else
+              pw.TableHelper.fromTextArray(
+                context: context,
+                headers: ['Data/Hora', 'Dispositivo / Placa', 'Tipo', 'Registrado', 'Limite', 'Status'],
+                data: sortedOcorrencias.take(20).map((o) {
+                  final dev = _dispositivos.where((d) => d.id == o.idDispositivo).firstOrNull;
+                  return [
+                    o.criadoEm != null ? DateFormat('dd/MM/yy HH:mm').format(o.criadoEm!) : '-',
+                    dev?.placaVeiculo ?? dev?.nomeDispositivo ?? o.idDispositivo ?? 'N/D',
+                    o.tipo ?? 'Alerta',
+                    o.valorRegistrado?.toString() ?? '-',
+                    o.limiteConfigurado?.toString() ?? '-',
+                    o.status ?? 'Pendente',
+                  ];
+                }).toList(),
+              ),
+            pw.SizedBox(height: 16),
+            pw.Text('Lista de Viagens (${_viagens.length}):', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+            pw.SizedBox(height: 8),
             if (_viagens.isEmpty)
-              pw.Text('Nenhuma viagem realizada neste período.', style: pw.TextStyle(fontStyle: pw.FontStyle.italic, color: PdfColors.grey))
+              pw.Text('Nenhuma viagem realizada neste período.', style: pw.TextStyle(fontStyle: pw.FontStyle.italic, color: PdfColors.grey, fontSize: 11))
             else
               pw.TableHelper.fromTextArray(
                 context: context,
@@ -386,10 +467,14 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
                                     if (_medicoes.isEmpty && _ocorrencias.isEmpty && _viagens.isEmpty)
                                       _buildEmptyPeriodBanner(),
                                     _buildMetricsGrid(),
+                                    const SizedBox(height: 20),
+                                    _buildRecentTelemetryCards(),
                                     const SizedBox(height: 24),
                                     _buildChart1(),
                                     const SizedBox(height: 24),
                                     _buildChart2(),
+                                    const SizedBox(height: 24),
+                                    _buildRecentAlertsSection(),
                                     const SizedBox(height: 24),
                                     _buildViagens(),
                                     const SizedBox(height: 24),
@@ -918,14 +1003,19 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
   }
 
   Widget _buildMetricsGrid() {
+    final bool showRotaAtual = widget.isVehicleContext && _tempoRotaAtual > 0;
+    final int tempoMinutos = showRotaAtual ? _tempoRotaAtual : _tempoMedioViagem;
+
     String tempoStr;
-    if (_tempoRotaAtual == 0) {
+    if (tempoMinutos == 0) {
       tempoStr = '0h 0m';
     } else {
-      final h = _tempoRotaAtual ~/ 60;
-      final m = _tempoRotaAtual % 60;
+      final h = tempoMinutos ~/ 60;
+      final m = tempoMinutos % 60;
       tempoStr = m == 0 ? '${h}h' : '${h}h${m.toString().padLeft(2, '0')}';
     }
+
+    final String tempoTitle = showRotaAtual ? 'Tempo na rota atual' : 'Tempo médio de viagem';
 
     String conformidadeStr;
     if (_conformidade == 0.0) {
@@ -941,7 +1031,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
       crossAxisSpacing: 10,
       mainAxisSpacing: 10,
       shrinkWrap: true,
-      childAspectRatio: 1.65,
+      childAspectRatio: 2.3,
       physics: const NeverScrollableScrollPhysics(),
       children: [
         _buildMetricCard(
@@ -950,9 +1040,9 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
           icon: Icons.map_outlined,
         ),
         _buildMetricCard(
-          title: 'Tempo na rota atual',
+          title: tempoTitle,
           value: tempoStr,
-          icon: Icons.access_time_rounded,
+          icon: showRotaAtual ? Icons.access_time_rounded : Icons.timer_outlined,
         ),
         _buildMetricCard(
           title: 'Conformidade',
@@ -974,10 +1064,10 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
     required IconData icon,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
@@ -986,37 +1076,241 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
+      child: Row(
         children: [
           Container(
-            width: 28,
-            height: 28,
+            width: 32,
+            height: 32,
             decoration: BoxDecoration(
               color: const Color(0xFFC23147),
-              borderRadius: BorderRadius.circular(7),
+              borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(icon, color: Colors.white, size: 16),
+            child: Icon(icon, color: Colors.white, size: 17),
           ),
-          const SizedBox(height: 6),
-          Text(
-            title,
-            style: const TextStyle(
-              color: Color(0xFF666666),
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Color(0xFF666666),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    color: Color(0xFFC23147),
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Color(0xFFC23147),
-              fontSize: 19,
-              fontWeight: FontWeight.bold,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentTelemetryCards() {
+    MedicaoModel? latestMed;
+    double? avgTemp;
+    double? minTemp;
+    double? maxTemp;
+    double? avgUmid;
+    double? maxVib;
+
+    if (_medicoes.isNotEmpty) {
+      final sortedMeds = List<MedicaoModel>.from(_medicoes)
+        ..sort((a, b) => (a.registradoEm ?? DateTime(2000)).compareTo(b.registradoEm ?? DateTime(2000)));
+      latestMed = sortedMeds.last;
+
+      final temps = sortedMeds.where((m) => m.temperatura != null).map((m) => m.temperatura!.toDouble()).toList();
+      if (temps.isNotEmpty) {
+        avgTemp = temps.reduce((a, b) => a + b) / temps.length;
+        minTemp = temps.reduce((a, b) => a < b ? a : b);
+        maxTemp = temps.reduce((a, b) => a > b ? a : b);
+      }
+
+      final umids = sortedMeds.where((m) => m.umidade != null).map((m) => m.umidade!.toDouble()).toList();
+      if (umids.isNotEmpty) {
+        avgUmid = umids.reduce((a, b) => a + b) / umids.length;
+      }
+
+      final vibs = sortedMeds.where((m) => m.vibracao != null).map((m) => m.vibracao!.toDouble()).toList();
+      if (vibs.isNotEmpty) {
+        maxVib = vibs.reduce((a, b) => a > b ? a : b);
+      }
+    }
+
+    final String tempStr = latestMed?.temperatura != null ? '${latestMed!.temperatura!.toStringAsFixed(1)}°C' : '--';
+    final String tempSub = avgTemp != null ? 'Méd: ${avgTemp.toStringAsFixed(1)}° (Mín ${minTemp!.toStringAsFixed(0)}° / Máx ${maxTemp!.toStringAsFixed(0)}°)' : 'Sem dados';
+
+    final String umidStr = latestMed?.umidade != null ? '${latestMed!.umidade!.toStringAsFixed(0)}%' : '--';
+    final String umidSub = avgUmid != null ? 'Média no período: ${avgUmid.toStringAsFixed(0)}%' : 'Sem dados';
+
+    final String vibStr = latestMed?.vibracao != null ? '${latestMed!.vibracao!.toStringAsFixed(2)}G' : '--';
+    final String vibSub = maxVib != null ? 'Pico máx: ${maxVib.toStringAsFixed(2)}G' : 'Estável';
+
+    final String batStr = latestMed?.bateria != null ? '${latestMed!.bateria!.toStringAsFixed(0)}%' : '--';
+    final String portaStr = latestMed?.portaAberta == true ? 'Porta aberta' : 'Porta fechada';
+    final String batSub = latestMed != null ? portaStr : 'Sem dados';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Telemetria Recente',
+              style: TextStyle(color: Color(0xFF222222), fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            if (latestMed?.registradoEm != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.access_time_rounded, size: 12, color: Color(0xFF777777)),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Última: ${DateFormat('dd/MM HH:mm').format(latestMed!.registradoEm!)}',
+                      style: const TextStyle(color: Color(0xFF666666), fontSize: 11, fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        GridView.count(
+          crossAxisCount: 2,
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 10,
+          shrinkWrap: true,
+          childAspectRatio: 2.1,
+          physics: const NeverScrollableScrollPhysics(),
+          children: [
+            _buildTelemetryCard(
+              title: 'Temperatura',
+              value: tempStr,
+              subtitle: tempSub,
+              icon: Icons.thermostat_rounded,
+              color: const Color(0xFFC23147),
+            ),
+            _buildTelemetryCard(
+              title: 'Umidade',
+              value: umidStr,
+              subtitle: umidSub,
+              icon: Icons.water_drop_outlined,
+              color: const Color(0xFF0288D1),
+            ),
+            _buildTelemetryCard(
+              title: 'Vibração',
+              value: vibStr,
+              subtitle: vibSub,
+              icon: Icons.vibration_rounded,
+              color: const Color(0xFFE65100),
+            ),
+            _buildTelemetryCard(
+              title: 'Bateria & Porta',
+              value: batStr,
+              subtitle: batSub,
+              icon: Icons.battery_charging_full_rounded,
+              color: const Color(0xFF2E7D32),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTelemetryCard({
+    required String title,
+    required String value,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: color, size: 17),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Color(0xFF666666),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  value,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: Color(0xFF888888),
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w400,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
           ),
         ],
@@ -1217,21 +1511,6 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
       if (roundedY > limit) hasAnyAlert = true;
 
       spots.add(FlSpot(i.toDouble(), roundedY));
-
-      final bool isOverLimit = roundedY > limit;
-      barGroups.add(
-        BarChartGroupData(
-          x: i,
-          barRods: [
-            BarChartRodData(
-              toY: roundedY,
-              color: isOverLimit ? const Color(0xFFC23147) : const Color(0xFF8DB600),
-              width: 14,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(5)),
-            ),
-          ],
-        ),
-      );
     }
 
     double minY = 0.0;
@@ -1259,13 +1538,40 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
       unitSuffix = '°';
     }
 
+    for (int i = 0; i < spots.length; i++) {
+      final y = spots[i].y;
+      final bool isOverLimit = y > limit;
+      barGroups.add(
+        BarChartGroupData(
+          x: i,
+          barRods: [
+            BarChartRodData(
+              toY: y,
+              color: isOverLimit ? const Color(0xFFC23147) : const Color(0xFF8DB600),
+              width: 16,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(5)),
+              backDrawRodData: BackgroundBarChartRodData(
+                show: true,
+                toY: maxY,
+                color: Colors.black.withValues(alpha: 0.04),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final double avgFound = spots.isNotEmpty
+        ? (spots.map((s) => s.y).reduce((a, b) => a + b) / spots.length)
+        : 0.0;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildTelemetryHeader(paramTitle),
         const SizedBox(height: 12),
         Container(
-          height: 215,
+          height: 225,
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
           decoration: BoxDecoration(
             color: Colors.white,
@@ -1301,6 +1607,15 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
                           fontSize: 11,
                           color: Color(0xFF555555),
                           fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Média: ${avgFound.toStringAsFixed(1)}$unitSuffix',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF777777),
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ],
@@ -1479,8 +1794,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
                           lineBarsData: [
                             LineChartBarData(
                               spots: spots,
-                              isCurved: true,
-                              curveSmoothness: 0.20,
+                              isCurved: false,
                               color: const Color(0xFF8DB600),
                               barWidth: 2.4,
                               isStrokeCapRound: true,
@@ -1784,6 +2098,248 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildRecentAlertsSection() {
+    final sortedOcorrencias = List<OcorrenciaModel>.from(_ocorrencias)
+      ..sort((a, b) => (b.criadoEm ?? DateTime(2000)).compareTo(a.criadoEm ?? DateTime(2000)));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                const Text(
+                  'Alertas & Ocorrências',
+                  style: TextStyle(color: Color(0xFF222222), fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: _ocorrencias.isNotEmpty
+                        ? const Color(0xFFC23147).withValues(alpha: 0.12)
+                        : const Color(0xFF8DB600).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '${_ocorrencias.length}',
+                    style: TextStyle(
+                      color: _ocorrencias.isNotEmpty ? const Color(0xFFC23147) : const Color(0xFF2E7D32),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (sortedOcorrencias.isNotEmpty)
+              Text(
+                'Últimos ${sortedOcorrencias.length > 5 ? 5 : sortedOcorrencias.length} eventos',
+                style: const TextStyle(fontSize: 11, color: Color(0xFF777777), fontWeight: FontWeight.w500),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (sortedOcorrencias.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFF8DB600).withValues(alpha: 0.2)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.03),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF8DB600).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.check_circle_outline_rounded, color: Color(0xFF2E7D32), size: 22),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Nenhuma ocorrência registrada',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF222222)),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Nenhuma anomalia de temperatura, vibração ou umidade detectada no período.',
+                        style: TextStyle(fontSize: 11, color: Color(0xFF666666), height: 1.25),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          ...sortedOcorrencias.take(5).map((o) => _buildAlertCard(o)),
+      ],
+    );
+  }
+
+  Widget _buildAlertCard(OcorrenciaModel o) {
+    final dev = _dispositivos.where((d) => d.id == o.idDispositivo).firstOrNull;
+    final String nomeVeiculo = dev?.placaVeiculo ?? dev?.nomeDispositivo ?? (o.idDispositivo != null ? 'Dispositivo ${o.idDispositivo!.substring(0, o.idDispositivo!.length > 8 ? 8 : o.idDispositivo!.length)}' : 'Veículo');
+    final String tipoLower = (o.tipo ?? '').toLowerCase();
+
+    IconData alertIcon = Icons.warning_amber_rounded;
+    Color alertColor = const Color(0xFFC23147);
+    String unit = '';
+
+    if (tipoLower.contains('vibr')) {
+      alertIcon = Icons.vibration_rounded;
+      alertColor = const Color(0xFFE65100);
+      unit = 'G';
+    } else if (tipoLower.contains('umid')) {
+      alertIcon = Icons.water_drop_outlined;
+      alertColor = const Color(0xFF0288D1);
+      unit = '%';
+    } else if (tipoLower.contains('porta')) {
+      alertIcon = Icons.sensor_door_outlined;
+      alertColor = const Color(0xFFE65100);
+    } else {
+      alertIcon = Icons.thermostat_rounded;
+      alertColor = const Color(0xFFC23147);
+      unit = '°C';
+    }
+
+    final bool isResolvido = (o.status ?? '').toLowerCase() == 'resolvido';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: alertColor.withValues(alpha: 0.15),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: alertColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(alertIcon, color: alertColor, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        o.tipo ?? 'Alerta de Telemetria',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: alertColor,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: isResolvido
+                            ? const Color(0xFFE8F5E9)
+                            : const Color(0xFFFDE8EC),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        isResolvido ? 'Resolvido' : (o.status ?? 'Pendente'),
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: isResolvido
+                              ? const Color(0xFF2E7D32)
+                              : const Color(0xFFC23147),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Row(
+                  children: [
+                    Text(
+                      nomeVeiculo,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF333333),
+                      ),
+                    ),
+                    if (o.valorRegistrado != null) ...[
+                      const SizedBox(width: 6),
+                      Text(
+                        '• Registrado: ${o.valorRegistrado}$unit',
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF555555)),
+                      ),
+                    ],
+                    if (o.limiteConfigurado != null) ...[
+                      const SizedBox(width: 4),
+                      Text(
+                        '(Limite: ${o.limiteConfigurado}$unit)',
+                        style: const TextStyle(fontSize: 10.5, color: Color(0xFF888888)),
+                      ),
+                    ],
+                  ],
+                ),
+                if (o.criadoEm != null) ...[
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      const Icon(Icons.access_time, size: 11, color: Color(0xFF999999)),
+                      const SizedBox(width: 3),
+                      Text(
+                        DateFormat('dd/MM/yyyy HH:mm').format(o.criadoEm!),
+                        style: const TextStyle(fontSize: 10.5, color: Color(0xFF888888)),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
