@@ -221,12 +221,11 @@ void main() {
       expect(find.text('CONFORME'), findsOneWidget);
       expect(find.text('Nenhum alerta registrado'), findsOneWidget);
 
-      // Trips Stylized Empty Card
-      expect(find.text('Nenhuma viagem registrada'), findsOneWidget);
-      expect(find.text('Viagens são registradas automaticamente via telemetria contínua.'), findsOneWidget);
+      // Trips Empty State
+      expect(find.text('Nenhuma viagem realizada'), findsOneWidget);
 
-      // Export Button contextual text
-      expect(find.text('Exportar Relatório do Período (PDF)'), findsOneWidget);
+      // Export Button
+      expect(find.text('Exportar PDF'), findsOneWidget);
     });
   });
 }

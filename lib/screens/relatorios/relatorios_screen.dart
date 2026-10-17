@@ -58,6 +58,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
   String _periodoSelecionado = 'Dia'; // Dia, Semana, Mês
   String? _selectedFrotaId;
   String? _selectedDispositivoId;
+  String _selectedTelemetriaParametro = 'Temperatura';
 
   bool _isLoading = true;
   String _errorMessage = '';
@@ -728,50 +729,55 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
   }
 
   Widget _buildHeader(BuildContext context) {
+    final role = _perfil?.role ?? '';
+    final isOperador = role == 'operador';
+    final String roleBadge = (role == 'admin' || role == 'adm')
+        ? 'ADM'
+        : (role == 'gerente' ? 'GERENTE' : 'Operador');
+    final String titleText = isOperador
+        ? 'Relatório'
+        : (widget.isVehicleContext ? 'Relatório — Veículo' : 'Relatório — Frota');
+
     return Row(
       children: [
-        GestureDetector(
-          onTap: () {
-            if (Navigator.canPop(context)) {
+        if (Navigator.canPop(context)) ...[
+          GestureDetector(
+            onTap: () {
               Navigator.pop(context);
-            } else {
-              final role = _perfil?.role;
-              if (role == 'gerente') {
-                Navigator.pushReplacementNamed(context, '/dashboard-gerente');
-              } else if (role == 'operador') {
-                Navigator.pushReplacementNamed(context, '/dashboard-operador');
-              } else {
-                Navigator.pushReplacementNamed(context, '/dashboard-admin');
-              }
-            }
-          },
-          child: const Icon(Icons.arrow_back, color: Color(0xFFC23147), size: 28),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                widget.isVehicleContext ? 'Relatório — Veículo' : 'Relatório — Frota',
-                style: const TextStyle(
-                  color: Color(0xFFC23147),
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              if (_perfil != null)
-                Text(
-                  (_perfil!.role == 'admin' || _perfil!.role == 'adm') ? 'ADM' : _perfil!.role.toUpperCase(),
-                  style: const TextStyle(
-                    color: Color(0xFFC23147),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-            ],
+            },
+            child: const Padding(
+              padding: EdgeInsets.only(right: 8.0),
+              child: Icon(Icons.arrow_back, color: Color(0xFFC23147), size: 26),
+            ),
+          ),
+        ],
+        Text(
+          titleText,
+          style: const TextStyle(
+            color: Color(0xFFC23147),
+            fontSize: 26,
+            fontWeight: FontWeight.bold,
           ),
         ),
+        if (_perfil != null) ...[
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: const Color(0xFFC23147),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              roleBadge,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+        const Spacer(),
         GestureDetector(
           onTap: () => CustomEndDrawer.showMenu(
             context,
@@ -780,13 +786,13 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
             hasDevicesOverride: _dispositivos.isNotEmpty,
           ),
           child: SizedBox(
-            width: 52,
-            height: 52,
+            width: 44,
+            height: 44,
             child: Image.asset(
               'assets/images/logo.png',
               color: const Color(0xFFC23147),
-              width: 44,
-              height: 44,
+              width: 38,
+              height: 38,
             ),
           ),
         ),
@@ -869,7 +875,15 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
+      padding: const EdgeInsets.all(4),
       child: Row(
         children: ['Dia', 'Semana', 'Mês'].map((period) {
           bool isSelected = _periodoSelecionado == period;
@@ -880,17 +894,18 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
                 _loadReportData();
               },
               child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 12),
+                padding: const EdgeInsets.symmetric(vertical: 9),
                 decoration: BoxDecoration(
                   color: isSelected ? const Color(0xFFC23147) : Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
                   period,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: isSelected ? Colors.white : Colors.black54,
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    color: isSelected ? Colors.white : const Color(0xFF555555),
+                    fontSize: 13,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
                   ),
                 ),
               ),
@@ -902,83 +917,105 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
   }
 
   Widget _buildMetricsGrid() {
+    String tempoStr;
+    if (_tempoRotaAtual == 0) {
+      tempoStr = '0h 0m';
+    } else {
+      final h = _tempoRotaAtual ~/ 60;
+      final m = _tempoRotaAtual % 60;
+      tempoStr = m == 0 ? '${h}h' : '${h}h${m.toString().padLeft(2, '0')}';
+    }
+
+    String conformidadeStr;
+    if (_conformidade == 0.0) {
+      conformidadeStr = '0.0%';
+    } else if (_conformidade == _conformidade.roundToDouble()) {
+      conformidadeStr = '${_conformidade.toInt()}%';
+    } else {
+      conformidadeStr = '${_conformidade.toStringAsFixed(0)}%';
+    }
+
     return GridView.count(
       crossAxisCount: 2,
-      crossAxisSpacing: 12,
-      mainAxisSpacing: 12,
+      crossAxisSpacing: 14,
+      mainAxisSpacing: 14,
       shrinkWrap: true,
-      childAspectRatio: 1.4,
+      childAspectRatio: 1.15,
       physics: const NeverScrollableScrollPhysics(),
       children: [
         _buildMetricCard(
-          'Viagens no período',
-          '$_totalViagens',
-          Icons.alt_route_rounded,
+          title: 'Viagens no período',
+          value: '$_totalViagens',
+          icon: Icons.map_outlined,
         ),
         _buildMetricCard(
-          'Tempo na rota atual',
-          '${_tempoRotaAtual ~/ 60}h ${_tempoRotaAtual % 60}m',
-          Icons.timer_outlined,
+          title: 'Tempo na rota atual',
+          value: tempoStr,
+          icon: Icons.access_time_rounded,
         ),
         _buildMetricCard(
-          'Conformidade',
-          '${_conformidade.toStringAsFixed(1)}%',
-          Icons.verified_outlined,
-          iconColor: _conformidade >= 90 ? const Color(0xFF8DB600) : const Color(0xFFC23147),
+          title: 'Conformidade',
+          value: conformidadeStr,
+          icon: Icons.check_box_rounded,
         ),
         _buildMetricCard(
-          'Alertas recebidos',
-          '$_alertasRecebidos',
-          Icons.notifications_none_rounded,
-          iconColor: _alertasRecebidos > 0 ? const Color(0xFFC23147) : const Color(0xFF8DB600),
+          title: 'Alertas recebidos',
+          value: '$_alertasRecebidos',
+          icon: Icons.warning_amber_rounded,
         ),
       ],
     );
   }
 
-  Widget _buildMetricCard(String title, String value, IconData icon, {Color? iconColor}) {
-    final color = iconColor ?? const Color(0xFFC23147);
+  Widget _buildMetricCard({
+    required String title,
+    required String value,
+    required IconData icon,
+  }) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 10,
-            offset: const Offset(0, 4),
+            offset: const Offset(0, 3),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(color: Color(0xFF666666), fontSize: 11, fontWeight: FontWeight.w500),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.all(5),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, size: 14, color: color),
-              ),
-            ],
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: const Color(0xFFC23147),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: Colors.white, size: 20),
           ),
+          const SizedBox(height: 10),
+          Text(
+            title,
+            style: const TextStyle(
+              color: Color(0xFF666666),
+              fontSize: 11,
+              fontWeight: FontWeight.w400,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 4),
           Text(
             value,
-            style: TextStyle(color: color, fontSize: 22, fontWeight: FontWeight.bold),
+            style: const TextStyle(
+              color: Color(0xFFC23147),
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ],
       ),
@@ -1053,116 +1090,357 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
   }
 
   Widget _buildChart1() {
-    List<FlSpot> spots = [];
-    if (_medicoes.isNotEmpty) {
-      _medicoes.sort((a,b) => a.registradoEm!.compareTo(b.registradoEm!));
-      double start = _medicoes.first.registradoEm!.millisecondsSinceEpoch.toDouble();
-      for (var m in _medicoes) {
-        if (m.temperatura != null) {
-          double x = (m.registradoEm!.millisecondsSinceEpoch.toDouble() - start) / 3600000.0;
-          spots.add(FlSpot(x, m.temperatura!.toDouble()));
+    double limit = 8.0;
+    String limitLabel = '8°C';
+    String paramTitle = 'Temperatura média';
+
+    if (_selectedTelemetriaParametro == 'Umidade') {
+      limit = 60.0;
+      limitLabel = '60%';
+      paramTitle = 'Umidade média';
+    } else if (_selectedTelemetriaParametro == 'Vibração') {
+      limit = 2.0;
+      limitLabel = '2.0G';
+      paramTitle = 'Vibração média';
+    } else {
+      // Temperatura
+      if (_dispositivos.isNotEmpty && _selectedDispositivoId != null) {
+        final d = _dispositivos.where((x) => x.id == _selectedDispositivoId).firstOrNull;
+        if (d?.temperaturaMaxima != null) {
+          limit = d!.temperaturaMaxima!.toDouble();
+          limitLabel = '${limit.toStringAsFixed(0)}°C';
         }
       }
+    }
+
+    if (_medicoes.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildTelemetryHeader(paramTitle),
+          const SizedBox(height: 12),
+          Container(
+            height: 195,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: _buildEmptyChartState(
+              icon: Icons.show_chart_rounded,
+              title: 'Sem medições de temperatura',
+              subtitle: 'Nenhum registro térmico capturado no período ($_periodoSelecionado).',
+              color: const Color(0xFFC23147),
+              badgeText: 'SEM MEDIÇÕES',
+            ),
+          ),
+        ],
+      );
+    }
+
+    final sorted = List<MedicaoModel>.from(_medicoes);
+    sorted.sort((a, b) => a.registradoEm!.compareTo(b.registradoEm!));
+    DateTime t0 = sorted.first.registradoEm!;
+    DateTime tEnd = sorted.last.registradoEm!;
+    if (tEnd.difference(t0).inMinutes < 60) {
+      tEnd = t0.add(const Duration(hours: 1));
+    }
+    final int totalMin = tEnd.difference(t0).inMinutes;
+
+    List<String> timeLabels = [];
+    for (int i = 0; i < 7; i++) {
+      DateTime slotTime = t0.add(Duration(minutes: (totalMin * (i / 6)).round()));
+      if (i == 0) {
+        timeLabels.add('${DateFormat('H:mm').format(slotTime)}\n(Início)');
+      } else if (i == 6) {
+        timeLabels.add('${DateFormat('H:mm').format(slotTime)}\n(Agora)');
+      } else {
+        timeLabels.add(DateFormat('H:mm').format(slotTime));
+      }
+    }
+
+    List<FlSpot> spots = [];
+    for (var m in sorted) {
+      double? y;
+      if (_selectedTelemetriaParametro == 'Umidade') {
+        y = m.umidade?.toDouble();
+      } else if (_selectedTelemetriaParametro == 'Vibração') {
+        y = m.vibracao?.toDouble();
+      } else {
+        y = m.temperatura?.toDouble();
+      }
+      if (y != null) {
+        int mMin = m.registradoEm!.difference(t0).inMinutes;
+        double x = (mMin / totalMin) * 6.0;
+        spots.add(FlSpot(x.clamp(0.0, 6.0), y));
+      }
+    }
+
+    if (spots.isEmpty) {
+      spots = [FlSpot(0, limit * 0.6), FlSpot(6, limit * 0.6)];
+    } else if (spots.length == 1) {
+      spots = [FlSpot(0, spots.first.y), FlSpot(6, spots.first.y)];
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            const Text(
-              'Temperatura média',
-              style: TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const Spacer(),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Row(
-                children: [
-                  Text('Temperatura', style: TextStyle(color: Colors.black54, fontSize: 12)),
-                  Icon(Icons.keyboard_arrow_down, color: Colors.black54, size: 16),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
+        _buildTelemetryHeader(paramTitle),
+        const SizedBox(height: 12),
         Container(
-          height: 200,
-          padding: const EdgeInsets.all(16),
+          height: 195,
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
+                color: Colors.black.withValues(alpha: 0.04),
                 blurRadius: 10,
-                offset: const Offset(0, 4),
+                offset: const Offset(0, 3),
               ),
             ],
           ),
-          child: _medicoes.isEmpty
-            ? _buildEmptyChartState(
-                icon: Icons.show_chart_rounded,
-                title: 'Sem medições de temperatura',
-                subtitle: 'Nenhum registro térmico capturado no período ($_periodoSelecionado).',
-                color: const Color(0xFFC23147),
-                badgeText: 'SEM MEDIÇÕES',
-              )
-            : LineChart(
-                LineChartData(
-                  gridData: const FlGridData(show: false),
-                  titlesData: const FlTitlesData(
-                    topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          child: Stack(
+            children: [
+              Positioned(
+                top: 0,
+                left: 2,
+                child: Text(
+                  'Limite: $limitLabel',
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: Color(0xFF666666),
+                    fontWeight: FontWeight.w500,
                   ),
-                  borderData: FlBorderData(show: false),
-                  lineBarsData: [
-                    LineChartBarData(
-                      spots: spots,
-                      isCurved: true,
-                      color: const Color(0xFFC23147),
-                      barWidth: 3,
-                      isStrokeCapRound: true,
-                      dotData: const FlDotData(show: false),
-                      belowBarData: BarAreaData(
-                        show: true,
-                        color: const Color(0xFFC23147).withValues(alpha: 0.2),
-                      ),
-                    ),
-                  ],
                 ),
               ),
+              Padding(
+                padding: const EdgeInsets.only(top: 16.0),
+                child: LineChart(
+                  LineChartData(
+                    minX: 0,
+                    maxX: 6,
+                    gridData: const FlGridData(show: false),
+                    borderData: FlBorderData(show: false),
+                    extraLinesData: ExtraLinesData(
+                      horizontalLines: [
+                        HorizontalLine(
+                          y: limit,
+                          color: const Color(0xFFE57373),
+                          strokeWidth: 1.2,
+                          dashArray: [4, 4],
+                        ),
+                      ],
+                    ),
+                    titlesData: FlTitlesData(
+                      topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      bottomTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 32,
+                          interval: 1,
+                          getTitlesWidget: (value, meta) {
+                            int idx = value.round();
+                            if (idx >= 0 && idx < timeLabels.length) {
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 4.0),
+                                child: Text(
+                                  timeLabels[idx],
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    fontSize: 9,
+                                    color: Color(0xFF777777),
+                                    height: 1.1,
+                                  ),
+                                ),
+                              );
+                            }
+                            return const SizedBox.shrink();
+                          },
+                        ),
+                      ),
+                    ),
+                    lineBarsData: [
+                      LineChartBarData(
+                        spots: spots,
+                        isCurved: true,
+                        curveSmoothness: 0.35,
+                        color: const Color(0xFF9ECA38),
+                        barWidth: 2.2,
+                        isStrokeCapRound: true,
+                        belowBarData: BarAreaData(show: false),
+                        dotData: FlDotData(
+                          show: true,
+                          checkToShowDot: (spot, barData) => spot.y > limit,
+                          getDotPainter: (spot, percent, barData, index) {
+                            return FlDotCirclePainter(
+                              radius: 5,
+                              color: const Color(0xFFC23147),
+                              strokeWidth: 2,
+                              strokeColor: Colors.white,
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTelemetryHeader(String title) {
+    return Row(
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: Color(0xFF222222),
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const Spacer(),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: _selectedTelemetriaParametro,
+              isDense: true,
+              icon: const Icon(Icons.keyboard_arrow_down, color: Colors.black54, size: 18),
+              style: const TextStyle(color: Colors.black87, fontSize: 13, fontWeight: FontWeight.w500),
+              items: ['Temperatura', 'Umidade', 'Vibração'].map((String p) {
+                return DropdownMenuItem<String>(value: p, child: Text(p));
+              }).toList(),
+              onChanged: (newVal) {
+                if (newVal != null) {
+                  setState(() => _selectedTelemetriaParametro = newVal);
+                }
+              },
+            ),
+          ),
         ),
       ],
     );
   }
 
   Widget _buildChart2() {
-    List<BarChartGroupData> barGroups = [];
-    if (_ocorrencias.isNotEmpty) {
-      // Aggregate by day inside the period
-      Map<int, int> counts = {};
-      for(var o in _ocorrencias) {
-        if (o.criadoEm != null) {
-          int day = o.criadoEm!.day;
-          counts[day] = (counts[day] ?? 0) + 1;
-        }
+    if (_ocorrencias.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Alertas',
+            style: TextStyle(color: Color(0xFF222222), fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            height: 180,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: _buildEmptyChartState(
+              icon: Icons.check_circle_outline_rounded,
+              title: 'Nenhum alerta registrado',
+              subtitle: 'Todos os parâmetros operaram em conformidade no período ($_periodoSelecionado).',
+              color: const Color(0xFF8DB600),
+              badgeText: 'CONFORME',
+            ),
+          ),
+        ],
+      );
+    }
+
+    DateTime t0;
+    DateTime tEnd;
+    if (_medicoes.isNotEmpty) {
+      final sortedM = List<MedicaoModel>.from(_medicoes);
+      sortedM.sort((a, b) => a.registradoEm!.compareTo(b.registradoEm!));
+      t0 = sortedM.first.registradoEm!;
+      tEnd = sortedM.last.registradoEm!;
+    } else {
+      final sortedO = List<OcorrenciaModel>.from(_ocorrencias);
+      sortedO.sort((a, b) => a.criadoEm!.compareTo(b.criadoEm!));
+      t0 = sortedO.first.criadoEm!;
+      tEnd = sortedO.last.criadoEm!;
+    }
+
+    if (tEnd.difference(t0).inMinutes < 60) {
+      tEnd = t0.add(const Duration(hours: 1));
+    }
+    final int totalMin = tEnd.difference(t0).inMinutes;
+
+    List<String> timeLabels = [];
+    for (int i = 0; i < 7; i++) {
+      DateTime slotTime = t0.add(Duration(minutes: (totalMin * (i / 6)).round()));
+      if (i == 0) {
+        timeLabels.add('${DateFormat('H:mm').format(slotTime)}\n(Início)');
+      } else if (i == 6) {
+        timeLabels.add('${DateFormat('H:mm').format(slotTime)}\n(Agora)');
+      } else {
+        timeLabels.add(DateFormat('H:mm').format(slotTime));
       }
-      int i = 0;
-      counts.forEach((day, count) {
-        barGroups.add(BarChartGroupData(
-          x: i++,
+    }
+
+    List<int> countsPerSlot = List.filled(7, 0);
+    for (var o in _ocorrencias) {
+      if (o.criadoEm != null) {
+        int mMin = o.criadoEm!.difference(t0).inMinutes;
+        int slot = ((mMin / totalMin) * 6.0).clamp(0.0, 6.0).round();
+        countsPerSlot[slot]++;
+      }
+    }
+
+    List<BarChartGroupData> barGroups = [];
+    for (int i = 0; i < 7; i++) {
+      int count = countsPerSlot[i];
+      barGroups.add(
+        BarChartGroupData(
+          x: i,
           barRods: [
-            BarChartRodData(toY: count.toDouble(), color: const Color(0xFFC23147), width: 16, borderRadius: BorderRadius.circular(4))
-          ]
-        ));
-      });
+            BarChartRodData(
+              toY: count.toDouble(),
+              color: const Color(0xFFC23147),
+              width: 18,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+            ),
+          ],
+        ),
+      );
     }
 
     return Column(
@@ -1170,43 +1448,71 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
       children: [
         const Text(
           'Alertas',
-          style: TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.bold),
+          style: TextStyle(color: Color(0xFF222222), fontSize: 16, fontWeight: FontWeight.bold),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         Container(
-          height: 200,
-          padding: const EdgeInsets.all(16),
+          height: 180,
+          padding: const EdgeInsets.fromLTRB(14, 16, 14, 8),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
+                color: Colors.black.withValues(alpha: 0.04),
                 blurRadius: 10,
-                offset: const Offset(0, 4),
+                offset: const Offset(0, 3),
               ),
             ],
           ),
-          child: _ocorrencias.isEmpty
-            ? _buildEmptyChartState(
-                icon: Icons.check_circle_outline_rounded,
-                title: 'Nenhum alerta registrado',
-                subtitle: 'Todos os parâmetros operaram em conformidade no período ($_periodoSelecionado).',
-                color: const Color(0xFF8DB600),
-                badgeText: 'CONFORME',
-              )
-            : BarChart(
-                BarChartData(
-                  gridData: const FlGridData(show: false),
-                  titlesData: const FlTitlesData(
-                    topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  ),
-                  borderData: FlBorderData(show: false),
-                  barGroups: barGroups,
+          child: BarChart(
+            BarChartData(
+              minY: 0,
+              maxY: 4,
+              gridData: FlGridData(
+                show: true,
+                drawVerticalLine: false,
+                horizontalInterval: 1,
+                getDrawingHorizontalLine: (value) => FlLine(
+                  color: const Color(0xFFE57373).withValues(alpha: 0.5),
+                  strokeWidth: 1,
+                  dashArray: [4, 4],
                 ),
               ),
+              borderData: FlBorderData(show: false),
+              titlesData: FlTitlesData(
+                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 32,
+                    interval: 1,
+                    getTitlesWidget: (value, meta) {
+                      int idx = value.round();
+                      if (idx >= 0 && idx < timeLabels.length) {
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 4.0),
+                          child: Text(
+                            timeLabels[idx],
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 9,
+                              color: Color(0xFF777777),
+                              height: 1.1,
+                            ),
+                          ),
+                        );
+                      }
+                      return const SizedBox.shrink();
+                    },
+                  ),
+                ),
+              ),
+              barGroups: barGroups,
+            ),
+          ),
         ),
       ],
     );
@@ -1217,81 +1523,22 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Viagens no período',
-          style: TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.bold),
+          'Viagens',
+          style: TextStyle(color: Color(0xFF222222), fontSize: 16, fontWeight: FontWeight.bold),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         if (_viagens.isEmpty)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24.0),
+            child: Center(
+              child: Text(
+                'Nenhuma viagem realizada',
+                style: TextStyle(
+                  color: Color(0xFF757575),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w400,
                 ),
-              ],
-            ),
-            child: Column(
-              children: [
-                Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFC23147).withValues(alpha: 0.08),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.alt_route_rounded,
-                    color: Color(0xFFC23147),
-                    size: 26,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Nenhuma viagem registrada',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                    color: Color(0xFF1E1E1E),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Não há registros de viagens ativas ou concluídas para o período selecionado ($_periodoSelecionado).',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF757575),
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFF2E0),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.lightbulb_outline_rounded, size: 16, color: Color(0xFFC23147)),
-                      SizedBox(width: 8),
-                      Flexible(
-                        child: Text(
-                          'Viagens são registradas automaticamente via telemetria contínua.',
-                          style: TextStyle(fontSize: 11, color: Color(0xFF555555)),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+              ),
             ),
           )
         else
@@ -1381,23 +1628,23 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
   }
 
   Widget _buildExportButton() {
-    final bool hasNoData = _medicoes.isEmpty && _ocorrencias.isEmpty && _viagens.isEmpty;
     return SizedBox(
       width: double.infinity,
+      height: 50,
       child: ElevatedButton.icon(
         onPressed: _exportToPDF,
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFFC23147),
-          padding: const EdgeInsets.symmetric(vertical: 16),
+          padding: const EdgeInsets.symmetric(vertical: 14),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(12),
           ),
-          elevation: 2,
+          elevation: 0,
         ),
-        icon: const Icon(Icons.download_rounded, color: Colors.white),
-        label: Text(
-          hasNoData ? 'Exportar Relatório do Período (PDF)' : 'Exportar Relatório Completo (PDF)',
-          style: const TextStyle(
+        icon: const Icon(Icons.download_rounded, color: Colors.white, size: 22),
+        label: const Text(
+          'Exportar PDF',
+          style: TextStyle(
             color: Colors.white,
             fontSize: 16,
             fontWeight: FontWeight.bold,
