@@ -5,12 +5,6 @@
 --   1. Acesse o painel do seu projeto no Supabase (https://supabase.com/dashboard)
 --   2. No menu lateral esquerdo, clique em "SQL Editor"
 --   3. Cole todo o conteúdo deste arquivo e clique no botão verde "Run"
---
--- Respostas às dúvidas sobre RLS:
---   - SIM, é para rodar com RLS habilitado! O script configura automaticamente
---     todas as políticas RLS para leitura e escrita dos usuários autenticados.
---   - No SQL Editor, o script roda com privilégios administrativos (service_role),
---     populando os dados com segurança mesmo com RLS ativo.
 -- ==============================================================================
 
 -- Habilita extensões para geração de UUID e criptografia de senhas
@@ -21,7 +15,6 @@ create extension if not exists "pgcrypto";
 -- 1. GARANTE A ESTRUTURA DAS TABELAS CONFORME O DIAGRAMA
 -- ==============================================================================
 
--- Tabela: Usuarios
 create table if not exists public."Usuarios" (
     id uuid primary key references auth.users(id) on delete cascade,
     nome text not null,
@@ -37,7 +30,6 @@ create table if not exists public."Usuarios" (
     updated_at timestamptz not null default now()
 );
 
--- Tabela: Frotas
 create table if not exists public."Frotas" (
     id uuid primary key default gen_random_uuid(),
     id_gerente uuid references public."Usuarios"(id) on delete set null,
@@ -46,7 +38,6 @@ create table if not exists public."Frotas" (
     updated_at timestamptz not null default now()
 );
 
--- Tabela: Dispositivos (sensibilidade_vibracao e limite_vibracao sao int8)
 create table if not exists public."Dispositivos" (
     id uuid primary key default gen_random_uuid(),
     id_operador uuid references public."Usuarios"(id) on delete set null,
@@ -68,14 +59,12 @@ create table if not exists public."Dispositivos" (
     updated_at timestamptz not null default now()
 );
 
--- Tabela: dispositivo_credenciais
 create table if not exists public.dispositivo_credenciais (
     id_dispositivo uuid primary key references public."Dispositivos"(id) on delete cascade,
     token_hash text not null,
     created_at timestamptz not null default now()
 );
 
--- Tabela: medicoes
 create table if not exists public."medicoes" (
     id uuid primary key default gen_random_uuid(),
     id_dispositivo uuid references public."Dispositivos"(id) on delete cascade,
@@ -89,7 +78,6 @@ create table if not exists public."medicoes" (
     registrado_em timestamptz not null default now()
 );
 
--- Tabela: ocorrencias
 create table if not exists public."ocorrencias" (
     id uuid primary key default gen_random_uuid(),
     id_dispositivo uuid references public."Dispositivos"(id) on delete cascade,
@@ -101,12 +89,6 @@ create table if not exists public."ocorrencias" (
     criado_em timestamptz not null default now()
 );
 
--- Flexibiliza ou alinha a constraint ocorrencias_status_check
-alter table public."ocorrencias" drop constraint if exists ocorrencias_status_check;
-alter table public."ocorrencias" add constraint ocorrencias_status_check
-  check (status in ('Resolvido', 'Pendente', 'resolvido', 'pendente', 'Ativo', 'ativo'));
-
--- Tabela: fins_viagem
 create table if not exists public.fins_viagem (
     id uuid primary key default gen_random_uuid(),
     id_operador uuid references public."Usuarios"(id) on delete set null,
@@ -121,8 +103,21 @@ create table if not exists public.fins_viagem (
     atualizado_em timestamptz not null default now()
 );
 
+-- Remove qualquer constraint restritiva antiga de status que cause erro
+alter table public."ocorrencias" drop constraint if exists ocorrencias_status_check;
+
 -- ==============================================================================
--- 2. BLINDAGEM DA TRIGGER handle_new_user
+-- 2. LIMPEZA TOTAL IMEDIATA DAS TABELAS OPERACIONAIS (TRUNCATE PRIMEIRO)
+-- ==============================================================================
+truncate table public.fins_viagem cascade;
+truncate table public."ocorrencias" cascade;
+truncate table public."medicoes" cascade;
+truncate table public.dispositivo_credenciais cascade;
+truncate table public."Dispositivos" cascade;
+truncate table public."Frotas" cascade;
+
+-- ==============================================================================
+-- 3. BLINDAGEM DA TRIGGER handle_new_user
 -- ==============================================================================
 create or replace function public.handle_new_user()
 returns trigger
@@ -221,16 +216,6 @@ create policy "fins_viagem_all_auth" on public.fins_viagem for all to authentica
 -- Permissões gerais de schema
 grant select, insert, update, delete on all tables in schema public to authenticated;
 grant select on all tables in schema public to anon;
-
--- ==============================================================================
--- 3. LIMPEZA DOS DADOS OPERACIONAIS
--- ==============================================================================
-truncate table public.fins_viagem cascade;
-truncate table public."ocorrencias" cascade;
-truncate table public."medicoes" cascade;
-truncate table public.dispositivo_credenciais cascade;
-truncate table public."Dispositivos" cascade;
-truncate table public."Frotas" cascade;
 
 -- ==============================================================================
 -- 4. INSERÇÃO COM UUIDs ALEATÓRIOS E RELAÇÕES CONECTADAS
@@ -494,7 +479,7 @@ begin
     (gen_random_uuid(), v_disp4_id, 5.2, 42.0, 0.18, false, -23.5489, -46.6388, 89.0, now() - interval '2 hours'),
     (v_med4_alerta_bat,  v_disp4_id, 5.5, 43.0, 0.22, false, -23.5600, -46.6500, 19.5, now() - interval '20 minutes');
 
-  -- 4.7. Ocorrências (status 'Resolvido' e 'Pendente' compatíveis com o Flutter e com a constraint)
+  -- 4.7. Ocorrências (status 'Resolvido' e 'Pendente' compatíveis com o Flutter)
   insert into public."ocorrencias" (
     id, id_dispositivo, id_medicao, tipo, valor_registrado, limite_configurado, status, criado_em
   ) values
