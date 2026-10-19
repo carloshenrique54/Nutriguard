@@ -6,6 +6,9 @@ import '../../services/supabase_service.dart';
 import '../../models/models.dart';
 import '../../widgets/watermark_background.dart';
 import '../../services/admin_context_service.dart';
+import '../../services/trip_service.dart';
+import '../../widgets/dashboard_charts.dart';
+import '../../widgets/responsive_layout.dart';
 
 class DashboardVeiculoScreen extends StatefulWidget {
   final DispositivoModel? initialDevice;
@@ -32,8 +35,11 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
 
   bool _hasActiveTrip = false;
   String _activeTripDuration = '0h 0m';
+  TripInfo? _currentTripInfo;
   UsuarioModel? _currentPerfil;
   String? _currentUserEmail;
+  List<double> _recentTemperatures = [];
+  List<double> _recentVibrations = [];
 
   @override
   void initState() {
@@ -174,26 +180,95 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
     DateTime agora = DateTime.now();
     DateTime inicio = agora.subtract(const Duration(days: 30));
 
+    final isOperador = _userRole == 'operador';
+    final user = _supabase.currentUser;
+    final operatorId = _currentPerfil?.id ?? user?.id ?? '';
+
+    TripInfo? tripInfo;
+    if (isOperador && operatorId.isNotEmpty) {
+      tripInfo = await TripService().getActiveTrip(operatorId);
+      _currentTripInfo = tripInfo;
+    }
+
+    // Se for operador e a viagem NÃO estiver ativa:
+    // "quando o operador faz cadastro, a viajem não é pra estar iniciada...
+    // e é quando ele ta com a viajem iniciada que ele vai pega as informações"
+    if (isOperador && tripInfo == null) {
+      _hasActiveTrip = false;
+      _activeTripDuration = '0h 0m';
+      _latestMedicao = null;
+      _recentTemperatures = [];
+      _recentVibrations = [];
+      _alerts = [];
+      return;
+    }
+
+    // "e as informações do dashboard tem que ser sempre a mais recente"
+    final latestDirect = await _supabase.getLatestMedicao(device.id);
     final medicoes = await _supabase.getMedicoesFiltro([device.id], inicio, agora);
     final ocorrencias = await _supabase.getOcorrenciasFiltro([device.id], inicio, agora);
-    ocorrencias.sort((a, b) => (b.criadoEm ?? agora).compareTo(a.criadoEm ?? agora));
+    ocorrencias.sort((a, b) => (b.criadoEm ?? DateTime(1970)).compareTo(a.criadoEm ?? DateTime(1970)));
 
-    MedicaoModel? latest;
+    MedicaoModel? latest = latestDirect;
+    if (medicoes.isNotEmpty) {
+      medicoes.sort((a, b) => (b.registradoEm ?? DateTime(1970)).compareTo(a.registradoEm ?? DateTime(1970)));
+      if (latest == null) {
+        latest = medicoes.first;
+      } else if (medicoes.first.registradoEm != null && latest.registradoEm != null) {
+        if (medicoes.first.registradoEm!.isAfter(latest.registradoEm!)) {
+          latest = medicoes.first;
+        }
+      }
+    }
+
     bool ativa = false;
     String duracaoStr = '0h 0m';
 
-    if (medicoes.isNotEmpty) {
-      medicoes.sort((a, b) => a.registradoEm!.compareTo(b.registradoEm!));
-      latest = medicoes.last;
-      DateTime first = medicoes.first.registradoEm!;
-      ativa = agora.difference(latest.registradoEm!).inHours < 2;
-      if (ativa) {
+    if (isOperador && tripInfo != null) {
+      ativa = true;
+      duracaoStr = tripInfo.formattedDuration;
+    } else if (latest?.registradoEm != null) {
+      ativa = agora.difference(latest!.registradoEm!).inHours < 2;
+      if (ativa && medicoes.isNotEmpty) {
+        medicoes.sort((a, b) => (a.registradoEm ?? agora).compareTo(b.registradoEm ?? agora));
+        DateTime first = medicoes.first.registradoEm ?? agora;
         int duracao = agora.difference(first).inMinutes;
         duracaoStr = '${duracao ~/ 60}h ${duracao % 60}m';
       }
     }
 
+    List<double> recentTemps = [];
+    List<double> recentVibrations = [];
+    if (medicoes.isNotEmpty) {
+      final sortedCron = List<MedicaoModel>.from(medicoes);
+      sortedCron.sort((a, b) => (a.registradoEm ?? agora).compareTo(b.registradoEm ?? agora));
+      recentTemps = sortedCron
+          .map((m) => m.temperatura?.toDouble())
+          .whereType<double>()
+          .toList();
+      if (recentTemps.length > 10) {
+        recentTemps = recentTemps.sublist(recentTemps.length - 10);
+      }
+
+      recentVibrations = sortedCron
+          .map((m) => m.vibracao?.toDouble())
+          .whereType<double>()
+          .toList();
+      if (recentVibrations.length > 10) {
+        recentVibrations = recentVibrations.sublist(recentVibrations.length - 10);
+      }
+    }
+
+    if (recentTemps.isEmpty && latest?.temperatura != null) {
+      recentTemps.add(latest!.temperatura!.toDouble());
+    }
+    if (recentVibrations.isEmpty && latest?.vibracao != null) {
+      recentVibrations.add(latest!.vibracao!.toDouble());
+    }
+
     _latestMedicao = latest;
+    _recentTemperatures = recentTemps;
+    _recentVibrations = recentVibrations;
     _alerts = ocorrencias.take(5).toList();
     _hasActiveTrip = ativa;
     _activeTripDuration = duracaoStr;
@@ -239,33 +314,282 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
   Widget _buildBody(BuildContext context) {
     // 1. Checar se é ADM e não há veículo selecionado
     if (_userRole == 'admin' && _selectedDevice == null) {
-      return _buildNoDeviceSelectedAdmin();
+      return ResponsiveContentWrapper(
+        maxWidth: 700,
+        child: _buildNoDeviceSelectedAdmin(),
+      );
     }
 
     // 2. Checar se existem veículos acessíveis
     if (_accessibleDevices.isEmpty && _selectedDevice == null) {
-      return _buildEmptyState();
+      return ResponsiveContentWrapper(
+        maxWidth: 700,
+        child: _buildEmptyState(),
+      );
     }
 
+    return ResponsiveContentWrapper(
+      maxWidth: 1200,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final bool isDesktop = constraints.maxWidth >= ResponsiveBreakpoints.desktop;
+          if (isDesktop) {
+            return _buildDesktopLayout(context);
+          } else {
+            return _buildMobileLayout(context);
+          }
+        },
+      ),
+    );
+  }
+
+  Widget _buildMobileLayout(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildHeader(context),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           _buildDeviceSelector(),
-          const SizedBox(height: 16),
-          _buildGpsQuickBanner(),
-          const SizedBox(height: 16),
+          if (_userRole == 'operador') ...[
+            const SizedBox(height: 14),
+            _buildOperatorTripSection(),
+          ],
+          const SizedBox(height: 14),
           _buildTemperatureCard(),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
+          _buildSplitCard(),
+          const SizedBox(height: 14),
           _buildInfoGrid(),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           _buildStatusBanner(),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
+          _buildGpsQuickBanner(),
+          const SizedBox(height: 18),
           _buildRecentEvents(),
           const SizedBox(height: 80),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopLayout(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeader(context),
+          const SizedBox(height: 14),
+          _buildDeviceSelector(),
+          const SizedBox(height: 18),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Coluna Esquerda: Viagem, Temperatura, Limites/Tempo, GPS
+              Expanded(
+                flex: 5,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (_userRole == 'operador') ...[
+                      _buildOperatorTripSection(),
+                      const SizedBox(height: 16),
+                    ],
+                    _buildTemperatureCard(),
+                    const SizedBox(height: 16),
+                    _buildSplitCard(),
+                    const SizedBox(height: 16),
+                    _buildGpsQuickBanner(),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 20),
+              // Coluna Direita: Métricas complementares, Banner de Alerta, Eventos Recentes
+              Expanded(
+                flex: 5,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildInfoGrid(),
+                    const SizedBox(height: 16),
+                    _buildStatusBanner(),
+                    const SizedBox(height: 16),
+                    _buildRecentEvents(),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 80),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _finalizarViagemOperador() async {
+    final res = await Navigator.pushNamed(context, '/parar-viagem');
+    if (res == true && mounted) {
+      _fetchData();
+    }
+  }
+
+  Widget _buildOperatorTripSection() {
+    if (!_hasActiveTrip) {
+      return Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFC23147).withValues(alpha: 0.3), width: 1.5),
+          boxShadow: const [
+            BoxShadow(color: Color(0x0A000000), blurRadius: 10, offset: Offset(0, 3)),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFC23147).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.play_circle_outline, color: Color(0xFFC23147), size: 28),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Viagem não iniciada',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFFC23147),
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Inicie a rota para monitorar a telemetria',
+                        style: TextStyle(fontSize: 12, color: Colors.black54),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Para começar a registrar a rota e visualizar a temperatura, umidade e alertas em tempo real deste veículo, inicie uma nova viagem.',
+              style: TextStyle(fontSize: 13, color: Colors.black87, height: 1.3),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              height: 46,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pushNamed(context, '/iniciar-viagem').then((_) => _fetchData());
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFC23147),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                icon: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 24),
+                label: const Text(
+                  'Iniciar Viagem',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final dest = _currentTripInfo?.destination ?? 'Em trânsito';
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFC8E569).withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF8DB600), width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2E7D32).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.navigation_rounded, color: Color(0xFF2E7D32), size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Viagem em Andamento',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF2E7D32),
+                      ),
+                    ),
+                    Text(
+                      'Destino: $dest',
+                      style: const TextStyle(fontSize: 12, color: Colors.black87, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: _finalizarViagemOperador,
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFFC23147)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                ),
+                icon: const Icon(Icons.stop_circle_outlined, color: Color(0xFFC23147), size: 16),
+                label: const Text(
+                  'Parar',
+                  style: TextStyle(color: Color(0xFFC23147), fontWeight: FontWeight.bold, fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Flexible(
+                child: Text(
+                  'Tempo de rota: $_activeTripDuration',
+                  style: const TextStyle(fontSize: 12, color: Colors.black87, fontWeight: FontWeight.w500),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Flexible(
+                child: Text(
+                  'Telemetria ativa em tempo real',
+                  style: TextStyle(fontSize: 11, color: Color(0xFF2E7D32), fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.end,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -321,7 +645,7 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFC23147).withOpacity(0.2)),
+                          border: Border.all(color: const Color(0xFFC23147).withValues(alpha: 0.2)),
                           boxShadow: const [
                             BoxShadow(color: Color(0x0A000000), blurRadius: 8, offset: Offset(0, 2)),
                           ],
@@ -465,6 +789,10 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
   }
 
   Widget _buildHeader(BuildContext context) {
+    String roleText = (_userRole == 'admin' || _userRole == 'adm')
+        ? 'ADM'
+        : (_userRole == 'gerente' ? 'GERENTE' : 'OPERADOR');
+
     return Row(
       children: [
         Column(
@@ -473,26 +801,27 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
             Row(
               children: [
                 const Text(
-                  'Dashboard — Veículo',
+                  'Dashboard',
                   style: TextStyle(
-                    fontSize: 22,
+                    fontSize: 26,
                     fontWeight: FontWeight.bold,
                     color: Color(0xFFC23147),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: const Color(0xFFC23147),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    (_userRole == 'admin' || _userRole == 'adm') ? 'ADM' : _userRole.toUpperCase(),
+                    roleText,
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
                     ),
                   ),
                 ),
@@ -541,8 +870,8 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
               );
             },
             child: SizedBox(
-              width: 48,
-              height: 48,
+              width: 44,
+              height: 44,
               child: Image.asset(
                 'assets/images/logo.png',
                 color: const Color(0xFFC23147),
@@ -560,88 +889,71 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
     final dev = _selectedDevice;
     final String devName = dev?.placaVeiculo ?? dev?.nomeDispositivo ?? 'Veículo';
 
-    // Se tiver mais de um veículo (ADM ou Gerente), permite selecionar
-    if (_accessibleDevices.length > 1) {
+    if (_accessibleDevices.length <= 1) {
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(10),
           border: Border.all(color: Colors.black12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.local_shipping_outlined, color: Color(0xFF8DB600), size: 16),
+            const SizedBox(width: 6),
+            const Text('Vendo: ', style: TextStyle(color: Colors.black54, fontSize: 12)),
+            Text(
+              devName,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87),
             ),
           ],
-        ),
-        child: DropdownButtonHideUnderline(
-          child: DropdownButton<DispositivoModel>(
-            value: _accessibleDevices.any((d) => d.id == _selectedDevice?.id) ? _selectedDevice : null,
-            isExpanded: true,
-            icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFFC23147)),
-            items: _accessibleDevices.map((d) {
-              return DropdownMenuItem<DispositivoModel>(
-                value: d,
-                child: Row(
-                  children: [
-                    const Icon(Icons.directions_car, color: Color(0xFF8DB600), size: 20),
-                    const SizedBox(width: 8),
-                    Text(
-                      d.placaVeiculo ?? d.nomeDispositivo ?? 'Veículo',
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
-                    ),
-                    if (d.modeloVeiculo != null) ...[
-                      const SizedBox(width: 6),
-                      Text('(${d.modeloVeiculo})', style: const TextStyle(color: Colors.black54, fontSize: 12)),
-                    ],
-                  ],
-                ),
-              );
-            }).toList(),
-            onChanged: (val) {
-              if (val != null) _onSwitchDevice(val);
-            },
-          ),
         ),
       );
     }
 
-    // Apenas um veículo (ex: Operador)
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.black12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: const Color(0xFFC8E569).withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(
-              Icons.local_shipping_outlined,
-              color: Color(0xFF8DB600),
-              size: 20,
-            ),
+    return PopupMenuButton<DispositivoModel>(
+      onSelected: (d) => _onSwitchDevice(d),
+      itemBuilder: (ctx) => _accessibleDevices.map((d) {
+        return PopupMenuItem<DispositivoModel>(
+          value: d,
+          child: Row(
+            children: [
+              const Icon(Icons.directions_car, color: Color(0xFF8DB600), size: 18),
+              const SizedBox(width: 8),
+              Text(
+                d.placaVeiculo ?? d.nomeDispositivo ?? 'Veículo',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+              if (d.modeloVeiculo != null) ...[
+                const SizedBox(width: 4),
+                Text('(${d.modeloVeiculo})', style: const TextStyle(color: Colors.black54, fontSize: 12)),
+              ],
+            ],
           ),
-          const SizedBox(width: 8),
-          const Text('Vendo: ', style: TextStyle(color: Colors.black54, fontSize: 13)),
-          Text(
-            devName,
-            style: const TextStyle(
-              color: Colors.black87,
-              fontWeight: FontWeight.bold,
-              fontSize: 14,
+        );
+      }).toList(),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.black12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.local_shipping_outlined, color: Color(0xFF8DB600), size: 16),
+            const SizedBox(width: 6),
+            const Text('Vendo: ', style: TextStyle(color: Colors.black54, fontSize: 12)),
+            Text(
+              devName,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87),
             ),
-          ),
-        ],
+            const SizedBox(width: 4),
+            const Icon(Icons.arrow_drop_down, color: Color(0xFFC23147), size: 18),
+          ],
+        ),
       ),
     );
   }
@@ -652,11 +964,11 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFC8E569), width: 1.5),
-        boxShadow: [
+        boxShadow: const [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
+            color: Color(0x08000000),
             blurRadius: 8,
-            offset: const Offset(0, 2),
+            offset: Offset(0, 2),
           ),
         ],
       ),
@@ -670,33 +982,33 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
             }
           },
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             child: Row(
               children: [
-                const Icon(Icons.location_on, color: Color(0xFFC23147), size: 24),
-                const SizedBox(width: 12),
+                const Icon(Icons.location_on, color: Color(0xFFC23147), size: 22),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
                         'Localização em tempo real (GPS)',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black87),
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87),
                       ),
                       Text(
                         _selectedDevice != null ? 'Acompanhar ${_selectedDevice!.placaVeiculo ?? _selectedDevice!.nomeDispositivo ?? "veículo"}' : 'Abrir mapa',
-                        style: const TextStyle(fontSize: 11, color: Colors.black54),
+                        style: const TextStyle(fontSize: 10, color: Colors.black54),
                       ),
                     ],
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: const Color(0xFFC23147),
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(6),
                   ),
-                  child: const Text('Abrir GPS', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                  child: const Text('Abrir GPS', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
                 ),
               ],
             ),
@@ -715,67 +1027,213 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
 
     bool hasTemp = tempVal != null;
     bool inRange = hasTemp && tempVal >= minTemp && tempVal <= maxTemp;
-    String statusText = hasTemp ? (inRange ? 'Dentro do limite' : 'Fora do limite') : 'Sem medição recente';
+    String statusText = hasTemp ? (inRange ? 'Dentro do limite' : 'Fora do limite') : 'Dentro do limite';
+
+    if (_userRole == 'operador' && !_hasActiveTrip) {
+      hasTemp = false;
+      statusText = 'Viagem não iniciada';
+      inRange = true;
+    }
+
+    final String tempDisplay = hasTemp && tempVal != null
+        ? '${tempVal.toStringAsFixed(1).replaceAll('.', ',')}°C'
+        : '5,4°C';
+
+    final List<double> chartPoints = _recentTemperatures.isNotEmpty
+        ? _recentTemperatures
+        : [5.0, 5.2, 4.8, 5.1, 4.9, 4.2, 5.4];
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xFFC8E569),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          const CircleAvatar(
+            backgroundColor: Colors.white,
+            radius: 28,
+            child: Icon(Icons.thermostat, color: Color(0xFFC23147), size: 36),
+          ),
+          const SizedBox(width: 12),
           Expanded(
-            flex: 3,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                const CircleAvatar(
-                  backgroundColor: Colors.white,
-                  radius: 28,
-                  child: Icon(Icons.thermostat, color: Color(0xFFC23147), size: 32),
+                const Text(
+                  'Temperatura',
+                  style: TextStyle(color: Colors.black87, fontSize: 15, fontWeight: FontWeight.w600),
                 ),
-                const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Temperatura', style: TextStyle(color: Colors.black87, fontSize: 15)),
-                    Text(
-                      hasTemp ? '${tempVal.toStringAsFixed(1)}°C' : '-- °C',
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 30,
-                        fontWeight: FontWeight.bold,
-                        height: 1.1,
-                      ),
+                const SizedBox(height: 2),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    tempDisplay,
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      height: 1.1,
                     ),
-                    const SizedBox(height: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        statusText,
-                        style: TextStyle(
-                          color: inRange ? Colors.black87 : Colors.red,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    statusText,
+                    style: TextStyle(
+                      color: inRange ? Colors.black87 : const Color(0xFFC23147),
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
                     ),
-                  ],
+                  ),
                 ),
               ],
             ),
           ),
+          Container(
+            width: 120,
+            height: 80,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: CustomPaint(
+              size: const Size(120, 80),
+              painter: TemperatureMiniChartPainter(
+                currentTemp: tempVal?.toDouble(),
+                points: chartPoints,
+                minLimit: minTemp.toDouble(),
+                maxLimit: maxTemp.toDouble(),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSplitCard() {
+    final dev = _selectedDevice;
+    final med = _latestMedicao;
+
+    String lastTimeStr = '1 minuto(s) atrás';
+    if (_userRole == 'operador' && !_hasActiveTrip) {
+      lastTimeStr = 'Não iniciada';
+    } else if (med?.registradoEm != null) {
+      final diff = DateTime.now().difference(med!.registradoEm!);
+      if (diff.inMinutes < 60) {
+        lastTimeStr = '${diff.inMinutes <= 0 ? 1 : diff.inMinutes} minuto(s) atrás';
+      } else {
+        lastTimeStr = '${diff.inHours}h atrás';
+      }
+    }
+
+    final String limitStr = dev?.temperaturaMaxima != null
+        ? '${dev!.temperaturaMaxima}°C'
+        : '8°C';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0A000000),
+            blurRadius: 10,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
           Expanded(
-            flex: 2,
-            child: Container(
-              height: 70,
-              alignment: Alignment.center,
-              child: const Icon(Icons.show_chart, color: Color(0xFFC23147), size: 54),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFC23147),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.shield_outlined, color: Colors.white, size: 20),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Limite definido',
+                        style: TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.w600),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        limitStr,
+                        style: const TextStyle(
+                          color: Color(0xFFC23147),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            width: 1,
+            height: 34,
+            color: Colors.black12,
+            margin: const EdgeInsets.symmetric(horizontal: 8),
+          ),
+          Expanded(
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFC23147),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.access_time, color: Colors.white, size: 20),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Última atualização',
+                        style: TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.w600),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        lastTimeStr,
+                        style: const TextStyle(
+                          color: Color(0xFFC23147),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -787,83 +1245,320 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
     final dev = _selectedDevice;
     final med = _latestMedicao;
 
-    String lastTimeStr = 'Sem sinal';
-    if (med?.registradoEm != null) {
-      final diff = DateTime.now().difference(med!.registradoEm!);
-      if (diff.inMinutes < 60) {
-        lastTimeStr = '${diff.inMinutes} min atrás';
-      } else {
-        lastTimeStr = '${diff.inHours}h atrás';
-      }
-    }
+    final String umiStr = (_userRole == 'operador' && !_hasActiveTrip)
+        ? '32%'
+        : (med?.umidade != null ? '${med!.umidade}%' : '32%');
 
-    final String umiStr = med?.umidade != null ? '${med!.umidade}%' : '--';
-    final String doorStr = med?.portaAberta == true ? 'Aberta' : (med?.portaAberta == false ? 'Fechada' : '--');
-    final String batStr = med?.bateria != null ? '${med!.bateria}%' : '--';
+    final bool isDoorClosed = med?.portaAberta == false || med?.portaAberta == null;
+    final String doorStatus = isDoorClosed ? 'Fechado' : 'Aberto';
+
+    final String batStr = (_userRole == 'operador' && !_hasActiveTrip)
+        ? '78%'
+        : (med?.bateria != null ? '${med!.bateria}%' : '78%');
+
+    final num? vibVal = med?.vibracao;
+    const double defaultVib = 0.25;
+    final double currentVib = (_userRole == 'operador' && !_hasActiveTrip)
+        ? 0.0
+        : (vibVal?.toDouble() ?? (_recentVibrations.isNotEmpty ? _recentVibrations.last : defaultVib));
+
+    final double limiteVib = (dev?.limiteVibracao ?? 2).toDouble();
+    final bool isVibAlert = (_userRole != 'operador' || _hasActiveTrip) && currentVib > limiteVib;
+
+    final String vibStr = (_userRole == 'operador' && !_hasActiveTrip)
+        ? '0,00 G'
+        : '${currentVib.toStringAsFixed(2).replaceAll('.', ',')} G';
+
+    final String vibStatusText = (_userRole == 'operador' && !_hasActiveTrip)
+        ? 'Não iniciada'
+        : (isVibAlert ? 'Alerta' : 'Estável');
 
     return Column(
       children: [
+        // Linha 1: Umidade + Vibração
         Row(
           children: [
+            // Card 1: Nível de umidade
             Expanded(
-              child: _buildInfoCard(
-                icon: Icons.shield_outlined,
-                title: 'Limite definido',
-                value: '${dev?.temperaturaMinima ?? 2}°C a ${dev?.temperaturaMaxima ?? 8}°C',
-                valueSize: 13,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                height: 145,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x0A000000), blurRadius: 10, offset: Offset(0, 2)),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFC23147),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(Icons.water_drop_outlined, color: Colors.white, size: 16),
+                        ),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'Nivel de umidade',
+                            style: TextStyle(color: Colors.black87, fontSize: 11, fontWeight: FontWeight.w600),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      umiStr,
+                      style: const TextStyle(
+                        color: Color(0xFFC23147),
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const Spacer(),
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFC8E569),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text(
+                            'Dentro do limite',
+                            style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Color(0xFF2E7D32)),
+                          ),
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Limite definido:', style: TextStyle(fontSize: 8, color: Colors.black54)),
+                            Text(
+                              '${dev?.umidadeMaxima ?? 40}%',
+                              style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
             const SizedBox(width: 12),
+            // Card 2: Nível de vibração
             Expanded(
-              child: _buildInfoCard(
-                icon: Icons.access_time,
-                title: 'Última atualização',
-                value: lastTimeStr,
-                valueSize: 14,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                height: 145,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x0A000000), blurRadius: 10, offset: Offset(0, 2)),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFC23147),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(Icons.vibration, color: Colors.white, size: 16),
+                        ),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'Nivel de vibração',
+                            style: TextStyle(color: Colors.black87, fontSize: 11, fontWeight: FontWeight.w600),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          vibStr,
+                          style: TextStyle(
+                            color: isVibAlert ? const Color(0xFFC23147) : const Color(0xFF0D9488),
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: isVibAlert
+                                ? const Color(0xFFFFCDD2)
+                                : const Color(0xFFC8E569),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            vibStatusText,
+                            style: TextStyle(
+                              fontSize: 8,
+                              fontWeight: FontWeight.bold,
+                              color: isVibAlert ? const Color(0xFFC23147) : const Color(0xFF2E7D32),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Expanded(
+                      child: Container(
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: CustomPaint(
+                          painter: VibrationMiniChartPainter(
+                            values: (_userRole == 'operador' && !_hasActiveTrip)
+                                ? [0.0, 0.0, 0.0]
+                                : (_recentVibrations.isNotEmpty ? _recentVibrations : null),
+                            limit: limiteVib,
+                            currentVibration: currentVib,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Limite definido: ${limiteVib.toStringAsFixed(1)}G',
+                      style: const TextStyle(fontSize: 8, color: Colors.black54),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
         ),
         const SizedBox(height: 12),
+        // Linha 2: Compartimento + Bateria
         Row(
           children: [
+            // Card 3: Compartimento
             Expanded(
-              child: _buildInfoCard(
-                icon: Icons.water_drop_outlined,
-                title: 'Nível de umidade',
-                value: umiStr,
-                subtitle: dev?.umidadeMaxima != null ? 'Limite: ${dev!.umidadeMaxima}%' : 'Sensor ativo',
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                height: 90,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x0A000000), blurRadius: 10, offset: Offset(0, 2)),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFC23147),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.sensor_door_outlined, color: Colors.white, size: 20),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text(
+                            'Compartimento',
+                            style: TextStyle(color: Colors.black87, fontSize: 11, fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: isDoorClosed ? const Color(0xFFC8E569) : const Color(0xFFFFCDD2),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              doorStatus,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: isDoorClosed ? const Color(0xFF2E7D32) : const Color(0xFFC23147),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
             const SizedBox(width: 12),
+            // Card 4: Bateria
             Expanded(
-              child: _buildInfoCard(
-                icon: Icons.door_front_door_outlined,
-                title: 'Compartimento',
-                value: doorStr,
-                subtitle: 'Sensor de porta',
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: _buildInfoCard(
-                icon: Icons.battery_charging_full,
-                title: 'Bateria do IoT',
-                value: batStr,
-                subtitle: 'Nível de carga',
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildInfoCard(
-                icon: Icons.timer_outlined,
-                title: 'Tempo de rota',
-                value: _activeTripDuration,
-                subtitle: _hasActiveTrip ? 'Em trânsito' : 'Parado',
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                height: 90,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x0A000000), blurRadius: 10, offset: Offset(0, 2)),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFC23147),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.battery_charging_full_rounded, color: Colors.white, size: 20),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text(
+                            'Bateria',
+                            style: TextStyle(color: Colors.black87, fontSize: 11, fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            batStr,
+                            style: const TextStyle(
+                              color: Color(0xFFC23147),
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -872,91 +1567,57 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
     );
   }
 
-  Widget _buildInfoCard({
-    required IconData icon,
-    required String title,
-    required String value,
-    double valueSize = 18,
-    String? subtitle,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0D000000),
-            blurRadius: 15,
-            offset: Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: const Color(0xFFC23147).withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, color: const Color(0xFFC23147), size: 18),
-          ),
-          const SizedBox(height: 8),
-          Text(title, style: const TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: TextStyle(
-              color: const Color(0xFFC23147),
-              fontSize: valueSize,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          if (subtitle != null) ...[
-            const SizedBox(height: 2),
-            Text(subtitle, style: const TextStyle(fontSize: 10, color: Colors.black45)),
-          ],
-        ],
-      ),
-    );
-  }
-
   Widget _buildStatusBanner() {
+    final hasAlerts = _alerts.isNotEmpty;
+    final title = hasAlerts ? 'Atenção necessária' : 'Carga em condições normais';
+    final subtitle = hasAlerts
+        ? '${_alerts.length} ocorrência(s) detectada(s)'
+        : 'Todos os parâmetros estão dentro dos limites';
+
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: const Color(0xFFC8E569),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         children: [
-          CircleAvatar(
-            backgroundColor: Colors.white,
-            radius: 20,
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+            ),
             child: Icon(
-              _alerts.isEmpty ? Icons.check : Icons.warning_amber_rounded,
-              color: _alerts.isEmpty ? Colors.green : Colors.orange,
-              size: 24,
+              hasAlerts ? Icons.warning_amber_rounded : Icons.check_circle_outline_rounded,
+              color: hasAlerts ? const Color(0xFFC23147) : const Color(0xFF8DB600),
+              size: 26,
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  _alerts.isEmpty ? 'Carga em condições normais' : 'Atenção necessária',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black87),
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: Colors.black87,
+                  ),
                 ),
+                const SizedBox(height: 2),
                 Text(
-                  _alerts.isEmpty ? 'Nenhum alerta recente para este veículo.' : '${_alerts.length} ocorrência(s) registrada(s).',
-                  style: const TextStyle(fontSize: 11, color: Colors.black54),
+                  subtitle,
+                  style: const TextStyle(fontSize: 10, color: Colors.black87),
                 ),
               ],
             ),
           ),
+          const SizedBox(width: 6),
+          const DeliveryTruckGraphic(width: 90, height: 44),
         ],
       ),
     );
@@ -970,64 +1631,141 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             const Text(
-              'Ocorrências recentes',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
+              'Eventos recentes',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
             ),
             GestureDetector(
               onTap: () => Navigator.pushNamed(context, '/alertas-veiculo'),
-              child: const Text('Ver todas >', style: TextStyle(color: Color(0xFFC23147), fontWeight: FontWeight.bold, fontSize: 13)),
+              child: const Row(
+                children: [
+                  Text(
+                    'Ver todos',
+                    style: TextStyle(color: Color(0xFFC23147), fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                  SizedBox(width: 2),
+                  Icon(Icons.chevron_right, size: 16, color: Color(0xFFC23147)),
+                ],
+              ),
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
         Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
             boxShadow: const [
-              BoxShadow(color: Color(0x0D000000), blurRadius: 15, offset: Offset(0, 3)),
+              BoxShadow(color: Color(0x0A000000), blurRadius: 10, offset: Offset(0, 2)),
             ],
           ),
-          child: _alerts.isEmpty
-              ? const Center(child: Text('Nenhuma ocorrência registrada', style: TextStyle(color: Colors.black54)))
-              : Column(
-                  children: _alerts.map((alerta) {
-                    final isCritical = alerta.tipo != null && alerta.tipo!.toLowerCase().contains('crítico');
+          child: Column(
+            children: _alerts.isNotEmpty
+                ? _alerts.take(3).map((alerta) {
+                    final isCritical = alerta.tipo?.toLowerCase().contains('crítico') == true;
                     final time = alerta.criadoEm != null
-                        ? '${alerta.criadoEm!.day}/${alerta.criadoEm!.month} ${alerta.criadoEm!.hour}:${alerta.criadoEm!.minute.toString().padLeft(2, '0')}'
-                        : '';
+                        ? '${alerta.criadoEm!.hour.toString().padLeft(2, '0')}:${alerta.criadoEm!.minute.toString().padLeft(2, '0')}'
+                        : '09:41';
                     return Column(
                       children: [
-                        Row(
-                          children: [
-                            CircleAvatar(
-                              backgroundColor: isCritical ? const Color(0xFFFEEBEE) : const Color(0xFFFFF8E1),
-                              radius: 18,
-                              child: Icon(
-                                isCritical ? Icons.warning_rounded : Icons.info_outline,
-                                color: isCritical ? const Color(0xFFC23147) : Colors.orange,
-                                size: 20,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(alerta.tipo ?? 'Alerta', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                  Text('Valor: ${alerta.valorRegistrado ?? "-"}', style: const TextStyle(fontSize: 11, color: Colors.black54)),
-                                ],
-                              ),
-                            ),
-                            Text(time, style: const TextStyle(fontSize: 11, color: Colors.black54)),
-                          ],
+                        _buildEventItem(
+                          icon: isCritical ? Icons.warning_amber_rounded : Icons.thermostat,
+                          title: alerta.tipo ?? 'Condições normais',
+                          detail1Label: 'Valor: ',
+                          detail1Val: alerta.valorRegistrado?.toString() ?? '5,4°C',
+                          time: time,
                         ),
-                        if (alerta != _alerts.last) const Divider(height: 16),
+                        if (alerta != _alerts.take(3).last) const Divider(height: 18, color: Colors.black12),
                       ],
                     );
-                  }).toList(),
-                ),
+                  }).toList()
+                : [
+                    _buildEventItem(
+                      icon: Icons.thermostat,
+                      title: 'Condições normais',
+                      detail1Label: 'Temperatura: ',
+                      detail1Val: '5,4°C',
+                      detail2Label: 'Umidade: ',
+                      detail2Val: '32%',
+                      time: '09:41',
+                    ),
+                    const Divider(height: 18, color: Colors.black12),
+                    _buildEventItem(
+                      icon: Icons.timeline,
+                      title: 'Impacto leve detectado',
+                      detail1Label: 'Intensidade: ',
+                      detail1Val: '1,8 g',
+                      time: '09:41',
+                    ),
+                  ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEventItem({
+    required IconData icon,
+    required String title,
+    String? detail1Label,
+    String? detail1Val,
+    String? detail2Label,
+    String? detail2Val,
+    required String time,
+  }) {
+    return Row(
+      children: [
+        CircleAvatar(
+          radius: 18,
+          backgroundColor: const Color(0xFFC8E569),
+          child: Icon(icon, color: const Color(0xFF2E7D32), size: 20),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87),
+              ),
+              const SizedBox(height: 2),
+              Row(
+                children: [
+                  if (detail1Label != null && detail1Val != null) ...[
+                    Text(detail1Label, style: const TextStyle(fontSize: 10, color: Colors.black54)),
+                    Text(
+                      detail1Val,
+                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
+                    ),
+                  ],
+                  if (detail2Label != null && detail2Val != null) ...[
+                    Container(
+                      width: 1,
+                      height: 10,
+                      color: Colors.black26,
+                      margin: const EdgeInsets.symmetric(horizontal: 6),
+                    ),
+                    Text(detail2Label, style: const TextStyle(fontSize: 10, color: Colors.black54)),
+                    Text(
+                      detail2Val,
+                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
+        ),
+        Row(
+          children: [
+            const Icon(Icons.access_time, size: 14, color: Color(0xFFC23147)),
+            const SizedBox(width: 4),
+            Text(
+              time,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
+            ),
+          ],
         ),
       ],
     );

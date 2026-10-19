@@ -62,7 +62,16 @@ class _ListarOperadoresScreenState extends State<ListarOperadoresScreen> {
           info[u.id] = f.isNotEmpty ? f.map((x) => x.nome).join(', ') : 'Nenhuma';
         } else {
           final d = dispositivos.where((d) => d.idOperador == u.id).toList();
-          info[u.id] = d.isNotEmpty ? d.map((x) => x.nomeDispositivo).join(', ') : 'Nenhum';
+          info[u.id] = d.isNotEmpty
+              ? d.map((x) {
+                  if (x.modeloVeiculo != null && x.modeloVeiculo!.isNotEmpty) {
+                    return x.placaVeiculo != null && x.placaVeiculo!.isNotEmpty
+                        ? '${x.modeloVeiculo} (${x.placaVeiculo})'
+                        : x.modeloVeiculo!;
+                  }
+                  return x.nomeDispositivo ?? 'Veículo';
+                }).join(', ')
+              : 'Nenhum';
         }
       }
 
@@ -363,6 +372,7 @@ class ColabCard extends StatelessWidget {
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Hero(
                         tag: 'user_title_${user.id}',
@@ -375,56 +385,57 @@ class ColabCard extends StatelessWidget {
                               fontWeight: FontWeight.w800,
                               fontSize: 16,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 2),
                       Text(
                         'CPF: ${user.cpf ?? 'N/A'}',
                         style: const TextStyle(
                           color: Colors.grey,
                           fontSize: 12,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        infoLabel,
+                        style: TextStyle(
+                          color: Colors.grey.shade600,
+                          fontSize: 10,
+                        ),
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        infoValue.isEmpty ? 'Nenhum' : infoValue,
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
                 ),
+                const SizedBox(width: 12),
                 
                 // Direita
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline, color: Color(0xFFC23147)),
-                          onPressed: onDelete,
-                          constraints: const BoxConstraints(),
-                          padding: EdgeInsets.zero,
-                        ),
-                      ],
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline, color: Color(0xFFC23147)),
+                      onPressed: onDelete,
+                      constraints: const BoxConstraints(),
+                      padding: EdgeInsets.zero,
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      infoLabel,
-                      style: TextStyle(
-                        color: Colors.grey.shade600,
-                        fontSize: 10,
-                      ),
-                      textAlign: TextAlign.right,
-                    ),
-                    Text(
-                      infoValue.isEmpty ? 'Nenhum' : infoValue,
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 12,
-                      ),
-                      textAlign: TextAlign.right,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 18),
                     Material(
                       color: const Color(0xFFC23147),
                       borderRadius: BorderRadius.circular(6),

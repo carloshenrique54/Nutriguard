@@ -279,5 +279,40 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(PerfilScreen), findsOneWidget);
     });
+
+    testWidgets('8. Admin profile displays Gestão da Operação and quick shortcuts instead of Minhas frotas', (tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final testAdmin = UsuarioModel(
+        id: 'admin-123',
+        nome: 'Carlos Admin',
+        email: 'admin@nutriguard.com',
+        cargo: 'admin',
+        cpf: '123.456.789-00',
+        telefone: '(11) 98765-4321',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PerfilScreen(usuario: testAdmin),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Gestão da Operação >'), findsOneWidget);
+      expect(find.text('Minhas frotas >'), findsNothing);
+      expect(find.text('FROTAS ATIVAS'), findsOneWidget);
+      expect(find.text('VEÍCULOS & SENSORES IoT'), findsOneWidget);
+      expect(find.text('EQUIPE DA OPERAÇÃO'), findsOneWidget);
+      expect(find.text('ATALHOS DE CADASTRO'), findsOneWidget);
+      expect(find.text('+ Frota'), findsOneWidget);
+      expect(find.text('+ Veículo'), findsOneWidget);
+      expect(find.text('+ Equipe'), findsOneWidget);
+    });
   });
 }

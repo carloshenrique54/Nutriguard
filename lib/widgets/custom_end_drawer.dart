@@ -3,9 +3,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/supabase_service.dart';
 import '../services/admin_context_service.dart';
+import '../services/trip_service.dart';
 
 class CustomEndDrawer {
-  static void showMenu(BuildContext context, {String? userRoleOverride, bool? hasFleetsOverride, bool? hasDevicesOverride}) {
+  static void showMenu(
+    BuildContext context, {
+    String? userRoleOverride,
+    bool? hasFleetsOverride,
+    bool? hasDevicesOverride,
+    bool? isTripActiveOverride,
+  }) {
     HapticFeedback.lightImpact();
     showGeneralDialog(
       context: context,
@@ -55,6 +62,7 @@ class CustomEndDrawer {
                         userRoleOverride: userRoleOverride,
                         hasFleetsOverride: hasFleetsOverride,
                         hasDevicesOverride: hasDevicesOverride,
+                        isTripActiveOverride: isTripActiveOverride,
                       ),
                     ),
                   ),
@@ -72,7 +80,13 @@ class _MenuContent extends StatefulWidget {
   final String? userRoleOverride;
   final bool? hasFleetsOverride;
   final bool? hasDevicesOverride;
-  const _MenuContent({this.userRoleOverride, this.hasFleetsOverride, this.hasDevicesOverride});
+  final bool? isTripActiveOverride;
+  const _MenuContent({
+    this.userRoleOverride,
+    this.hasFleetsOverride,
+    this.hasDevicesOverride,
+    this.isTripActiveOverride,
+  });
 
   @override
   State<_MenuContent> createState() => _MenuContentState();
@@ -90,6 +104,7 @@ class _MenuContentState extends State<_MenuContent> {
   String _userRole = '';
   bool _hasFleets = true;
   bool _hasDevices = true;
+  bool _isTripActive = false;
 
   @override
   void initState() {
@@ -105,8 +120,28 @@ class _MenuContentState extends State<_MenuContent> {
     } else if (widget.hasFleetsOverride == false) {
       _hasDevices = false;
     }
+    if (widget.isTripActiveOverride != null) {
+      _isTripActive = widget.isTripActiveOverride!;
+    }
     _fetchUserRole();
     _adminContext.addListener(_onContextChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _MenuContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.userRoleOverride != null) {
+      _userRole = widget.userRoleOverride!;
+    }
+    if (widget.hasFleetsOverride != null) {
+      _hasFleets = widget.hasFleetsOverride!;
+    }
+    if (widget.hasDevicesOverride != null) {
+      _hasDevices = widget.hasDevicesOverride!;
+    }
+    if (widget.isTripActiveOverride != null) {
+      _isTripActive = widget.isTripActiveOverride!;
+    }
   }
 
   @override
@@ -159,6 +194,16 @@ class _MenuContentState extends State<_MenuContent> {
             if (mounted) {
               setState(() {
                 _hasDevices = devs.isNotEmpty;
+              });
+            }
+          } catch (_) {}
+        }
+        if (widget.isTripActiveOverride == null) {
+          try {
+            final trip = await TripService().isTripActive(currentUserId);
+            if (mounted) {
+              setState(() {
+                _isTripActive = trip;
               });
             }
           } catch (_) {}
@@ -253,6 +298,73 @@ class _MenuContentState extends State<_MenuContent> {
                   alignment: Alignment.centerLeft,
                   child: ElevatedButton(
                     onPressed: () async {
+                      bool tripActive = _isTripActive;
+                      final client = _supabase;
+                      final uid = client?.currentUser?.id ?? '';
+                      if (_userRole == 'operador') {
+                        if (widget.isTripActiveOverride != null) {
+                          tripActive = widget.isTripActiveOverride!;
+                        } else if (uid.isNotEmpty) {
+                          try {
+                            tripActive = await TripService().isTripActive(uid);
+                          } catch (_) {}
+                        }
+                      }
+
+                      if (!context.mounted) return;
+
+                      if (_userRole == 'operador' && tripActive) {
+                        final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            title: const Row(
+                              children: [
+                                Icon(Icons.warning_amber_rounded, color: Color(0xFFC23147)),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Viagem em Andamento',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18,
+                                      color: Color(0xFFC23147),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            content: const Text(
+                              'Você possui uma viagem em andamento. Ao fazer logout, a sua viagem será finalizada automaticamente. Deseja realmente sair e parar a viagem?',
+                              style: TextStyle(fontSize: 14, color: Colors.black87),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, false),
+                                child: const Text('Cancelar', style: TextStyle(color: Colors.black54)),
+                              ),
+                              ElevatedButton(
+                                onPressed: () => Navigator.pop(ctx, true),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFFC23147),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                                child: const Text(
+                                  'Sair e Parar Viagem',
+                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+
+                        if (confirmed != true) {
+                          return;
+                        }
+
+                        await TripService().endTrip(uid);
+                      }
+
                       _adminContext.clearAll();
                       await _supabase?.signOut();
                       if (context.mounted) {
@@ -1022,19 +1134,31 @@ class _MenuContentState extends State<_MenuContent> {
         routeName: '/perfil',
         isEnabled: true,
       ),
-      if (_userRole == 'operador')
-        MenuListItem(
-          icon: Icons.stop_circle_outlined,
-          title: 'Parar viagem',
-          isEnabled: _hasDevices,
-          disabledReason: 'Requer veículo',
-          disabledMessage: 'Você não possui nenhum veículo vinculado para parar viagem.',
-          onTapAction: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Viagem parada com sucesso!')),
-            );
-          },
-        ),
+      if (_userRole == 'operador') ...[
+        if (_isTripActive)
+          MenuListItem(
+            icon: Icons.stop_circle_outlined,
+            title: 'Parar viagem',
+            isEnabled: _hasDevices,
+            disabledReason: 'Requer veículo',
+            disabledMessage: 'Você não possui nenhum veículo vinculado para parar viagem.',
+            onTapAction: () async {
+              final res = await Navigator.pushNamed(context, '/parar-viagem');
+              if (res == true && context.mounted) {
+                Navigator.pushNamedAndRemoveUntil(context, '/iniciar-viagem', (route) => false);
+              }
+            },
+          )
+        else
+          MenuListItem(
+            icon: Icons.play_circle_outline,
+            title: 'Iniciar viagem',
+            routeName: '/iniciar-viagem',
+            isEnabled: _hasDevices,
+            disabledReason: 'Requer veículo',
+            disabledMessage: 'Você não possui nenhum veículo vinculado para iniciar viagem.',
+          ),
+      ],
       const SizedBox(height: 16),
     ];
   }

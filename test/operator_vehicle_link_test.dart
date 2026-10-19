@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nutriguard1/models/models.dart';
-import 'package:nutriguard1/screens/dashboard/dashboard_veiculo_screen.dart';
 import 'package:nutriguard1/screens/listagens/listar_dispositivos_screen.dart';
 
 void main() {

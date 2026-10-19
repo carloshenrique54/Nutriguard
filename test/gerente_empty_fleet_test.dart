@@ -321,5 +321,68 @@ void main() {
       final dashboardText = tester.widget<Text>(find.text('Dashboard'));
       expect(dashboardText.style?.color, equals(const Color(0xFF757575)));
     });
+
+    testWidgets('8. DashboardFrotaScreen for Gerente does NOT display "Outras frotas", but for Admin it does', (tester) async {
+      final frota1 = FrotaModel(
+        id: 'frota-01',
+        nome: 'Frota Principal',
+        idGerente: 'test-user-id',
+        createdAt: DateTime.now(),
+      );
+      final frota2 = FrotaModel(
+        id: 'frota-02',
+        nome: 'Frota Secundária',
+        idGerente: 'other-user-id',
+        createdAt: DateTime.now(),
+      );
+
+      final dev = DispositivoModel(
+        id: 'dev-01',
+        idFrota: 'frota-01',
+        nomeDispositivo: 'Caminhão 01',
+        placaVeiculo: 'ABC-1234',
+      );
+
+      // 1. Gerente
+      final mockGerente = MockGerenteSupabaseService(
+        role: 'gerente',
+        frotas: [frota1, frota2],
+        dispositivos: [dev],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DashboardFrotaScreen(
+            key: const ValueKey('gerente'),
+            supabaseService: mockGerente,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Outras frotas'), findsNothing);
+      expect(find.text('Ver todas >'), findsNothing);
+
+      // 2. Admin
+      AdminContextService().setFrota(frota1);
+      final mockAdmin = MockGerenteSupabaseService(
+        role: 'admin',
+        frotas: [frota1, frota2],
+        dispositivos: [dev],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DashboardFrotaScreen(
+            key: const ValueKey('admin'),
+            supabaseService: mockAdmin,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Outras frotas'), findsOneWidget);
+      expect(find.text('Ver todas >'), findsOneWidget);
+    });
   });
 }

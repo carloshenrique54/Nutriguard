@@ -27,6 +27,10 @@ class _PerfilScreenState extends State<PerfilScreen> {
   String _errorMessage = '';
   List<FrotaModel> _minhasFrotas = [];
   List<DispositivoModel> _meusDispositivos = [];
+  int _totalFrotas = 0;
+  int _totalDispositivos = 0;
+  int _totalGerentes = 0;
+  int _totalOperadores = 0;
   bool _isLoadingAssociated = true;
   String _associatedErrorMessage = '';
   bool _initialized = false;
@@ -87,8 +91,26 @@ class _PerfilScreenState extends State<PerfilScreen> {
   Future<void> _loadAssociatedData(UsuarioModel perfil) async {
     setState(() { _isLoadingAssociated = true; _associatedErrorMessage = ''; });
     try {
+      final isAdmin = perfil.role == 'admin' || (perfil.cargo?.toLowerCase() == 'admin');
       final isOperador = perfil.role == 'operador' || (perfil.cargo?.toLowerCase() == 'operador');
-      if (isOperador) {
+
+      if (isAdmin) {
+        try {
+          final frotas = await _supabase.getFrotas();
+          final dispositivos = await _supabase.getDispositivos();
+          final usuarios = await _supabase.getUsuarios();
+          if (mounted) {
+            setState(() {
+              _totalFrotas = frotas.length;
+              _totalDispositivos = dispositivos.length;
+              _totalGerentes = usuarios.where((u) => u.cargo?.toLowerCase() == 'gerente' || u.role == 'gerente').length;
+              _totalOperadores = usuarios.where((u) => u.cargo?.toLowerCase() == 'operador' || u.role == 'operador').length;
+            });
+          }
+        } catch (e) {
+          debugPrint('Aviso: dados estatísticos do admin não puderam ser carregados: $e');
+        }
+      } else if (isOperador) {
         final dispositivos = await _supabase.getDispositivosByOperador(perfil.id);
         if (mounted) setState(() { _meusDispositivos = dispositivos; });
       } else {
@@ -98,9 +120,11 @@ class _PerfilScreenState extends State<PerfilScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _associatedErrorMessage = (perfil.role == 'operador' || perfil.cargo?.toLowerCase() == 'operador')
-              ? 'Erro ao carregar dispositivo responsável: $e'
-              : 'Erro ao carregar frotas: $e';
+          if (perfil.role == 'operador' || perfil.cargo?.toLowerCase() == 'operador') {
+            _associatedErrorMessage = 'Erro ao carregar dispositivo responsável: $e';
+          } else {
+            _associatedErrorMessage = 'Erro ao carregar frotas: $e';
+          }
         });
       }
     } finally {
@@ -759,7 +783,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
   }
 
   Widget _buildListSection() {
-    final bool isOwner = _perfil != null && _perfil!.id == _supabase.currentUser?.id;
+    final isAdmin = _perfil?.role == 'admin' || (_perfil?.cargo?.toLowerCase() == 'admin');
     final isOperador = _perfil?.role == 'operador' || (_perfil?.cargo?.toLowerCase() == 'operador');
 
     return Container(
@@ -804,12 +828,15 @@ class _PerfilScreenState extends State<PerfilScreen> {
                   ),
               ],
             )
+          else if (isAdmin)
+            const Text(
+              'Gestão da Operação >',
+              style: TextStyle(color: Color(0xFFC23147), fontSize: 16, fontWeight: FontWeight.bold),
+            )
           else
-            Text(
-              (!isOwner || _perfil?.role == 'gerente' || _perfil?.cargo?.toLowerCase() == 'gerente')
-                  ? 'Frota responsável >'
-                  : 'Minhas frotas >',
-              style: const TextStyle(color: Color(0xFFC23147), fontSize: 16, fontWeight: FontWeight.bold),
+            const Text(
+              'Frota responsável >',
+              style: TextStyle(color: Color(0xFFC23147), fontSize: 16, fontWeight: FontWeight.bold),
             ),
           const SizedBox(height: 16),
           if (_isLoadingAssociated)
@@ -826,6 +853,8 @@ class _PerfilScreenState extends State<PerfilScreen> {
                 ),
               ),
             )
+          else if (isAdmin)
+            _buildAdminDashboard()
           else if (isOperador)
             if (_meusDispositivos.isEmpty)
               const Center(
@@ -901,6 +930,210 @@ class _PerfilScreenState extends State<PerfilScreen> {
                 },
               ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildAdminDashboard() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildAdminStatCard(
+          icon: Icons.fire_truck_outlined,
+          iconBgColor: const Color(0xFFE8F5E9),
+          iconColor: const Color(0xFF2E7D32),
+          title: 'FROTAS ATIVAS',
+          value: '$_totalFrotas ${_totalFrotas == 1 ? 'frota cadastrada' : 'frotas cadastradas'}',
+          subtitle: 'Gerencie regiões e distribuição de frotas',
+          onTap: () => Navigator.pushNamed(context, '/listar-frotas'),
+        ),
+        _buildAdminStatCard(
+          icon: Icons.sensors_outlined,
+          iconBgColor: const Color(0xFFE3F2FD),
+          iconColor: const Color(0xFF1565C0),
+          title: 'VEÍCULOS & SENSORES IoT',
+          value: '$_totalDispositivos ${_totalDispositivos == 1 ? 'dispositivo conectado' : 'dispositivos conectados'}',
+          subtitle: 'Monitoramento térmico, umidade e impacto',
+          onTap: () => Navigator.pushNamed(context, '/listar-dispositivos'),
+        ),
+        _buildAdminStatCard(
+          icon: Icons.people_outline,
+          iconBgColor: const Color(0xFFFFF3E0),
+          iconColor: const Color(0xFFE65100),
+          title: 'EQUIPE DA OPERAÇÃO',
+          value: '$_totalGerentes ${_totalGerentes == 1 ? 'gerente' : 'gerentes'} • $_totalOperadores ${_totalOperadores == 1 ? 'operador' : 'operadores'}',
+          subtitle: 'Controle de acessos, motoristas e gestores',
+          onTap: () => Navigator.pushNamed(context, '/listar-operadores'),
+        ),
+        _buildAdminQuickActions(),
+      ],
+    );
+  }
+
+  Widget _buildAdminStatCard({
+    required IconData icon,
+    required Color iconBgColor,
+    required Color iconColor,
+    required String title,
+    required String value,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0A000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: iconBgColor,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(icon, color: iconColor, size: 24),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.grey.shade600,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        value,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey.shade500,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.arrow_forward_ios, size: 14, color: Color(0xFFC23147)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAdminQuickActions() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 6),
+        Text(
+          'ATALHOS DE CADASTRO',
+          style: TextStyle(
+            color: const Color(0xFFC23147).withValues(alpha: 0.85),
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _buildQuickActionButton(
+                label: '+ Frota',
+                icon: Icons.add_business_outlined,
+                onTap: () => Navigator.pushNamed(context, '/criar-frota'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _buildQuickActionButton(
+                label: '+ Veículo',
+                icon: Icons.add_box_outlined,
+                onTap: () => Navigator.pushNamed(context, '/cadastrar-dispositivo'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _buildQuickActionButton(
+                label: '+ Equipe',
+                icon: Icons.person_add_alt_outlined,
+                onTap: () => Navigator.pushNamed(context, '/cadastrar-funcionario'),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildQuickActionButton({
+    required String label,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 20, color: const Color(0xFFC23147)),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

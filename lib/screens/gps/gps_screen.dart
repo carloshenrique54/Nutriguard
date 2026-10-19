@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../../services/supabase_service.dart';
+import '../../services/trip_service.dart';
 import '../../models/models.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -10,10 +11,14 @@ import '../../services/admin_context_service.dart';
 
 class GpsScreen extends StatefulWidget {
   final DispositivoModel? initialDevice;
+  final SupabaseService? supabaseService;
+  final TripService? tripService;
 
   const GpsScreen({
     super.key,
     this.initialDevice,
+    this.supabaseService,
+    this.tripService,
   });
 
   @override
@@ -22,12 +27,15 @@ class GpsScreen extends StatefulWidget {
 
 class _GpsScreenState extends State<GpsScreen> {
   bool _isPanelExpanded = false;
-  final SupabaseService _supabase = SupabaseService();
+  late final SupabaseService _supabase;
+  late final TripService _tripService;
   bool _isLoading = true;
   String _userRole = '';
   
   List<DispositivoModel> _dispositivos = [];
   Map<String, MedicaoModel> _latestMedicoes = {};
+  Set<String> _devicesInTrip = {};
+  TripInfo? _selectedTripInfo;
   DispositivoModel? _selectedDevice;
   Timer? _timer;
   final MapController _mapController = MapController();
@@ -35,6 +43,9 @@ class _GpsScreenState extends State<GpsScreen> {
   @override
   void initState() {
     super.initState();
+    _supabase = widget.supabaseService ?? SupabaseService();
+    _tripService = widget.tripService ?? TripService();
+    _tripService.tripStateNotifier.addListener(_onTripStateChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fetchData();
     });
@@ -45,8 +56,15 @@ class _GpsScreenState extends State<GpsScreen> {
 
   @override
   void dispose() {
+    _tripService.tripStateNotifier.removeListener(_onTripStateChanged);
     _timer?.cancel();
     super.dispose();
+  }
+
+  void _onTripStateChanged() {
+    if (mounted) {
+      _updateTripStatus();
+    }
   }
 
   Future<void> _fetchData() async {
@@ -122,12 +140,49 @@ class _GpsScreenState extends State<GpsScreen> {
     }
   }
 
+  Future<void> _updateTripStatus() async {
+    try {
+      final user = _supabase.currentUser;
+      final currentUserId = user?.id ?? '';
+      final Set<String> inTrip = {};
+
+      for (final d in _dispositivos) {
+        final active = await _tripService.isDeviceInTrip(d.id, operatorId: d.idOperador);
+        if (active) inTrip.add(d.id);
+      }
+
+      TripInfo? trip;
+      if (_selectedDevice != null) {
+        trip = await _tripService.getActiveTripByDevice(
+          _selectedDevice!.id,
+          operatorId: _selectedDevice!.idOperador ?? currentUserId,
+        );
+      }
+
+      if (trip == null && _userRole == 'operador' && currentUserId.isNotEmpty) {
+        trip = await _tripService.getActiveTrip(currentUserId);
+        if (trip != null && _selectedDevice != null) {
+          inTrip.add(_selectedDevice!.id);
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _devicesInTrip = inTrip;
+          _selectedTripInfo = trip;
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao atualizar status de viagem no GPS: $e');
+    }
+  }
+
   Future<void> _refreshLocations() async {
     if (_dispositivos.isEmpty) return;
     try {
       List<String> ids = _dispositivos.map((d) => d.id).toList();
       DateTime agora = DateTime.now();
-      DateTime inicio = agora.subtract(const Duration(days: 7));
+      DateTime inicio = agora.subtract(const Duration(days: 30));
       
       final medicoes = await _supabase.getMedicoesFiltro(ids, inicio, agora);
       
@@ -143,6 +198,18 @@ class _GpsScreenState extends State<GpsScreen> {
           }
         }
       }
+
+      // Fallback: se algum dispositivo não tiver sido capturado no filtro, busca última medição direta
+      for (var d in _dispositivos) {
+        if (!latest.containsKey(d.id)) {
+          final mDirect = await _supabase.getLatestMedicao(d.id);
+          if (mDirect != null && mDirect.latitude != null && mDirect.longitude != null) {
+            latest[d.id] = mDirect;
+          }
+        }
+      }
+
+      await _updateTripStatus();
       
       if (mounted) {
         setState(() {
@@ -160,11 +227,22 @@ class _GpsScreenState extends State<GpsScreen> {
       _isPanelExpanded = true;
     });
 
+    _updateTripStatus();
+
     if (_latestMedicoes.containsKey(device.id)) {
       final m = _latestMedicoes[device.id]!;
       if (m.latitude != null && m.longitude != null) {
         _mapController.move(LatLng(m.latitude!.toDouble(), m.longitude!.toDouble()), 16.0);
       }
+    } else {
+      _supabase.getLatestMedicao(device.id).then((m) {
+        if (m != null && m.latitude != null && m.longitude != null && mounted) {
+          setState(() {
+            _latestMedicoes[device.id] = m;
+          });
+          _mapController.move(LatLng(m.latitude!.toDouble(), m.longitude!.toDouble()), 16.0);
+        }
+      });
     }
   }
 
@@ -456,8 +534,13 @@ class _GpsScreenState extends State<GpsScreen> {
   Widget _buildVehicleSelector() {
     // Operador: acesso estrito ao próprio veículo, sem seletor.
     final bool isOperador = _userRole == 'operador';
+    final d = _selectedDevice ?? (_dispositivos.isNotEmpty ? _dispositivos.first : null);
+    if (d == null) return const SizedBox.shrink();
+
+    final bool isSelectedInTrip = _devicesInTrip.contains(d.id) ||
+        (isOperador && _selectedTripInfo != null);
+
     if (isOperador || _dispositivos.length <= 1) {
-      final d = _selectedDevice ?? _dispositivos.first;
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
@@ -467,12 +550,32 @@ class _GpsScreenState extends State<GpsScreen> {
         ),
         child: Row(
           children: [
-            const Icon(Icons.directions_car, color: Color(0xFF8DB600), size: 18),
-            const SizedBox(width: 8),
-            Text(
-              'Veículo selecionado: ${d.placaVeiculo ?? d.nomeDispositivo ?? "Dispositivo"}',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            Icon(
+              isSelectedInTrip ? Icons.navigation_rounded : Icons.directions_car,
+              color: isSelectedInTrip ? const Color(0xFF2E7D32) : const Color(0xFF8DB600),
+              size: 18,
             ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Veículo: ${d.placaVeiculo ?? d.nomeDispositivo ?? "Dispositivo"}${isSelectedInTrip ? " • Em viagem" : ""}',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (isSelectedInTrip)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F5E9),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFF81C784)),
+                ),
+                child: const Text(
+                  'Em viagem',
+                  style: TextStyle(color: Color(0xFF2E7D32), fontSize: 10, fontWeight: FontWeight.bold),
+                ),
+              ),
           ],
         ),
       );
@@ -491,11 +594,16 @@ class _GpsScreenState extends State<GpsScreen> {
           isExpanded: true,
           icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFFC23147)),
           items: _dispositivos.map((d) {
+            final devInTrip = _devicesInTrip.contains(d.id);
             return DropdownMenuItem<DispositivoModel>(
               value: d,
               child: Row(
                 children: [
-                  const Icon(Icons.directions_car, color: Color(0xFF8DB600), size: 18),
+                  Icon(
+                    devInTrip ? Icons.navigation_rounded : Icons.directions_car,
+                    color: devInTrip ? const Color(0xFF2E7D32) : const Color(0xFF8DB600),
+                    size: 18,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     d.placaVeiculo ?? d.nomeDispositivo ?? 'Veículo',
@@ -504,6 +612,20 @@ class _GpsScreenState extends State<GpsScreen> {
                   if (d.modeloVeiculo != null) ...[
                     const SizedBox(width: 6),
                     Text('(${d.modeloVeiculo})', style: const TextStyle(color: Colors.black54, fontSize: 11)),
+                  ],
+                  if (devInTrip) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8F5E9),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text(
+                        'Em viagem',
+                        style: TextStyle(fontSize: 10, color: Color(0xFF2E7D32), fontWeight: FontWeight.bold),
+                      ),
+                    ),
                   ],
                 ],
               ),
@@ -519,15 +641,22 @@ class _GpsScreenState extends State<GpsScreen> {
 
   Widget _buildMapBackground() {
     List<Marker> markers = [];
+    final bool isSelectedInTrip = _selectedDevice != null && (
+      _devicesInTrip.contains(_selectedDevice!.id) ||
+      (_userRole == 'operador' && _selectedTripInfo != null)
+    );
+
     for (var d in _dispositivos) {
       var m = _latestMedicoes[d.id];
       if (m != null && m.latitude != null && m.longitude != null) {
         bool isSelected = _selectedDevice?.id == d.id;
+        bool devInTrip = _devicesInTrip.contains(d.id) || (isSelected && isSelectedInTrip);
+
         markers.add(
           Marker(
             point: LatLng(m.latitude!.toDouble(), m.longitude!.toDouble()),
-            width: 80,
-            height: 80,
+            width: 85,
+            height: 85,
             child: GestureDetector(
               onTap: () => _onSelectVehicle(d),
               child: Column(
@@ -536,7 +665,9 @@ class _GpsScreenState extends State<GpsScreen> {
                   Container(
                     padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
-                      color: isSelected ? const Color(0xFFC23147) : const Color(0xFFC8E569),
+                      color: isSelected 
+                          ? const Color(0xFFC23147) 
+                          : (devInTrip ? const Color(0xFF2E7D32) : const Color(0xFFC8E569)),
                       shape: BoxShape.circle,
                       border: Border.all(color: Colors.white, width: 2),
                       boxShadow: [
@@ -548,8 +679,8 @@ class _GpsScreenState extends State<GpsScreen> {
                       ],
                     ),
                     child: Icon(
-                      Icons.local_shipping,
-                      color: isSelected ? Colors.white : Colors.black87,
+                      devInTrip ? Icons.navigation_rounded : Icons.local_shipping,
+                      color: (isSelected || devInTrip) ? Colors.white : Colors.black87,
                       size: isSelected ? 24 : 20,
                     ),
                   ),
@@ -561,19 +692,112 @@ class _GpsScreenState extends State<GpsScreen> {
                       borderRadius: BorderRadius.circular(8),
                       boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 4)],
                     ),
-                    child: Text(
-                      d.placaVeiculo ?? d.nomeDispositivo ?? 'Veículo',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: isSelected ? const Color(0xFFC23147) : Colors.black87,
-                      ),
-                      overflow: TextOverflow.ellipsis,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (devInTrip)
+                          Container(
+                            width: 6,
+                            height: 6,
+                            margin: const EdgeInsets.only(right: 4),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF2E7D32),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        Flexible(
+                          child: Text(
+                            d.placaVeiculo ?? d.nomeDispositivo ?? 'Veículo',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: isSelected ? const Color(0xFFC23147) : Colors.black87,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
                   )
                 ],
               ),
             ),
+          ),
+        );
+      }
+    }
+
+    // Traçado da rota e marcador de destino se houver viagem ativa com coordenadas
+    List<Polyline> polylines = [];
+    if (isSelectedInTrip && _selectedTripInfo != null &&
+        _selectedTripInfo!.destinationLatitude != null &&
+        _selectedTripInfo!.destinationLongitude != null) {
+      final destLatLng = LatLng(
+        _selectedTripInfo!.destinationLatitude!,
+        _selectedTripInfo!.destinationLongitude!,
+      );
+
+      markers.add(
+        Marker(
+          point: destLatLng,
+          width: 90,
+          height: 80,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFC23147),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.3),
+                      blurRadius: 6,
+                      offset: const Offset(0, 3),
+                    )
+                  ],
+                ),
+                child: const Icon(
+                  Icons.flag_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 4)],
+                ),
+                child: Text(
+                  _selectedTripInfo!.destination,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFC23147),
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      var currentMed = _latestMedicoes[_selectedDevice!.id];
+      if (currentMed != null && currentMed.latitude != null && currentMed.longitude != null) {
+        polylines.add(
+          Polyline(
+            points: [
+              LatLng(currentMed.latitude!.toDouble(), currentMed.longitude!.toDouble()),
+              destLatLng,
+            ],
+            strokeWidth: 4.0,
+            color: const Color(0xFFC23147),
           ),
         );
       }
@@ -586,6 +810,8 @@ class _GpsScreenState extends State<GpsScreen> {
       if (m.latitude != null && m.longitude != null) {
         initialPos = LatLng(m.latitude!.toDouble(), m.longitude!.toDouble());
       }
+    } else if (isSelectedInTrip && _selectedTripInfo?.destinationLatitude != null && _selectedTripInfo?.destinationLongitude != null) {
+      initialPos = LatLng(_selectedTripInfo!.destinationLatitude!, _selectedTripInfo!.destinationLongitude!);
     }
 
     return FlutterMap(
@@ -599,6 +825,8 @@ class _GpsScreenState extends State<GpsScreen> {
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.example.nutriguard',
         ),
+        if (polylines.isNotEmpty)
+          PolylineLayer(polylines: polylines),
         MarkerLayer(markers: markers),
       ],
     );
@@ -651,19 +879,33 @@ class _GpsScreenState extends State<GpsScreen> {
     }
 
     var m = _latestMedicoes[_selectedDevice!.id];
-    String statusStr = 'Sem sinal';
-    Color statusColor = Colors.grey;
+    final bool isInTrip = _selectedDevice != null && (
+      _devicesInTrip.contains(_selectedDevice!.id) ||
+      (_userRole == 'operador' && _selectedTripInfo != null)
+    );
+
+    String statusStr;
+    Color statusColor;
     String lastUpdateStr = '--';
     String tempStr = '--';
     
     if (m != null && m.registradoEm != null) {
-      bool isRecent = DateTime.now().difference(m.registradoEm!).inHours < 2;
-      statusStr = isRecent ? 'Em trânsito' : 'Parado / Offline';
-      statusColor = isRecent ? const Color(0xFFC23147) : Colors.black45;
-      lastUpdateStr = '${m.registradoEm!.day}/${m.registradoEm!.month} ${m.registradoEm!.hour}:${m.registradoEm!.minute.toString().padLeft(2, '0')}';
+      lastUpdateStr = '${m.registradoEm!.day.toString().padLeft(2, '0')}/${m.registradoEm!.month.toString().padLeft(2, '0')} ${m.registradoEm!.hour.toString().padLeft(2, '0')}:${m.registradoEm!.minute.toString().padLeft(2, '0')}';
       if (m.temperatura != null) {
         tempStr = '${m.temperatura!.toStringAsFixed(1)}°C';
       }
+    }
+
+    if (isInTrip) {
+      statusStr = 'Em trânsito';
+      statusColor = const Color(0xFF2E7D32);
+    } else if (m != null && m.registradoEm != null) {
+      bool isRecent = DateTime.now().difference(m.registradoEm!).inHours < 2;
+      statusStr = isRecent ? 'Parado' : 'Parado / Offline';
+      statusColor = isRecent ? const Color(0xFF1565C0) : Colors.black45;
+    } else {
+      statusStr = 'Sem sinal';
+      statusColor = Colors.grey;
     }
 
     return GestureDetector(
@@ -710,10 +952,14 @@ class _GpsScreenState extends State<GpsScreen> {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFC8E569).withValues(alpha: 0.3),
+                    color: isInTrip ? const Color(0xFFE8F5E9) : const Color(0xFFC8E569).withValues(alpha: 0.3),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.local_shipping, color: Color(0xFF8DC63F), size: 20),
+                  child: Icon(
+                    isInTrip ? Icons.navigation_rounded : Icons.local_shipping,
+                    color: isInTrip ? const Color(0xFF2E7D32) : const Color(0xFF8DC63F),
+                    size: 20,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -726,6 +972,26 @@ class _GpsScreenState extends State<GpsScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 2),
+                      if (isInTrip && _selectedTripInfo != null && _selectedTripInfo!.destination.isNotEmpty) ...[
+                        Row(
+                          children: [
+                            const Icon(Icons.navigation_rounded, color: Color(0xFF2E7D32), size: 12),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                'Destino: ${_selectedTripInfo!.destination}',
+                                style: const TextStyle(
+                                  color: Color(0xFF2E7D32),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                      ],
                       Row(
                         children: [
                           const Icon(Icons.access_time, color: Colors.black54, size: 12),
@@ -745,9 +1011,25 @@ class _GpsScreenState extends State<GpsScreen> {
                     color: statusColor,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Text(
-                    statusStr,
-                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (isInTrip) ...[
+                        Container(
+                          width: 6,
+                          height: 6,
+                          margin: const EdgeInsets.only(right: 4),
+                          decoration: const BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ],
+                      Text(
+                        statusStr,
+                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -761,6 +1043,43 @@ class _GpsScreenState extends State<GpsScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const SizedBox(height: 12),
+                  if (isInTrip && _selectedTripInfo != null) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      margin: const EdgeInsets.only(bottom: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8F5E9),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFF81C784)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.route_rounded, color: Color(0xFF2E7D32), size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Viagem em andamento para ${_selectedTripInfo!.destination}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                    color: Color(0xFF2E7D32),
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                Text(
+                                  'Iniciada em ${_selectedTripInfo!.startedAt.hour.toString().padLeft(2, '0')}:${_selectedTripInfo!.startedAt.minute.toString().padLeft(2, '0')}',
+                                  style: const TextStyle(fontSize: 10, color: Colors.black54),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     decoration: BoxDecoration(
@@ -773,7 +1092,7 @@ class _GpsScreenState extends State<GpsScreen> {
                       children: [
                         _buildQuickMetric(Icons.thermostat, 'Temp', tempStr),
                         Container(width: 1, height: 24, color: Colors.grey.shade300),
-                        _buildQuickMetric(Icons.battery_charging_full, 'Bateria', m?.bateria != null ? '${m!.bateria}%' : '--'),
+                        _buildQuickMetric(Icons.battery_charging_full, 'Bateria', m?.bateria != null ? '${m!.bateria!.toStringAsFixed(0)}%' : '--'),
                         Container(width: 1, height: 24, color: Colors.grey.shade300),
                         _buildQuickMetric(Icons.door_front_door_outlined, 'Porta', m?.portaAberta == true ? 'Aberta' : (m?.portaAberta == false ? 'Fechada' : '--')),
                       ],
@@ -795,18 +1114,35 @@ class _GpsScreenState extends State<GpsScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      Expanded(
-                        child: _buildActionButton(
-                          icon: Icons.description_outlined,
-                          label: 'Relatório',
-                          color: Colors.grey.shade100,
-                          textColor: Colors.black87,
-                          iconColor: Colors.black54,
-                          onTap: () {
-                            Navigator.pushNamed(context, '/relatorios-veiculo');
-                          },
+                      if (_userRole == 'operador' && isInTrip)
+                        Expanded(
+                          child: _buildActionButton(
+                            icon: Icons.stop_circle_outlined,
+                            label: 'Parar Viagem',
+                            color: const Color(0xFFFFEBEE),
+                            textColor: const Color(0xFFC23147),
+                            iconColor: const Color(0xFFC23147),
+                            onTap: () async {
+                              final res = await Navigator.pushNamed(context, '/parar-viagem');
+                              if (res == true && mounted) {
+                                _fetchData();
+                              }
+                            },
+                          ),
+                        )
+                      else
+                        Expanded(
+                          child: _buildActionButton(
+                            icon: Icons.description_outlined,
+                            label: 'Relatório',
+                            color: Colors.grey.shade100,
+                            textColor: Colors.black87,
+                            iconColor: Colors.black54,
+                            onTap: () {
+                              Navigator.pushNamed(context, '/relatorios-veiculo');
+                            },
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ],
