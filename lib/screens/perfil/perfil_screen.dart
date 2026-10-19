@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../widgets/custom_bottom_nav_bar.dart';
 import '../../widgets/custom_end_drawer.dart';
 import '../../widgets/watermark_background.dart';
 import '../../services/supabase_service.dart';
@@ -277,9 +276,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      extendBody: true,
       backgroundColor: const Color(0xFFFFF2E0),
-      bottomNavigationBar: const CustomBottomNavBar(selectedIndex: -1, isDisabled: true),
       body: WatermarkBackground(
         child: SafeArea(
           child: _isLoading 

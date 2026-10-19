@@ -146,5 +146,28 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Gerente Fleet Dashboard'), findsOneWidget);
     });
+
+    testWidgets('5. GPS is disabled when hasDevicesOverride: false even in vehicle context', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            bottomNavigationBar: CustomBottomNavBar(
+              selectedIndex: 2,
+              userRoleOverride: 'operador',
+              isVehicleContext: true,
+              hasDevicesOverride: false,
+            ),
+            body: Center(child: Text('Operador No Device')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final gpsText = tester.widget<Text>(find.text('GPS'));
+      expect(gpsText.style?.color, equals(const Color(0xFF757575)));
+
+      final gpsIcon = tester.widget<Icon>(find.byIcon(Icons.location_on_outlined));
+      expect(gpsIcon.color, equals(const Color(0xFF757575)));
+    });
   });
 }

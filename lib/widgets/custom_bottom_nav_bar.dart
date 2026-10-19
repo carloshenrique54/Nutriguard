@@ -164,8 +164,12 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
     // Índice 4 (GPS): Estritamente vinculado ao contexto de veículo.
     // Em contexto de frota (isVehicleContext == false), o GPS SEMPRE deve estar indisponível
     // tanto para ADM quanto para Gerente (o dashboard da frota não pode levar pro GPS).
+    // Nas telas onde o GPS fica indisponível, permanece apenas desativado (cinza e não clicável).
     if (index == 4) {
       if (widget.isVehicleContext == false) {
+        return false;
+      }
+      if (!effectiveHasDevices) {
         return false;
       }
       if (effectiveRole == 'admin') {

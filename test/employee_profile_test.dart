@@ -228,7 +228,7 @@ void main() {
       expect(find.text('(11) 98888-7777'), findsOneWidget);
     });
 
-    testWidgets('7. PerfilScreen bottom navigation menu is grey and disabled', (tester) async {
+    testWidgets('7. PerfilScreen does not render bottom navigation menu as it is not usable on profile screen', (tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() {
@@ -243,41 +243,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final navBarFinder = find.byType(CustomBottomNavBar);
-      expect(navBarFinder, findsOneWidget);
-
-      final navBar = tester.widget<CustomBottomNavBar>(navBarFinder);
-      expect(navBar.isDisabled, isTrue);
-
-      // Verify all items are rendered in grey (Color(0xFF757575))
-      final texts = ['Alertas', 'Relatórios', 'Dashboard', 'Histórico', 'GPS'];
-      for (final label in texts) {
-        final textWidget = tester.widget<Text>(find.descendant(
-          of: navBarFinder,
-          matching: find.text(label),
-        ));
-        expect(textWidget.style?.color, const Color(0xFF757575));
-      }
-
-      final icons = [
-        Icons.notifications_none,
-        Icons.description_outlined,
-        Icons.dashboard_rounded,
-        Icons.access_time,
-        Icons.location_on_outlined,
-      ];
-      for (final icon in icons) {
-        final iconWidget = tester.widget<Icon>(find.descendant(
-          of: navBarFinder,
-          matching: find.byIcon(icon),
-        ));
-        expect(iconWidget.color, const Color(0xFF757575));
-      }
-
-      // Tapping on a disabled item does not trigger navigation or error
-      await tester.tap(find.text('Dashboard'));
-      await tester.pumpAndSettle();
-      expect(find.byType(PerfilScreen), findsOneWidget);
+      expect(find.byType(CustomBottomNavBar), findsNothing);
     });
 
     testWidgets('8. Admin profile displays Gestão da Operação and quick shortcuts instead of Minhas frotas', (tester) async {

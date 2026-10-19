@@ -4,7 +4,6 @@ import '../../widgets/custom_end_drawer.dart';
 import '../../services/supabase_service.dart';
 import '../../models/models.dart';
 import '../../widgets/animated_components.dart';
-import '../../widgets/custom_bottom_nav_bar.dart';
 import '../../widgets/watermark_background.dart';
 import '../../services/admin_context_service.dart';
 import '../../widgets/confirmation_dialog.dart';
@@ -104,9 +103,6 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFFFF2E0),
-      extendBody: true,
-      
-      bottomNavigationBar: const CustomBottomNavBar(selectedIndex: null),
       body: WatermarkBackground(
         child: SafeArea(
           child: Padding(
