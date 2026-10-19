@@ -28,6 +28,8 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
   bool _isLoading = true;
   String _userName = '';
   String _userRole = '';
+  bool get _isAdmin =>
+      _userRole.toLowerCase() == 'admin' || _userRole.toLowerCase() == 'adm';
   
   List<FrotaModel> _frotas = [];
   FrotaModel? _selectedFrota;
@@ -308,8 +310,10 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
           _buildSplitCard(),
           const SizedBox(height: 14),
           _buildTwoColumnCards(),
-          const SizedBox(height: 18),
-          _buildOutrasFrotasSection(),
+          if (_isAdmin) ...[
+            const SizedBox(height: 18),
+            _buildOutrasFrotasSection(),
+          ],
           const SizedBox(height: 18),
           _buildRecentEvents(),
           const SizedBox(height: 18),
@@ -344,8 +348,10 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
                     _buildSplitCard(),
                     const SizedBox(height: 16),
                     _buildTwoColumnCards(),
-                    const SizedBox(height: 18),
-                    _buildOutrasFrotasSection(),
+                    if (_isAdmin) ...[
+                      const SizedBox(height: 18),
+                      _buildOutrasFrotasSection(),
+                    ],
                   ],
                 ),
               ),
@@ -1133,6 +1139,8 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
   }
 
   Widget _buildOutrasFrotasSection() {
+    if (!_isAdmin) return const SizedBox.shrink();
+
     final otherFrotas = _frotas.where((f) => f.id != _selectedFrota?.id).toList();
     final displayFrotas = otherFrotas.isNotEmpty ? otherFrotas : _frotas;
 

@@ -39,22 +39,22 @@ class _LoginScreenState extends State<LoginScreen> {
         // Sem dispositivos ou sem frotas: o Dashboard — Frota exibe o estado
         // vazio com botão para /cadastrar-dispositivo ou /criar-frota.
         if (devices.isEmpty || frotas.isEmpty) {
-          Navigator.pushReplacementNamed(context, '/dashboard-frota');
+          Navigator.pushNamedAndRemoveUntil(context, '/dashboard-frota', (route) => false);
         } else {
-          Navigator.pushReplacementNamed(context, '/listar-frotas');
+          Navigator.pushNamedAndRemoveUntil(context, '/listar-frotas', (route) => false);
         }
       } else if (role == 'gerente') {
-        Navigator.pushReplacementNamed(context, '/dashboard-frota');
+        Navigator.pushNamedAndRemoveUntil(context, '/dashboard-frota', (route) => false);
       } else if (role == 'operador') {
         final tripActive = await TripService().isTripActive(currentUserId);
         if (!mounted) return;
         if (!tripActive) {
-          Navigator.pushReplacementNamed(context, '/iniciar-viagem');
+          Navigator.pushNamedAndRemoveUntil(context, '/iniciar-viagem', (route) => false);
         } else {
-          Navigator.pushReplacementNamed(context, '/dashboard-veiculo');
+          Navigator.pushNamedAndRemoveUntil(context, '/dashboard-veiculo', (route) => false);
         }
       } else {
-        Navigator.pushReplacementNamed(context, '/dashboard-frota');
+        Navigator.pushNamedAndRemoveUntil(context, '/dashboard-frota', (route) => false);
       }
     } catch (e) {
       if (!mounted) return;

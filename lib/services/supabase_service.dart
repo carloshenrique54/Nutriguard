@@ -226,8 +226,14 @@ class SupabaseService {
       if (msg.contains('23502') || msg.contains('not-null') || msg.contains('violates not-null')) {
         return 'Preencha todos os campos obrigatórios (nome, CPF, telefone).';
       }
-      if (msg.contains('database error saving new user') || msg.contains('database error')) {
+      if (msg.contains('database error saving new user')) {
         return 'Não foi possível salvar o funcionário no banco de dados. O CPF ou e-mail informado já está em uso por outro cadastro. Verifique os dados.';
+      }
+      if (msg.contains('database error querying schema')) {
+        return 'Erro no serviço de autenticação do Supabase (colunas de token nulas em auth.users). Execute a correção no SQL Editor.';
+      }
+      if (msg.contains('database error')) {
+        return 'Erro de comunicação com o banco de dados. Verifique os dados e tente novamente.';
       }
       if (msg.contains('invalid login credentials') ||
           msg.contains('invalid credentials') ||
@@ -443,7 +449,16 @@ class SupabaseService {
     }
   }
 
-  
+  Future<List<UsuarioModel>> getUsuarios() async {
+    try {
+      final data = await _client.from('Usuarios').select();
+      return (data as List).map((e) => UsuarioModel.fromJson(e)).toList();
+    } catch (e) {
+      debugPrint('Erro ao buscar todos usuarios: $e');
+      return [];
+    }
+  }
+
   Future<void> updateUsuario(String userId, Map<String, dynamic> data) async {
     await _client.from('Usuarios').update(data).eq('id', userId);
   }

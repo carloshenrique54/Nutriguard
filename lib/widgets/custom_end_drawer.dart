@@ -1143,7 +1143,6 @@ class _MenuContentState extends State<_MenuContent> {
             disabledReason: 'Requer veículo',
             disabledMessage: 'Você não possui nenhum veículo vinculado para parar viagem.',
             onTapAction: () async {
-              Navigator.pop(context);
               final res = await Navigator.pushNamed(context, '/parar-viagem');
               if (res == true && context.mounted) {
                 Navigator.pushNamedAndRemoveUntil(context, '/iniciar-viagem', (route) => false);

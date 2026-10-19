@@ -304,5 +304,28 @@ void main() {
 
       expect(find.text('Tela Parar Viagem'), findsOneWidget);
     });
+
+    testWidgets('4. Operator navigating to /parar-viagem from drawer and popping returns to previous screen', (tester) async {
+      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      await tester.pumpWidget(createDrawerTestWidget(isTripActive: true));
+      await tester.tap(find.text('Open Menu'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Parar viagem'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Tela Parar Viagem'), findsOneWidget);
+
+      // Simulate tapping Voltar / popping /parar-viagem
+      Navigator.pop(tester.element(find.text('Tela Parar Viagem')));
+      await tester.pumpAndSettle();
+
+      // The original screen that opened the menu (e.g. Dashboard) must still be there
+      expect(find.text('Open Menu'), findsOneWidget);
+      expect(find.text('Tela Parar Viagem'), findsNothing);
+    });
   });
 }

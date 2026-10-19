@@ -100,6 +100,28 @@ class TripService {
     );
   }
 
+  Future<TripInfo?> getActiveTripByDevice(String deviceId, {String? operatorId}) async {
+    final cleanDevId = deviceId.trim();
+    if (operatorId != null && operatorId.trim().isNotEmpty) {
+      final trip = await getActiveTrip(operatorId.trim());
+      if (trip != null) return trip;
+    }
+
+    if (cleanDevId.isNotEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      for (final key in prefs.getKeys()) {
+        if (key.startsWith('trip_device_id_') && prefs.getString(key) == cleanDevId) {
+          final opId = key.substring('trip_device_id_'.length);
+          if (prefs.getBool('trip_active_$opId') == true) {
+            final trip = await getActiveTrip(opId);
+            if (trip != null) return trip;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
   Future<bool> isDeviceInTrip(String deviceId, {String? operatorId}) async {
     final cleanDevId = deviceId.trim();
     final prefs = await SharedPreferences.getInstance();

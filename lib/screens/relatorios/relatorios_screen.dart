@@ -366,11 +366,21 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
             pw.Bullet(text: 'Conformidade: ${_conformidade.toStringAsFixed(1)}%'),
             pw.Bullet(text: 'Alertas Recebidos: $_alertasRecebidos'),
             pw.SizedBox(height: 16),
-            pw.Text('Telemetria e Condições Ambientais:', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
-            pw.Bullet(text: 'Temperatura: ${latestMed?.temperatura != null ? "${latestMed!.temperatura!.toStringAsFixed(1)}°C (última)" : "N/D"} | Média: ${avgTemp?.toStringAsFixed(1) ?? "N/D"}°C | Mín: ${minTemp?.toStringAsFixed(1) ?? "N/D"}°C | Máx: ${maxTemp?.toStringAsFixed(1) ?? "N/D"}°C'),
-            pw.Bullet(text: 'Umidade: ${latestMed?.umidade != null ? "${latestMed!.umidade!.toStringAsFixed(0)}% (última)" : "N/D"} | Média: ${avgUmid?.toStringAsFixed(0) ?? "N/D"}%'),
-            pw.Bullet(text: 'Vibração: ${latestMed?.vibracao != null ? "${latestMed!.vibracao!.toStringAsFixed(2)}G (última)" : "N/D"} | Pico máx: ${maxVib?.toStringAsFixed(2) ?? "N/D"}G'),
-            pw.Bullet(text: 'Bateria e Compartimento: ${latestMed?.bateria != null ? "${latestMed!.bateria!.toStringAsFixed(0)}%" : "N/D"} | Porta: ${latestMed?.portaAberta == true ? "Aberta" : "Fechada"}'),
+            pw.Text(
+              _selectedDispositivoId == null ? 'Telemetria Consolidada da Frota:' : 'Telemetria e Condições Ambientais:',
+              style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+            ),
+            if (_selectedDispositivoId == null) ...[
+              pw.Bullet(text: 'Temperatura Média da Frota: ${avgTemp != null ? "${avgTemp.toStringAsFixed(1)}°C" : "N/D"} | Mín: ${minTemp?.toStringAsFixed(1) ?? "N/D"}°C | Máx: ${maxTemp?.toStringAsFixed(1) ?? "N/D"}°C'),
+              pw.Bullet(text: 'Umidade Média da Frota: ${avgUmid != null ? "${avgUmid.toStringAsFixed(0)}%" : "N/D"}'),
+              pw.Bullet(text: 'Pico Máximo de Vibração na Frota: ${maxVib != null ? "${maxVib.toStringAsFixed(2)}G" : "N/D"}'),
+              pw.Bullet(text: 'Menor Bateria da Frota: ${latestMed?.bateria != null ? "${latestMed!.bateria!.toStringAsFixed(0)}%" : "N/D"} | Porta: ${latestMed?.portaAberta == true ? "Aberta" : "Fechada"}'),
+            ] else ...[
+              pw.Bullet(text: 'Temperatura: ${latestMed?.temperatura != null ? "${latestMed!.temperatura!.toStringAsFixed(1)}°C (última)" : "N/D"} | Média: ${avgTemp?.toStringAsFixed(1) ?? "N/D"}°C | Mín: ${minTemp?.toStringAsFixed(1) ?? "N/D"}°C | Máx: ${maxTemp?.toStringAsFixed(1) ?? "N/D"}°C'),
+              pw.Bullet(text: 'Umidade: ${latestMed?.umidade != null ? "${latestMed!.umidade!.toStringAsFixed(0)}% (última)" : "N/D"} | Média: ${avgUmid?.toStringAsFixed(0) ?? "N/D"}%'),
+              pw.Bullet(text: 'Vibração: ${latestMed?.vibracao != null ? "${latestMed!.vibracao!.toStringAsFixed(2)}G (última)" : "N/D"} | Pico máx: ${maxVib?.toStringAsFixed(2) ?? "N/D"}G'),
+              pw.Bullet(text: 'Bateria e Compartimento: ${latestMed?.bateria != null ? "${latestMed!.bateria!.toStringAsFixed(0)}%" : "N/D"} | Porta: ${latestMed?.portaAberta == true ? "Aberta" : "Fechada"}'),
+            ],
             pw.SizedBox(height: 16),
             pw.Text('Alertas e Ocorrências Recentes (${_ocorrencias.length}):', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
             pw.SizedBox(height: 8),
@@ -1123,6 +1133,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
   }
 
   Widget _buildRecentTelemetryCards() {
+    final bool isFleet = _selectedDispositivoId == null;
     MedicaoModel? latestMed;
     double? avgTemp;
     double? minTemp;
@@ -1153,18 +1164,92 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
       }
     }
 
-    final String tempStr = latestMed?.temperatura != null ? '${latestMed!.temperatura!.toStringAsFixed(1)}°C' : '--';
-    final String tempSub = avgTemp != null ? 'Méd: ${avgTemp.toStringAsFixed(1)}° (Mín ${minTemp!.toStringAsFixed(0)}° / Máx ${maxTemp!.toStringAsFixed(0)}°)' : 'Sem dados';
+    // Identifica última medição por dispositivo para análises detalhadas da frota
+    final Map<String, MedicaoModel> latestByDevice = {};
+    for (final m in _medicoes) {
+      if (m.idDispositivo != null) {
+        final existing = latestByDevice[m.idDispositivo!];
+        if (existing == null || (m.registradoEm ?? DateTime(2000)).isAfter(existing.registradoEm ?? DateTime(2000))) {
+          latestByDevice[m.idDispositivo!] = m;
+        }
+      }
+    }
 
-    final String umidStr = latestMed?.umidade != null ? '${latestMed!.umidade!.toStringAsFixed(0)}%' : '--';
-    final String umidSub = avgUmid != null ? 'Média no período: ${avgUmid.toStringAsFixed(0)}%' : 'Sem dados';
+    // Busca o veículo com a menor bateria e contabiliza status das portas na frota
+    MedicaoModel? minBatMed;
+    DispositivoModel? minBatDev;
+    int openDoorsCount = 0;
+    int totalDoorsReported = 0;
 
-    final String vibStr = latestMed?.vibracao != null ? '${latestMed!.vibracao!.toStringAsFixed(2)}G' : '--';
-    final String vibSub = maxVib != null ? 'Pico máx: ${maxVib.toStringAsFixed(2)}G' : 'Estável';
+    for (final entry in latestByDevice.entries) {
+      final m = entry.value;
+      if (m.bateria != null) {
+        if (minBatMed == null || m.bateria! < minBatMed.bateria!) {
+          minBatMed = m;
+          minBatDev = _dispositivos.where((d) => d.id == entry.key).firstOrNull;
+        }
+      }
+      if (m.portaAberta != null) {
+        totalDoorsReported++;
+        if (m.portaAberta == true) {
+          openDoorsCount++;
+        }
+      }
+    }
 
-    final String batStr = latestMed?.bateria != null ? '${latestMed!.bateria!.toStringAsFixed(0)}%' : '--';
-    final String portaStr = latestMed?.portaAberta == true ? 'Porta aberta' : 'Porta fechada';
-    final String batSub = latestMed != null ? portaStr : 'Sem dados';
+    // Fallback caso não haja agrupamento por dispositivo
+    if (minBatMed == null && latestMed?.bateria != null) {
+      minBatMed = latestMed;
+      minBatDev = _dispositivos.where((d) => d.id == latestMed?.idDispositivo).firstOrNull;
+    }
+
+    // Parâmetros dos cards adaptados para Frota vs Veículo Específico
+    final String tempTitle = isFleet ? 'Temperatura Média' : 'Temperatura';
+    final String tempStr = isFleet
+        ? (avgTemp != null ? '${avgTemp.toStringAsFixed(1)}°C' : (latestMed?.temperatura != null ? '${latestMed!.temperatura!.toStringAsFixed(1)}°C' : '--'))
+        : (latestMed?.temperatura != null ? '${latestMed!.temperatura!.toStringAsFixed(1)}°C' : '--');
+    final String tempSub = isFleet
+        ? (minTemp != null && maxTemp != null ? 'Mín ${minTemp.toStringAsFixed(0)}° / Máx ${maxTemp.toStringAsFixed(0)}° (Frota)' : 'Média consolidada')
+        : (avgTemp != null ? 'Méd: ${avgTemp.toStringAsFixed(1)}° (Mín ${minTemp!.toStringAsFixed(0)}° / Máx ${maxTemp!.toStringAsFixed(0)}°)' : 'Sem dados');
+
+    final String umidTitle = isFleet ? 'Umidade Média' : 'Umidade';
+    final String umidStr = isFleet
+        ? (avgUmid != null ? '${avgUmid.toStringAsFixed(0)}%' : (latestMed?.umidade != null ? '${latestMed!.umidade!.toStringAsFixed(0)}%' : '--'))
+        : (latestMed?.umidade != null ? '${latestMed!.umidade!.toStringAsFixed(0)}%' : '--');
+    final String umidSub = isFleet ? 'Consolidado da frota' : (avgUmid != null ? 'Média no período: ${avgUmid.toStringAsFixed(0)}%' : 'Sem dados');
+
+    final String vibTitle = isFleet ? 'Pico de Vibração' : 'Vibração';
+    final String vibStr = isFleet
+        ? (maxVib != null ? '${maxVib.toStringAsFixed(2)}G' : (latestMed?.vibracao != null ? '${latestMed!.vibracao!.toStringAsFixed(2)}G' : '--'))
+        : (latestMed?.vibracao != null ? '${latestMed!.vibracao!.toStringAsFixed(2)}G' : '--');
+    final String vibSub = isFleet ? 'Maior impacto na frota' : (maxVib != null ? 'Pico máx: ${maxVib.toStringAsFixed(2)}G' : 'Estável');
+
+    final String batTitle = isFleet ? 'Menor Bateria' : 'Bateria & Porta';
+    final String batStr = isFleet
+        ? (minBatMed?.bateria != null ? '${minBatMed!.bateria!.toStringAsFixed(0)}%' : (latestMed?.bateria != null ? '${latestMed!.bateria!.toStringAsFixed(0)}%' : '--'))
+        : (latestMed?.bateria != null ? '${latestMed!.bateria!.toStringAsFixed(0)}%' : '--');
+
+    final String portaInfoFleet = openDoorsCount > 0
+        ? '$openDoorsCount porta(s) aberta(s)'
+        : (totalDoorsReported > 0 ? 'Portas fechadas' : '');
+
+    final String batSub = isFleet
+        ? (minBatMed != null
+            ? '${minBatDev?.placaVeiculo ?? minBatDev?.nomeDispositivo ?? "Veículo"}${portaInfoFleet.isNotEmpty ? " • $portaInfoFleet" : ""}'
+            : 'Sem dados')
+        : (latestMed != null ? (latestMed.portaAberta == true ? 'Porta aberta' : 'Porta fechada') : 'Sem dados');
+
+    final IconData batIcon = isFleet
+        ? Icons.battery_alert_rounded
+        : Icons.battery_charging_full_rounded;
+
+    final Color batColor = isFleet
+        ? (minBatMed?.bateria != null && minBatMed!.bateria! < 25
+            ? const Color(0xFFC23147)
+            : (minBatMed?.bateria != null && minBatMed!.bateria! < 50
+                ? const Color(0xFFE65100)
+                : const Color(0xFF2E7D32)))
+        : const Color(0xFF2E7D32);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1172,9 +1257,9 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
-              'Telemetria Recente',
-              style: TextStyle(color: Color(0xFF222222), fontSize: 16, fontWeight: FontWeight.bold),
+            Text(
+              isFleet ? 'Telemetria Recente da Frota' : 'Telemetria Recente',
+              style: const TextStyle(color: Color(0xFF222222), fontSize: 16, fontWeight: FontWeight.bold),
             ),
             if (latestMed?.registradoEm != null)
               Container(
@@ -1208,32 +1293,32 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
           physics: const NeverScrollableScrollPhysics(),
           children: [
             _buildTelemetryCard(
-              title: 'Temperatura',
+              title: tempTitle,
               value: tempStr,
               subtitle: tempSub,
               icon: Icons.thermostat_rounded,
               color: const Color(0xFFC23147),
             ),
             _buildTelemetryCard(
-              title: 'Umidade',
+              title: umidTitle,
               value: umidStr,
               subtitle: umidSub,
               icon: Icons.water_drop_outlined,
               color: const Color(0xFF0288D1),
             ),
             _buildTelemetryCard(
-              title: 'Vibração',
+              title: vibTitle,
               value: vibStr,
               subtitle: vibSub,
               icon: Icons.vibration_rounded,
               color: const Color(0xFFE65100),
             ),
             _buildTelemetryCard(
-              title: 'Bateria & Porta',
+              title: batTitle,
               value: batStr,
               subtitle: batSub,
-              icon: Icons.battery_charging_full_rounded,
-              color: const Color(0xFF2E7D32),
+              icon: batIcon,
+              color: batColor,
             ),
           ],
         ),

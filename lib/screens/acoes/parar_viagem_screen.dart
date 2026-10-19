@@ -160,29 +160,38 @@ class _PararViagemScreenState extends State<PararViagemScreen> {
   @override
   Widget build(BuildContext context) {
     final String anexosText = _anexos.isNotEmpty ? _anexos.join(', ') : 'Nenhum arquivo anexado';
+    final bool canPop = Navigator.canPop(context);
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFFFF2E0),
-      body: WatermarkBackground(
-        child: SafeArea(
-          child: ResponsiveContentWrapper(
-            maxWidth: ResponsiveBreakpoints.maxFormWidth,
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildHeader(context),
-                  const SizedBox(height: 16),
-                  _buildBackButton(context),
-                  const SizedBox(height: 16),
-                  _buildMotivoSection(anexosText),
-                  const SizedBox(height: 16),
-                  _buildLocalParadaSection(),
-                  const SizedBox(height: 20),
-                  _buildSubmitButton(),
-                  const SizedBox(height: 40),
-                ],
+    return PopScope(
+      canPop: canPop,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && mounted) {
+          Navigator.pushReplacementNamed(context, '/dashboard-veiculo');
+        }
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFFFF2E0),
+        body: WatermarkBackground(
+          child: SafeArea(
+            child: ResponsiveContentWrapper(
+              maxWidth: ResponsiveBreakpoints.maxFormWidth,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildHeader(context),
+                    const SizedBox(height: 16),
+                    _buildBackButton(context),
+                    const SizedBox(height: 16),
+                    _buildMotivoSection(anexosText),
+                    const SizedBox(height: 16),
+                    _buildLocalParadaSection(),
+                    const SizedBox(height: 20),
+                    _buildSubmitButton(),
+                    const SizedBox(height: 40),
+                  ],
+                ),
               ),
             ),
           ),
@@ -240,7 +249,13 @@ class _PararViagemScreenState extends State<PararViagemScreen> {
 
   Widget _buildBackButton(BuildContext context) {
     return InkWell(
-      onTap: () => Navigator.pop(context),
+      onTap: () {
+        if (Navigator.canPop(context)) {
+          Navigator.pop(context);
+        } else {
+          Navigator.pushReplacementNamed(context, '/dashboard-veiculo');
+        }
+      },
       borderRadius: BorderRadius.circular(10),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),

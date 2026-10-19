@@ -165,7 +165,7 @@ class _CadastroScreenState extends State<CadastroScreen> {
                                 ),
                           if (!_isLoading) ...[
                             GoogleButton(
-                              text: "crie uma conta com google",
+                              text: "Crie uma conta com o Google",
                               onPressed: () {},
                             ),
                           ],
