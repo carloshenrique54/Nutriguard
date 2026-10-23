@@ -51,7 +51,7 @@ void main() {
       adminContext.clearAll();
     });
 
-    testWidgets('1. No Fleet Selected: Context items are disabled and GPS is unavailable', (tester) async {
+    testWidgets('1. No Fleet Selected: Context items are disabled and GPS is omitted', (tester) async {
       await tester.pumpWidget(createTestWidget());
       await tester.tap(find.text('Open Drawer'));
       await tester.pumpAndSettle();
@@ -66,9 +66,9 @@ void main() {
       // Requer frota badge appears on locked items
       expect(find.text('Requer frota'), findsWidgets);
 
-      // GPS is disabled with "Indisponível"
-      expect(find.text('Indisponível'), findsOneWidget);
-      expect(find.text('GPS'), findsOneWidget);
+      // GPS is omitted because it is unavailable
+      expect(find.text('Indisponível'), findsNothing);
+      expect(find.text('GPS'), findsNothing);
 
       // Frotas is accessible (scroll to it if offscreen)
       await tester.scrollUntilVisible(find.text('Frotas (Seleção)'), 50);
@@ -79,7 +79,7 @@ void main() {
       expect(find.text('Listar dispositivos'), findsOneWidget);
     });
 
-    testWidgets('2. Fleet Selected: Fleet options are enabled and GPS remains unavailable', (tester) async {
+    testWidgets('2. Fleet Selected: Fleet options are enabled and GPS remains omitted', (tester) async {
       adminContext.setFrota(testFrota);
 
       await tester.pumpWidget(createTestWidget(currentRoute: '/dashboard-frota'));
@@ -99,9 +99,9 @@ void main() {
       expect(find.text('Histórico da frota'), findsOneWidget);
       expect(find.text('Relatório da frota'), findsOneWidget);
 
-      // GPS remains strictly disabled
-      expect(find.text('Indisponível'), findsOneWidget);
-      expect(find.text('GPS — Frota'), findsOneWidget);
+      // GPS remains strictly omitted
+      expect(find.text('Indisponível'), findsNothing);
+      expect(find.text('GPS — Frota'), findsNothing);
     });
 
     testWidgets('3. Vehicle Selected: Vehicle options are enabled and origin fleet link is visible', (tester) async {

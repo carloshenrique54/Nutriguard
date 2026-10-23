@@ -45,21 +45,29 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
         AdminContextService().clearAll();
       }
 
-      final frotas = _userRole == 'gerente' && currentUserId != null
-          ? await _supabase.getFrotasByGerente(currentUserId)
-          : await _supabase.getFrotas();
-      final dispositivos = await _supabase.getDispositivos();
+      final frotasFuture = _userRole == 'gerente' && currentUserId != null
+          ? _supabase.getFrotasByGerente(currentUserId)
+          : _supabase.getFrotas();
+      final dispositivosFuture = _supabase.getDispositivos();
+      final res = await Future.wait([frotasFuture, dispositivosFuture]);
+
+      final frotas = res[0] as List<FrotaModel>;
+      final dispositivos = res[1] as List<DispositivoModel>;
 
       Map<String, String> gerentesMap = {};
       Map<String, int> countsMap = {};
 
+      final gerenteIds = frotas.map((f) => f.idGerente).whereType<String>().toSet();
+      final perfilEntries = await Future.wait(
+        gerenteIds.map((gid) async {
+          final p = await _supabase.getUsuarioPerfil(gid);
+          return MapEntry(gid, p?.nome ?? 'Sem Gerente');
+        }),
+      );
+      final perfilMap = Map.fromEntries(perfilEntries);
+
       for (var f in frotas) {
-        if (f.idGerente != null) {
-          final g = await _supabase.getUsuarioPerfil(f.idGerente!);
-          gerentesMap[f.id] = g?.nome ?? 'Sem Gerente';
-        } else {
-          gerentesMap[f.id] = 'Sem Gerente';
-        }
+        gerentesMap[f.id] = (f.idGerente != null ? perfilMap[f.idGerente] : null) ?? 'Sem Gerente';
         countsMap[f.id] = dispositivos.where((d) => d.idFrota == f.id).length;
       }
 

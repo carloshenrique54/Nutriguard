@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../models/models.dart';
 import '../../widgets/auth_components.dart';
 import '../../services/supabase_service.dart';
 import '../../services/trip_service.dart';
@@ -33,8 +34,12 @@ class _LoginScreenState extends State<LoginScreen> {
       
       final role = perfil?.role ?? '';
       if (role == 'admin') {
-        final devices = await _supabaseService.getDispositivos();
-        final frotas = await _supabaseService.getFrotas();
+        final results = await Future.wait([
+          _supabaseService.getDispositivos(),
+          _supabaseService.getFrotas(),
+        ]);
+        final devices = results[0] as List<DispositivoModel>;
+        final frotas = results[1] as List<FrotaModel>;
         if (!mounted) return;
         // Sem dispositivos ou sem frotas: o Dashboard — Frota exibe o estado
         // vazio com botão para /cadastrar-dispositivo ou /criar-frota.

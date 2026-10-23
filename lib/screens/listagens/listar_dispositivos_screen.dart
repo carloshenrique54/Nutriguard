@@ -81,10 +81,10 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
         } else if (currentUserId != null) {
           final frotas = await _supabase.getFrotasByGerente(currentUserId);
           _hasFleets = frotas.isNotEmpty;
-          for (var f in frotas) {
-            final fDevs = await _supabase.getDispositivosByFrota(f.id);
-            dispositivos.addAll(fDevs);
-          }
+          final fDevLists = await Future.wait(
+            frotas.map((f) => _supabase.getDispositivosByFrota(f.id)),
+          );
+          dispositivos.addAll(fDevLists.expand((l) => l));
         }
       } else {
         if (currentUserId != null) {

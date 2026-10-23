@@ -737,12 +737,6 @@ class _MenuContentState extends State<_MenuContent> {
           disabledReason: 'Requer dispositivo',
           disabledMessage: 'Esta frota não possui nenhum dispositivo cadastrado para acessar relatórios.',
         ),
-        const MenuListItem(
-          icon: Icons.location_on_outlined,
-          title: 'GPS — Frota',
-          isEnabled: false,
-          disabledReason: 'Indisponível',
-        ),
       ] else ...[
         // Sem frota selecionada ou sem frotas cadastradas: opções contextuais desabilitadas
         _buildSectionHeader('NAVEGAÇÃO CONTEXTUAL'),
@@ -773,12 +767,6 @@ class _MenuContentState extends State<_MenuContent> {
           isEnabled: false,
           disabledReason: 'Requer frota',
           disabledMessage: !_hasFleets ? 'Nenhuma frota cadastrada no sistema.' : 'Selecione uma frota primeiro para acessar esta opção.',
-        ),
-        const MenuListItem(
-          icon: Icons.location_on_outlined,
-          title: 'GPS',
-          isEnabled: false,
-          disabledReason: 'Indisponível',
         ),
       ],
 

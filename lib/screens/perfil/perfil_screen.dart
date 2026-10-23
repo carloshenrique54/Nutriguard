@@ -95,9 +95,15 @@ class _PerfilScreenState extends State<PerfilScreen> {
 
       if (isAdmin) {
         try {
-          final frotas = await _supabase.getFrotas();
-          final dispositivos = await _supabase.getDispositivos();
-          final usuarios = await _supabase.getUsuarios();
+          final results = await Future.wait([
+            _supabase.getFrotas(),
+            _supabase.getDispositivos(),
+            _supabase.getUsuarios(),
+          ]);
+          final frotas = results[0] as List<FrotaModel>;
+          final dispositivos = results[1] as List<DispositivoModel>;
+          final usuarios = results[2] as List<UsuarioModel>;
+
           if (mounted) {
             setState(() {
               _totalFrotas = frotas.length;

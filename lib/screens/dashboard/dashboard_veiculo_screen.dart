@@ -123,10 +123,10 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
       } else if (role == 'gerente') {
         final frotas = await _supabase.getFrotasByGerente(user.id);
         _gerenteHasFleets = frotas.isNotEmpty;
-        for (var f in frotas) {
-          final devs = await _supabase.getDispositivosByFrota(f.id);
-          devices.addAll(devs);
-        }
+        final devLists = await Future.wait(
+          frotas.map((f) => _supabase.getDispositivosByFrota(f.id)),
+        );
+        devices.addAll(devLists.expand((l) => l));
         if (argDevice != null && !devices.any((d) => d.id == argDevice!.id)) {
           devices.add(argDevice);
         }

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../widgets/custom_end_drawer.dart';
 import '../../services/supabase_service.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/models.dart';
 import '../../widgets/animated_components.dart';
 import '../../widgets/watermark_background.dart';
@@ -46,14 +45,17 @@ class _ListarOperadoresScreenState extends State<ListarOperadoresScreen> {
       // Fetch all users manually from 'Usuarios' table
       // Supabase Auth users can't be fetched entirely by client unless using an RPC or service key. 
       // We will just query the public 'Usuarios' table.
-      final response = await Supabase.instance.client.from('Usuarios').select();
-      final allUsers = (response as List).map((e) => UsuarioModel.fromJson(e)).toList();
+      final results = await Future.wait([
+        _supabase.getUsuarios(),
+        _supabase.getFrotas(),
+        _supabase.getDispositivos(),
+      ]);
+      final allUsers = results[0] as List<UsuarioModel>;
+      final frotas = results[1] as List<FrotaModel>;
+      final dispositivos = results[2] as List<DispositivoModel>;
 
       final isGerente = widget.title == 'Gerentes';
       final filteredUsers = allUsers.where((u) => u.cargo?.toLowerCase() == (isGerente ? 'gerente' : 'operador')).toList();
-
-      final frotas = await _supabase.getFrotas();
-      final dispositivos = await _supabase.getDispositivos();
 
       Map<String, String> info = {};
       for (var u in filteredUsers) {

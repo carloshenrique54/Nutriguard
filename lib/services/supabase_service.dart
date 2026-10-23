@@ -487,14 +487,8 @@ class SupabaseService {
     final frotaIds = dispositivos.map((d) => d.idFrota).whereType<String>().toSet().toList();
     if (frotaIds.isEmpty) return [];
     
-    List<FrotaModel> frotas = [];
-    for (var id in frotaIds) {
-      final data = await _client.from('Frotas').select().eq('id', id).maybeSingle();
-      if (data != null) {
-        frotas.add(FrotaModel.fromJson(data));
-      }
-    }
-    return frotas;
+    final data = await _client.from('Frotas').select().inFilter('id', frotaIds);
+    return (data as List).map((e) => FrotaModel.fromJson(e)).toList();
   }
 
   Future<FrotaModel?> getFrotaById(String id) async {
@@ -525,9 +519,9 @@ class SupabaseService {
       if (selectedDeviceIds != null) {
         // Desvincular dispositivos que pertenciam à frota e agora não foram selecionados
         await _client.from('Dispositivos').update({'id_frota': null}).eq('id_frota', id);
-        // Vincular os dispositivos selecionados para esta frota
-        for (var devId in selectedDeviceIds) {
-          await _client.from('Dispositivos').update({'id_frota': id}).eq('id', devId);
+        // Vincular os dispositivos selecionados para esta frota em lote
+        if (selectedDeviceIds.isNotEmpty) {
+          await _client.from('Dispositivos').update({'id_frota': id}).inFilter('id', selectedDeviceIds);
         }
       }
 

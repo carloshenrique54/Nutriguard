@@ -115,16 +115,18 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
             }
           } else if (role == 'gerente') {
             _frotas = await _supabase.getFrotasByGerente(_perfil!.id);
-            List<DispositivoModel> allDevices = [];
-            for (var frota in _frotas) {
-              final devs = await _supabase.getDispositivosByFrota(frota.id);
-              allDevices.addAll(devs);
-            }
-            _dispositivos = allDevices;
+            final devLists = await Future.wait(
+              _frotas.map((frota) => _supabase.getDispositivosByFrota(frota.id)),
+            );
+            _dispositivos = devLists.expand((list) => list).toList();
           } else {
             // Operador
-            _frotas = await _supabase.getFrotasByOperador(_perfil!.id);
-            _dispositivos = await _supabase.getDispositivosByOperador(_perfil!.id);
+            final results = await Future.wait([
+              _supabase.getFrotasByOperador(_perfil!.id),
+              _supabase.getDispositivosByOperador(_perfil!.id),
+            ]);
+            _frotas = results[0] as List<FrotaModel>;
+            _dispositivos = results[1] as List<DispositivoModel>;
           }
 
           // Checar se veio veículo ou frota por argumento de rota
