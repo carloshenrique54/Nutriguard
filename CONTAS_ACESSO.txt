@@ -1,0 +1,40 @@
+CONTAS DE ACESSO - NUTRIGUARD
+
+==================================================
+1. ADMINISTRADOR (ADM)
+Nome: Carlos Henrique (ADM)
+E-mail: admin@nutriguard.com
+Senha: 123456
+Cargo: admin
+Acesso: Gestão global do sistema (todas as frotas, dispositivos e cadastros)
+
+==================================================
+2. GERENTE
+Nome: Mariana Silveira
+E-mail: gerente.sul@nutriguard.com
+Senha: 123456
+Cargo: gerente
+Frota: Frota Sul - Congelados
+
+* Alternativo:
+Nome: Roberto Costa
+E-mail: gerente.sudeste@nutriguard.com
+Senha: 123456
+Cargo: gerente
+Frota: Frota Sudeste - Perecíveis
+
+==================================================
+3. OPERADOR
+Nome: Lucas Mendes
+E-mail: operador.lucas@nutriguard.com
+Senha: 123456
+Cargo: operador
+Veículo: Mercedes Sprinter 415 CDI (BRA-2E19)
+
+* Alternativo:
+Nome: Juliana Oliveira
+E-mail: operadora.juliana@nutriguard.com
+Senha: 123456
+Cargo: operador
+Veículo: VW Delivery 9.170 (SUL-8K42)
+==================================================

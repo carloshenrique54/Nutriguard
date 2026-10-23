@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../widgets/custom_end_drawer.dart';
@@ -7,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/models.dart';
 import '../../widgets/animated_components.dart';
 import '../../widgets/watermark_background.dart';
+import '../../widgets/confirmation_dialog.dart';
 
 class ListarOperadoresScreen extends StatefulWidget {
   final String title;
@@ -62,7 +62,16 @@ class _ListarOperadoresScreenState extends State<ListarOperadoresScreen> {
           info[u.id] = f.isNotEmpty ? f.map((x) => x.nome).join(', ') : 'Nenhuma';
         } else {
           final d = dispositivos.where((d) => d.idOperador == u.id).toList();
-          info[u.id] = d.isNotEmpty ? d.map((x) => x.nomeDispositivo).join(', ') : 'Nenhum';
+          info[u.id] = d.isNotEmpty
+              ? d.map((x) {
+                  if (x.modeloVeiculo != null && x.modeloVeiculo!.isNotEmpty) {
+                    return x.placaVeiculo != null && x.placaVeiculo!.isNotEmpty
+                        ? '${x.modeloVeiculo} (${x.placaVeiculo})'
+                        : x.modeloVeiculo!;
+                  }
+                  return x.nomeDispositivo ?? 'Veículo';
+                }).join(', ')
+              : 'Nenhum';
         }
       }
 
@@ -134,7 +143,7 @@ class _ListarOperadoresScreenState extends State<ListarOperadoresScreen> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        _userRole.toUpperCase(),
+                        (_userRole == 'admin' || _userRole == 'adm') ? 'ADM' : _userRole.toUpperCase(),
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 12,
@@ -237,7 +246,9 @@ class _ListarOperadoresScreenState extends State<ListarOperadoresScreen> {
                                       HapticFeedback.mediumImpact();
                                       _showDeleteDialog(context, user);
                                     },
-                                    onTap: () {},
+                                    onTap: () {
+                                      Navigator.pushNamed(context, '/perfil', arguments: user);
+                                    },
                                   ),
                                 ),
                               );
@@ -253,57 +264,45 @@ class _ListarOperadoresScreenState extends State<ListarOperadoresScreen> {
     );
   }
 
-  Future<bool?> _showDeleteDialog(BuildContext context, UsuarioModel user) {
-    return showGeneralDialog<bool>(
+  Future<bool?> _showDeleteDialog(BuildContext context, UsuarioModel user) async {
+    final confirmed = await showDeleteConfirmationModal(
       context: context,
-      barrierColor: Colors.transparent,
-      barrierDismissible: true,
-      barrierLabel: 'Delete',
-      transitionDuration: const Duration(milliseconds: 200),
-      pageBuilder: (context, animation, secondaryAnimation) => const SizedBox.shrink(),
-      transitionBuilder: (context, animation, secondaryAnimation, child) {
-        return Stack(
-          children: [
-            FadeTransition(
-              opacity: animation,
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 8.0, sigmaY: 8.0),
-                child: Container(color: const Color(0x33000000)),
-              ),
-            ),
-            ScaleTransition(
-              scale: CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
-              child: AlertDialog(
-                title: const Text('Excluir Funcionário'),
-                content: Text('Tem certeza que deseja remover ${user.nome}?'),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(context, true);
-                      HapticFeedback.mediumImpact();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: const Text('Removido com sucesso (simulado)', style: TextStyle(color: Colors.white)),
-                          backgroundColor: Colors.red,
-                          behavior: SnackBarBehavior.floating,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                        ),
-                      );
-                      _fetchData();
-                    },
-                    child: const Text('Excluir', style: TextStyle(color: Color(0xFFC23147))),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        );
-      },
+      title: 'Excluir Funcionário',
+      itemName: user.nome ?? 'Funcionário',
+      itemDetail: 'CPF: ${user.cpf ?? "Não informado"} • Cargo: ${user.cargo ?? user.role}',
+      itemIcon: Icons.person_outline,
     );
+
+    if (confirmed == true && context.mounted) {
+      try {
+        await _supabase.deleteUsuario(user.id);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Funcionário "${user.nome ?? "Funcionário"}" removido com sucesso!', style: const TextStyle(color: Colors.white)),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            ),
+          );
+          _fetchData();
+        }
+        return true;
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Erro ao excluir: $e', style: const TextStyle(color: Colors.white)),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            ),
+          );
+        }
+        return false;
+      }
+    }
+    return false;
   }
 }
 
@@ -328,7 +327,6 @@ class ColabCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16, right: 12),
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -340,116 +338,129 @@ class ColabCard extends StatelessWidget {
           ),
         ],
       ),
-      child: Row(
-        children: [
-          // Esquerda (Ícone Perfil)
-          Hero(
-            tag: 'user_icon_${user.id}',
-            child: Container(
-              width: 60,
-              height: 60,
-              decoration: BoxDecoration(
-                color: const Color(0xFFC8E569),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              alignment: Alignment.center,
-              child: const Icon(
-                Icons.person_outline,
-                color: Color(0xFF333333),
-                size: 32,
-              ),
-            ),
-          ),
-          const SizedBox(width: 16),
-          
-          // Centro (Expanded)
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
               children: [
+                // Esquerda (Ícone Perfil)
                 Hero(
-                  tag: 'user_title_${user.id}',
-                  child: Material(
-                    color: Colors.transparent,
-                    child: Text(
-                      user.nome ?? 'Sem Nome',
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
-                      ),
+                  tag: 'user_icon_${user.id}',
+                  child: Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFC8E569),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      Icons.person_outline,
+                      color: Color(0xFF333333),
+                      size: 32,
                     ),
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  'CPF: ${user.cpf ?? 'N/A'}',
-                  style: const TextStyle(
-                    color: Colors.grey,
-                    fontSize: 12,
+                const SizedBox(width: 16),
+                
+                // Centro (Expanded)
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Hero(
+                        tag: 'user_title_${user.id}',
+                        child: Material(
+                          color: Colors.transparent,
+                          child: Text(
+                            user.nome ?? 'Sem Nome',
+                            style: const TextStyle(
+                              color: Colors.black,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 16,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'CPF: ${user.cpf ?? 'N/A'}',
+                        style: const TextStyle(
+                          color: Colors.grey,
+                          fontSize: 12,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        infoLabel,
+                        style: TextStyle(
+                          color: Colors.grey.shade600,
+                          fontSize: 10,
+                        ),
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        infoValue.isEmpty ? 'Nenhum' : infoValue,
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ),
+                ),
+                const SizedBox(width: 12),
+                
+                // Direita
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline, color: Color(0xFFC23147)),
+                      onPressed: onDelete,
+                      constraints: const BoxConstraints(),
+                      padding: EdgeInsets.zero,
+                    ),
+                    const SizedBox(height: 18),
+                    Material(
+                      color: const Color(0xFFC23147),
+                      borderRadius: BorderRadius.circular(6),
+                      child: InkWell(
+                        onTap: onTap,
+                        borderRadius: BorderRadius.circular(6),
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          child: Text(
+                            'Ver mais',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-          
-          // Direita
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline, color: Color(0xFFC23147)),
-                    onPressed: onDelete,
-                    constraints: const BoxConstraints(),
-                    padding: EdgeInsets.zero,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                infoLabel,
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontSize: 10,
-                ),
-                textAlign: TextAlign.right,
-              ),
-              Text(
-                infoValue.isEmpty ? 'Nenhum' : infoValue,
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 12,
-                ),
-                textAlign: TextAlign.right,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 8),
-              Material(
-                color: const Color(0xFFC23147),
-                borderRadius: BorderRadius.circular(6),
-                child: InkWell(
-                  onTap: onTap,
-                  borderRadius: BorderRadius.circular(6),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    child: Text(
-                      'Ver perfil',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }

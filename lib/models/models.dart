@@ -88,9 +88,9 @@ class FrotaModel {
 
   factory FrotaModel.fromJson(Map<String, dynamic> json) {
     return FrotaModel(
-      id: json['id'],
+      id: json['id']?.toString() ?? '',
       fotoUrl: json['foto_url'] ?? json['avatar_url'],
-      idGerente: json['id_gerente'],
+      idGerente: json['id_gerente']?.toString(),
       nome: json['nome'],
       createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at']) : null,
       updatedAt: json['updated_at'] != null ? DateTime.tryParse(json['updated_at']) : null,
@@ -104,6 +104,24 @@ class FrotaModel {
       if (idGerente != null) 'id_gerente': idGerente,
       if (nome != null) 'nome': nome,
     };
+  }
+
+  FrotaModel copyWith({
+    String? id,
+    String? fotoUrl,
+    String? idGerente,
+    String? nome,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) {
+    return FrotaModel(
+      id: id ?? this.id,
+      fotoUrl: fotoUrl ?? this.fotoUrl,
+      idGerente: idGerente ?? this.idGerente,
+      nome: nome ?? this.nome,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
   }
 }
 
@@ -165,12 +183,60 @@ class DispositivoModel {
       temperaturaMaxima: json['temperatura_maxima'],
       umidadeMinima: json['umidade_minima'],
       umidadeMaxima: json['umidade_maxima'],
-      sensibilidadeVibracao: json['sensibilidade_vibracao'],
-      limiteVibracao: json['limite_vibracao'],
+      sensibilidadeVibracao: json['sensibilidade_vibracao'] is num
+          ? (json['sensibilidade_vibracao'] as num).toInt()
+          : int.tryParse(json['sensibilidade_vibracao']?.toString() ?? ''),
+      limiteVibracao: json['limite_vibracao'] is num
+          ? (json['limite_vibracao'] as num).toInt()
+          : int.tryParse(json['limite_vibracao']?.toString() ?? ''),
       intervaloDados: json['intervalo_dados'],
       bateriaMinima: json['bateria_minima'],
       createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at']) : null,
       updatedAt: json['updated_at'] != null ? DateTime.tryParse(json['updated_at']) : null,
+    );
+  }
+
+  DispositivoModel copyWith({
+    String? id,
+    String? fotoUrl,
+    String? idOperador,
+    String? idFrota,
+    String? nomeDispositivo,
+    String? numeroSerie,
+    String? modeloDispositivo,
+    String? modeloVeiculo,
+    String? placaVeiculo,
+    num? temperaturaMinima,
+    num? temperaturaMaxima,
+    num? umidadeMinima,
+    num? umidadeMaxima,
+    int? sensibilidadeVibracao,
+    int? limiteVibracao,
+    num? intervaloDados,
+    num? bateriaMinima,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) {
+    return DispositivoModel(
+      id: id ?? this.id,
+      fotoUrl: fotoUrl ?? this.fotoUrl,
+      idOperador: idOperador ?? this.idOperador,
+      idFrota: idFrota ?? this.idFrota,
+      nomeDispositivo: nomeDispositivo ?? this.nomeDispositivo,
+      numeroSerie: numeroSerie ?? this.numeroSerie,
+      modeloDispositivo: modeloDispositivo ?? this.modeloDispositivo,
+      modeloVeiculo: modeloVeiculo ?? this.modeloVeiculo,
+      placaVeiculo: placaVeiculo ?? this.placaVeiculo,
+      temperaturaMinima: temperaturaMinima ?? this.temperaturaMinima,
+      temperaturaMaxima: temperaturaMaxima ?? this.temperaturaMaxima,
+      umidadeMinima: umidadeMinima ?? this.umidadeMinima,
+      umidadeMaxima: umidadeMaxima ?? this.umidadeMaxima,
+      sensibilidadeVibracao: sensibilidadeVibracao ?? this.sensibilidadeVibracao,
+      limiteVibracao: limiteVibracao ?? this.limiteVibracao,
+      intervaloDados: intervaloDados ?? this.intervaloDados,
+      bateriaMinima: bateriaMinima ?? this.bateriaMinima,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 

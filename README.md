@@ -1,93 +1,169 @@
-# NutriGuard 🚚🛡️
+<div align="center">
 
-**NutriGuard** é uma plataforma de telemetria e gestão de frotas focada no monitoramento em tempo real de cargas sensíveis. O sistema coleta dados de sensores IoT (como temperatura, umidade e vibração), emite alertas sobre ocorrências críticas e organiza o acesso à informação através de uma hierarquia de papéis (Administradores, Gerentes e Operadores).
+![NutriGuard](https://capsule-render.vercel.app/api?type=waving&color=0:FF0000,100:7A0000&height=160&section=header&text=NutriGuard&fontSize=65&fontColor=ffffff&animation=fadeIn&fontAlignY=38&desc=Telemetria%20e%20Gest%C3%A3o%20de%20Frotas%20para%20Cargas%20Sens%C3%ADveis&descSize=20&descAlignY=58&descColor=90caf9)
 
-Desenvolvido em **Flutter** para o front-end e **Supabase** como backend as a service (BaaS).
+[![Flutter](https://img.shields.io/badge/Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white)](https://flutter.dev/)
+[![Dart](https://img.shields.io/badge/Dart-0175C2?style=for-the-badge&logo=dart&logoColor=white)](https://dart.dev/)
+[![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![IoT](https://img.shields.io/badge/IoT-Telemetria-0d47a1?style=for-the-badge)](#-visão-geral)
 
----
-
-## 🛠 Tecnologias Utilizadas
-
-* **Front-end:** Flutter (Dart). Compatível com Web (Chrome) e Mobile.
-* **Back-end & Banco de Dados:** Supabase (PostgreSQL).
-* **Autenticação:** Supabase Auth (Email e Senha).
-* **Storage:** Supabase Storage (Upload de fotos de perfil).
-* **Pacotes Principais:** `supabase_flutter`, `image_picker`.
+</div>
 
 ---
 
-## 👥 Perfis e Permissões (RBAC)
+## ◈ Visão Geral
 
-O sistema possui uma navegação dinâmica e controle de acesso estrito com base na coluna `cargo` do usuário:
+O **NutriGuard** é uma plataforma de **telemetria e gestão de frotas** focada no monitoramento em tempo real de **cargas sensíveis**.
 
-1. **Admin (`admin`):** Acesso irrestrito. Pode cadastrar novos funcionários (gerentes e operadores), registrar dispositivos IoT, criar frotas e visualizar todos os relatórios e frotas do sistema.
-2. **Gerente (`gerente`):** Possui acesso limitado à sua própria frota. Pode visualizar os veículos associados, histórico de viagens e acompanhar os alertas de sensores dos dispositivos sob sua gestão.
-3. **Operador (`operador`):** O motorista responsável pela viagem. Tem acesso ao seu perfil e opções operacionais da viagem (ex: iniciar e parar viagem).
+O sistema coleta dados de sensores IoT — como **temperatura, umidade e vibração** —, emite **alertas** sobre ocorrências críticas e organiza o acesso à informação por meio de uma **hierarquia de papéis** (Administradores, Gerentes e Operadores), garantindo que cada pessoa veja apenas o que lhe cabe.
 
----
-
-## 🗄️ Estrutura do Banco de Dados (Supabase)
-
-O banco é em PostgreSQL, utilizando as políticas de RLS (Row Level Security) para proteger as tabelas.
-
-### Tabelas Principais:
-
-* **`Usuarios`:**
-  Armazena os perfis. Colunas principais: `id` (FK do auth.users), `nome`, `email`, `cpf`, `telefone`, `cargo`, `foto_url`.  
-  *Nota:* Existe uma **Trigger** (`on_auth_user_created`) no Supabase que copia automaticamente os dados do `auth.users` para esta tabela no momento do cadastro.
-
-* **`Frotas`:**
-  Agrupamento de veículos. Colunas: `id`, `nome`, `id_gerente` (referência ao Usuário que gerencia a frota).
-
-* **`Dispositivos`:**
-  Aparelhos IoT rastreadores/sensores. Colunas: `id`, `id_frota`, `id_operador`, `nome_dispositivo`, limites aceitáveis (ex: `temperatura_maxima`, `temperatura_minima`, `limite_vibracao`), etc.
-
-* **`medicoes`:**
-  Dados recebidos constantemente dos sensores. Colunas: `id`, `id_dispositivo`, `temperatura`, `umidade`, `vibracao`, `porta_aberta`, `latitude`, `longitude`, `bateria`.
-
-* **`ocorrencias`:**
-  Alertas gerados quando uma medição ultrapassa os limites configurados no Dispositivo.
-
-### Storage (Armazenamento)
-
-* **Bucket:** `profiles`
-  Utilizado para armazenar as fotos de perfil dos usuários. O acesso de leitura é público, mas o envio (Insert/Update/Delete) é protegido por RLS e restrito apenas ao próprio dono da foto (baseado no `auth.uid()`).
+Desenvolvido em **Flutter** no front-end e **Supabase** como _Backend as a Service_ (BaaS).
 
 ---
 
-## 📂 Estrutura do Projeto (Flutter)
+## ✦ Funcionalidades
 
-A arquitetura do front-end é focada na divisão por **funcionalidades** e **telas contextuais**:
-
-* `lib/models/` -> Modelos de dados (ex: `UsuarioModel`, `DispositivoModel`, `MedicaoModel`). Responsáveis pelos métodos `.fromJson` e `.toJson`.
-* `lib/services/` -> Regras de negócio e comunicação externa. Destaque para `supabase_service.dart`, que concentra toda a lógica de Auth, CRUD do banco de dados e upload de Storage.
-* `lib/screens/` -> Telas do aplicativo organizadas por domínios:
-  * `auth/` (Login, Cadastro)
-  * `dashboard/` (Dashboards para frotas, veículos, vazio)
-  * `perfil/` (Visualização e Edição de Perfil com uso de `image_picker`)
-  * `cadastros/` (Telas de formulário para criar usuários, frotas, dispositivos)
-  * `listagens/` (Listas em tela para gerenciar frotas, dispositivos, etc.)
-* `lib/widgets/` -> Componentes reaproveitáveis, como o Drawer lateral dinâmico (`custom_end_drawer.dart`) que se adapta de acordo com a variável `role` do usuário, e o rodapé customizado (`custom_bottom_nav_bar.dart`).
+| ◆ Módulo                        | › Descrição                                                                    |
+| ------------------------------- | ------------------------------------------------------------------------------ |
+| `[ Monitoramento em Tempo Real ]` | Recebimento contínuo de medições dos sensores IoT instalados nos veículos      |
+| `[ Alertas e Ocorrências ]`       | Geração automática de ocorrências quando uma medição ultrapassa os limites     |
+| `[ Gestão de Frotas ]`            | Agrupamento de veículos e dispositivos sob a responsabilidade de um gerente    |
+| `[ Controle de Dispositivos ]`    | Cadastro de rastreadores/sensores com limites configuráveis por dispositivo    |
+| `[ Controle de Acesso (RBAC) ]`   | Navegação dinâmica e permissões estritas conforme o cargo do usuário           |
+| `[ Perfil de Usuário ]`           | Edição de nome, telefone e foto de perfil com upload seguro para o Storage     |
+| `[ Multiplataforma ]`             | Compatível com Web (Chrome) e Mobile a partir da mesma base de código          |
 
 ---
 
-## 🚀 Como Rodar o Projeto
+## ⚙ Stack Tecnológica
 
-1. Clone este repositório.
-2. Certifique-se de ter o [Flutter](https://flutter.dev/docs/get-started/install) instalado.
-3. Baixe as dependências:
-   ```bash
-   flutter pub get
-   ```
-4. Execute o projeto (no emulador, dispositivo físico ou Chrome):
-   ```bash
-   flutter run -d chrome
-   ```
+```
+◆ Front-end      →  Flutter (Dart) — Web e Mobile
+◆ Back-end       →  Supabase (BaaS)
+◆ Banco de Dados →  PostgreSQL + Row Level Security (RLS)
+◆ Autenticação   →  Supabase Auth (Email e Senha)
+◆ Storage        →  Supabase Storage (fotos de perfil)
+◆ Pacotes        →  supabase_flutter, image_picker
+```
 
 ---
 
-## 📌 Para o Desenvolvedor que está assumindo:
+## ◉ Perfis e Permissões (RBAC)
 
-1. **Fallback de Sessão:** Caso o Supabase falhe na trigger e a tabela `Usuarios` não preencha, o `SupabaseService` e a tela de perfil já estão configurados com um "fallback" para extrair o nome, telefone, cpf e cargo do `currentUser.userMetadata`.
-2. **Edição de Perfil:** A tela de perfil (`perfil_screen.dart`) já implementa atualização em tempo real de `nome`, `telefone` e foto de perfil, subindo o dado para o Storage do Supabase de maneira segura. Cargos e ID não são editáveis pelo usuário.
-3. **Drawer Dinâmico:** Se for criar telas novas e quiser linká-las ao menu, atualize o `_buildActionButtons` ou os `if (_userRole == '...')` dentro do `lib/widgets/custom_end_drawer.dart`.
+A navegação é dinâmica e o controle de acesso é estrito, com base na coluna `cargo` do usuário.
+
+| ◆ Perfil                | › Cargo (`cargo`) | › Permissões                                                                                                                                  |
+| ----------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `[ Administrador ]`     | `admin`           | Acesso irrestrito. Cadastra funcionários (gerentes e operadores), registra dispositivos IoT, cria frotas e visualiza todos os relatórios e frotas |
+| `[ Gerente ]`           | `gerente`         | Acesso limitado à **própria frota**. Visualiza veículos associados, histórico de viagens e alertas de sensores dos dispositivos sob sua gestão  |
+| `[ Operador ]`          | `operador`        | Motorista responsável pela viagem. Acessa o próprio perfil e as opções operacionais (iniciar e parar viagem)                                  |
+
+---
+
+## ◆ Banco de Dados
+
+O banco é **PostgreSQL** (Supabase), com políticas de **RLS (Row Level Security)** protegendo as tabelas.
+
+### Tabelas Principais
+
+| ◆ Tabela        | › Descrição                                                              | › Colunas principais                                                                                                                                   |
+| --------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Usuarios`      | Perfis dos usuários                                                      | `id` (FK de `auth.users`), `nome`, `email`, `cpf`, `telefone`, `cargo`, `foto_url`                                                                     |
+| `Frotas`        | Agrupamento de veículos                                                  | `id`, `nome`, `id_gerente` (referência ao usuário que gerencia a frota)                                                                                |
+| `Dispositivos`  | Aparelhos IoT rastreadores/sensores                                      | `id`, `id_frota`, `id_operador`, `nome_dispositivo`, `temperatura_maxima`, `temperatura_minima`, `limite_vibracao`, ...                                |
+| `medicoes`      | Dados recebidos constantemente dos sensores                              | `id`, `id_dispositivo`, `temperatura`, `umidade`, `vibracao`, `porta_aberta`, `latitude`, `longitude`, `bateria`                                       |
+| `ocorrencias`   | Alertas gerados quando uma medição ultrapassa os limites do dispositivo  | —                                                                                                                                                      |
+
+> **Trigger `on_auth_user_created`:** copia automaticamente os dados de `auth.users` para a tabela `Usuarios` no momento do cadastro.
+
+### Storage
+
+```
+◆ Bucket   →  profiles
+◆ Uso      →  Fotos de perfil dos usuários
+◆ Leitura  →  Pública
+◆ Escrita  →  Insert / Update / Delete protegidos por RLS,
+              restritos ao dono da foto (auth.uid())
+```
+
+---
+
+## ▸ Como Executar Localmente
+
+**Pré-requisitos:** [Flutter](https://docs.flutter.dev/get-started/install) instalado e um projeto [Supabase](https://supabase.com/) configurado com as tabelas e políticas descritas acima.
+
+```bash
+# › Clone o repositório
+git clone https://github.com/SEU-USUARIO/NutriGuard.git
+
+# › Acesse o diretório
+cd NutriGuard
+
+# › Baixe as dependências
+flutter pub get
+
+# › Execute o projeto (emulador, dispositivo físico ou Chrome)
+flutter run -d chrome
+```
+
+> ⚠ Certifique-se de que a **URL** e a **anon key** do seu projeto Supabase estão configuradas na inicialização do app.
+
+---
+
+## ◉ Estrutura do Projeto
+
+A arquitetura do front-end é dividida por funcionalidades e telas contextuais.
+
+```
+NutriGuard/
+└── lib/
+    ├── models/       ◆ Modelos de dados (UsuarioModel, DispositivoModel, MedicaoModel...)
+    │                   com os métodos .fromJson e .toJson
+    ├── services/     ◆ Regras de negócio e comunicação externa
+    │   └── supabase_service.dart   → Auth, CRUD do banco e upload de Storage
+    ├── screens/      ◆ Telas organizadas por domínio
+    │   ├── auth/         → Login e Cadastro
+    │   ├── dashboard/    → Dashboards de frotas, veículos e estado vazio
+    │   ├── perfil/       → Visualização e edição de perfil (image_picker)
+    │   ├── cadastros/    → Formulários de usuários, frotas e dispositivos
+    │   └── listagens/    → Listas para gerenciar frotas, dispositivos, etc.
+    └── widgets/      ◆ Componentes reaproveitáveis
+        ├── custom_end_drawer.dart      → Drawer lateral dinâmico (adapta-se ao role)
+        └── custom_bottom_nav_bar.dart  → Rodapé customizado
+```
+
+---
+
+## ✦ Para Quem Está Assumindo o Projeto
+
+| ◆ Tema                    | › O que saber                                                                                                                                                                                                         |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `[ Fallback de Sessão ]`  | Se a trigger do Supabase falhar e a tabela `Usuarios` não for preenchida, o `SupabaseService` e a tela de perfil extraem nome, telefone, CPF e cargo de `currentUser.userMetadata`                                    |
+| `[ Edição de Perfil ]`    | `perfil_screen.dart` atualiza em tempo real nome, telefone e foto (enviada ao Storage com segurança). **Cargo e ID não são editáveis** pelo usuário                                                                    |
+| `[ Drawer Dinâmico ]`     | Ao criar telas novas e ligá-las ao menu, atualize o `_buildActionButtons` ou os `if (_userRole == '...')` em `lib/widgets/custom_end_drawer.dart`                                                                     |
+
+---
+
+## ◆ Equipe
+
+| `[ Dev ]` Carlos Henrique | `[ Dev ]` João Lucas  | `[ Dev ]` Gustavo Leite 
+| ------------------ | ------------------------ | ------------------------ |
+
+---
+
+## → Links
+
+[![Repositório](https://img.shields.io/badge/GitHub-Reposit%C3%B3rio-181717?style=for-the-badge&logo=github)](https://github.com/SEU-USUARIO/NutriGuard)
+
+---
+
+## ◈ Licença
+
+Distribuído sob a licença **MIT**. Consulte o arquivo [`LICENSE`](./LICENSE) para mais detalhes.
+
+<div align="center">
+
+![Footer](https://capsule-render.vercel.app/api?type=waving&color=0:FF0000,100:7A0000&height=100&section=footer)
+
+</div>

@@ -17,6 +17,7 @@ import 'screens/listagens/listar_dispositivos_screen.dart';
 import 'screens/listagens/listar_operadores_screen.dart';
 import 'screens/listagens/listar_frotas_screen.dart';
 import 'screens/acoes/iniciar_viagem_screen.dart';
+import 'screens/acoes/parar_viagem_screen.dart';
 import 'screens/acoes/configuracoes_screen.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -38,6 +39,7 @@ class NutriGuardApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      debugShowCheckedModeBanner: false,
       title: 'NutriGuard',
       initialRoute: '/splash',
       routes: {
@@ -74,11 +76,14 @@ class NutriGuardApp extends StatelessWidget {
         // Cadastros e Listagens
         '/cadastrar-funcionario': (context) => const CadastrarFuncionarioScreen(),
         '/cadastrar-dispositivo': (context) => const CadastrarDispositivoScreen(),
+        '/editar-dispositivo': (context) => const CadastrarDispositivoScreen(),
         '/criar-frota': (context) => const CriarFrotaScreen(),
+        '/editar-frota': (context) => const CriarFrotaScreen(),
         '/listar-dispositivos': (context) => const ListarDispositivosScreen(),
         '/listar-gerentes': (context) => const ListarOperadoresScreen(title: 'Gerentes'),
         '/listar-operadores': (context) => const ListarOperadoresScreen(title: 'Operadores'),
         '/iniciar-viagem': (context) => const IniciarViagemScreen(),
+        '/parar-viagem': (context) => const PararViagemScreen(),
 
         // Listagens e Ações extras
         '/listar-frotas': (context) => const ListarFrotasScreen(),

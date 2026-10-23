@@ -106,6 +106,7 @@ class GoogleButton extends StatelessWidget {
       child: ElevatedButton(
         onPressed: onPressed,
         style: ElevatedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
           backgroundColor: Colors.transparent,
           shadowColor: Colors.transparent,
           shape: RoundedRectangleBorder(
@@ -114,12 +115,16 @@ class GoogleButton extends StatelessWidget {
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(Icons.g_mobiledata, color: Colors.red, size: 32),
-            const SizedBox(width: 8),
-            Text(
-              text,
-              style: const TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.w600),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                text,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.w600),
+              ),
             ),
           ],
         ),

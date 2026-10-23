@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../../widgets/auth_components.dart';
 import '../../services/supabase_service.dart';
+import '../../services/trip_service.dart';
 
 class CadastroScreen extends StatefulWidget {
   const CadastroScreen({super.key});
@@ -42,7 +43,7 @@ class _CadastroScreenState extends State<CadastroScreen> {
 
     setState(() => _isLoading = true);
     try {
-      await _supabaseService.signUp(
+      final response = await _supabaseService.signUp(
         email: _emailCtrl.text.trim(),
         password: _senhaCtrl.text.trim(),
         nome: _nomeCtrl.text.trim(),
@@ -51,15 +52,34 @@ class _CadastroScreenState extends State<CadastroScreen> {
         cargo: 'operador', // default
       );
 
+      final user = response.user;
+      if (user != null) {
+        await TripService().resetTrip(user.id);
+      }
+
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cadastro realizado! Faça login.'), backgroundColor: Colors.green),
-      );
-      Navigator.pop(context); // Voltar para a tela de login
+      if (response.session != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cadastro realizado com sucesso!'), backgroundColor: Colors.green),
+        );
+        Navigator.pushNamedAndRemoveUntil(context, '/iniciar-viagem', (route) => false);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cadastro realizado! Faça login para iniciar a viagem.'), backgroundColor: Colors.green),
+        );
+        Navigator.pop(context); // Voltar para a tela de login
+      }
     } catch (e) {
       if (!mounted) return;
+      final msg = SupabaseService.formatarErro(e);
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao cadastrar: ${e.toString().replaceFirst('Exception: ', '')}'), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text(msg, style: const TextStyle(color: Colors.white)),
+          backgroundColor: const Color(0xFFC23147),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        ),
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -83,94 +103,99 @@ class _CadastroScreenState extends State<CadastroScreen> {
       extendBody: true,
       backgroundColor: const Color(0xFFFFF2E0),
       body: SafeArea(
-        child: Column(
-          children: [
-            const TopSection(),
-            Expanded(
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-                decoration: const BoxDecoration(
-                  color: Color(0xFFC8E569),
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
-                ),
-                child: SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      CustomTextField(
-                        controller: _nomeCtrl,
-                        prefixIcon: Icons.person_outline,
-                        hintText: "Nome de Usuário",
-                      ),
-                      CustomTextField(
-                        controller: _emailCtrl,
-                        prefixIcon: Icons.mail_outline,
-                        hintText: "E-mail",
-                      ),
-                      CustomTextField(
-                        controller: _senhaCtrl,
-                        prefixIcon: Icons.lock_outline,
-                        hintText: "Senha",
-                        obscureText: true,
-                      ),
-                      CustomTextField(
-                        controller: _confirmaSenhaCtrl,
-                        prefixIcon: Icons.lock_outline,
-                        hintText: "Confirmar senha",
-                        obscureText: true,
-                      ),
-                      CustomTextField(
-                        controller: _telefoneCtrl,
-                        prefixIcon: Icons.phone_outlined,
-                        hintText: "Telefone",
-                        inputFormatters: [_telefoneFormatter],
-                        keyboardType: TextInputType.phone,
-                      ),
-                      CustomTextField(
-                        controller: _cpfCtrl,
-                        prefixIcon: Icons.description_outlined,
-                        hintText: "CPF",
-                        inputFormatters: [_cpfFormatter],
-                        keyboardType: TextInputType.number,
-                      ),
-                      const SizedBox(height: 16),
-                      _isLoading 
-                          ? const CircularProgressIndicator(color: Color(0xFFAD2C3F))
-                          : PrimaryGradientButton(
-                              text: "Cadastrar",
-                              onPressed: _cadastrar,
-                            ),
-                      if (!_isLoading) ...[
-                        GoogleButton(
-                          text: "crie uma conta com google",
-                          onPressed: () {},
-                        ),
-                      ],
-                      const SizedBox(height: 24),
-                      GestureDetector(
-                        onTap: () => Navigator.pushNamed(context, '/'),
-                        child: RichText(
-                          text: const TextSpan(
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-                            children: [
-                              TextSpan(
-                                text: 'Ja tem conta? Faça ',
-                                style: TextStyle(color: Colors.black54),
-                              ),
-                              TextSpan(
-                                text: 'Login!',
-                                style: TextStyle(color: Color(0xFFAD2C3F), fontWeight: FontWeight.bold),
-                              ),
-                            ],
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Column(
+              children: [
+                const TopSection(),
+                Expanded(
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFC8E569),
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+                    ),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          CustomTextField(
+                            controller: _nomeCtrl,
+                            prefixIcon: Icons.person_outline,
+                            hintText: "Nome de Usuário",
                           ),
-                        ),
+                          CustomTextField(
+                            controller: _emailCtrl,
+                            prefixIcon: Icons.mail_outline,
+                            hintText: "E-mail",
+                          ),
+                          CustomTextField(
+                            controller: _senhaCtrl,
+                            prefixIcon: Icons.lock_outline,
+                            hintText: "Senha",
+                            obscureText: true,
+                          ),
+                          CustomTextField(
+                            controller: _confirmaSenhaCtrl,
+                            prefixIcon: Icons.lock_outline,
+                            hintText: "Confirmar senha",
+                            obscureText: true,
+                          ),
+                          CustomTextField(
+                            controller: _telefoneCtrl,
+                            prefixIcon: Icons.phone_outlined,
+                            hintText: "Telefone",
+                            inputFormatters: [_telefoneFormatter],
+                            keyboardType: TextInputType.phone,
+                          ),
+                          CustomTextField(
+                            controller: _cpfCtrl,
+                            prefixIcon: Icons.description_outlined,
+                            hintText: "CPF",
+                            inputFormatters: [_cpfFormatter],
+                            keyboardType: TextInputType.number,
+                          ),
+                          const SizedBox(height: 16),
+                          _isLoading 
+                              ? const CircularProgressIndicator(color: Color(0xFFAD2C3F))
+                              : PrimaryGradientButton(
+                                  text: "Cadastrar",
+                                  onPressed: _cadastrar,
+                                ),
+                          if (!_isLoading) ...[
+                            GoogleButton(
+                              text: "Crie uma conta com o Google",
+                              onPressed: () {},
+                            ),
+                          ],
+                          const SizedBox(height: 24),
+                          GestureDetector(
+                            onTap: () => Navigator.pushNamed(context, '/'),
+                            child: RichText(
+                              text: const TextSpan(
+                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                                children: [
+                                  TextSpan(
+                                    text: 'Ja tem conta? Faça ',
+                                    style: TextStyle(color: Colors.black54),
+                                  ),
+                                  TextSpan(
+                                    text: 'Login!',
+                                    style: TextStyle(color: Color(0xFFAD2C3F), fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
