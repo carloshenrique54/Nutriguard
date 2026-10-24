@@ -359,51 +359,58 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
                   // 1. CABEÇALHO
                   Row(
                     children: [
-                      Flexible(
-                        child: Text(
-                          isEditing ? 'Editar frota' : 'Criar frota',
-                          style: const TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFFC23147),
+                      Expanded(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                isEditing ? 'Editar frota' : 'Criar frota',
+                                style: const TextStyle(
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFFC23147),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFC23147),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Text(
+                                'ADM',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Builder(
+                        builder: (ctx) => GestureDetector(
+                          onTap: () => CustomEndDrawer.showMenu(context),
+                          child: SizedBox(
+                            width: 44,
+                            height: 44,
+                            child: Image.asset(
+                              'assets/images/logo.png',
+                              width: 38,
+                              height: 38,
+                              color: const Color(0xFFC23147),
+                            ),
                           ),
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                  const SizedBox(width: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFC23147),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Text(
-                      'ADM',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    ],
                   ),
-                  const Spacer(),
-                  Builder(
-                    builder: (ctx) => GestureDetector(
-                      onTap: () => CustomEndDrawer.showMenu(context),
-                      child: SizedBox(
-                        width: 40,
-                        height: 40,
-                        child: Image.asset(
-                          'assets/images/logo.png',
-                          width: 32,
-                          height: 32,
-                          color: const Color(0xFFC23147),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
               
               // 2. SECÇÃO NOME DA FROTA E VOLTAR
               const SizedBox(height: 24),

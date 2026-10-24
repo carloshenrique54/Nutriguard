@@ -711,46 +711,54 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
             ),
           ),
         ],
-        const Flexible(
-          child: Text(
-            'Historico',
-            style: TextStyle(
-              fontSize: 26,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFFC23147),
-              letterSpacing: -0.5,
-            ),
-            overflow: TextOverflow.ellipsis,
+        Expanded(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Flexible(
+                child: Text(
+                  'Historico',
+                  style: TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFC23147),
+                    letterSpacing: -0.5,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFC23147),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  (_userRole == 'admin' || _userRole == 'adm') ? 'ADM' : _userRole.toUpperCase(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(width: 10),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-          decoration: BoxDecoration(
-            color: const Color(0xFFC23147),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Text(
-            (_userRole == 'admin' || _userRole == 'adm') ? 'ADM' : _userRole.toUpperCase(),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 0.5,
-            ),
-          ),
-        ),
-        const Spacer(),
+        const SizedBox(width: 8),
         Builder(
           builder: (ctx) => GestureDetector(
             onTap: () => CustomEndDrawer.showMenu(ctx),
             child: SizedBox(
-              width: 38,
-              height: 38,
+              width: 44,
+              height: 44,
               child: Image.asset(
                 'assets/images/logo.png',
                 color: const Color(0xFFC23147),
-                fit: BoxFit.contain,
+                width: 38,
+                height: 38,
               ),
             ),
           ),

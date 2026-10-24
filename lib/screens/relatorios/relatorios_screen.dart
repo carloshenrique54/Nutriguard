@@ -853,36 +853,43 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
             ),
           ),
         ],
-        Flexible(
-          child: Text(
-            titleText,
-            style: const TextStyle(
-              color: Color(0xFFC23147),
-              fontSize: 26,
-              fontWeight: FontWeight.bold,
-            ),
-            overflow: TextOverflow.ellipsis,
+        Expanded(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  titleText,
+                  style: const TextStyle(
+                    color: Color(0xFFC23147),
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (_perfil != null) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFC23147),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    roleBadge,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
-        if (_perfil != null) ...[
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: const Color(0xFFC23147),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              roleBadge,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ],
-        const Spacer(),
+        const SizedBox(width: 8),
         GestureDetector(
           onTap: () => CustomEndDrawer.showMenu(
             context,

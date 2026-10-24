@@ -621,34 +621,41 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
       children: [
         Row(
           children: [
-            Flexible(
-              child: Text(
-                (isGerenteEmpty || isFrotaEmpty) ? 'Dashboard — Frota' : 'Dashboard',
-                style: const TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFFC23147),
-                ),
-                overflow: TextOverflow.ellipsis,
+            Expanded(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      (isGerenteEmpty || isFrotaEmpty) ? 'Dashboard — Frota' : 'Dashboard',
+                      style: const TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFC23147),
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFC23147),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      _userRole == 'admin' ? 'ADM' : _userRole.toUpperCase(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFFC23147),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                _userRole == 'admin' ? 'ADM' : _userRole.toUpperCase(),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            const Spacer(),
             Builder(
               builder: (ctx) => GestureDetector(
                 onTap: () => CustomEndDrawer.showMenu(

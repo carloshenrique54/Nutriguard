@@ -583,7 +583,7 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Flexible(
+                      Expanded(
                         child: Text(
                           isEditing ? 'Editar\nDispositivo' : 'Cadastrar\nDispositivo',
                           style: const TextStyle(
@@ -595,42 +595,42 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    const Spacer(),
-                    Container(
-                      margin: const EdgeInsets.only(top: 8),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFC23147),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        widget.userRole,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
+                      const SizedBox(width: 8),
+                      Container(
+                        margin: const EdgeInsets.only(top: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFC23147),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Builder(
-                      builder: (ctx) => GestureDetector(
-                        onTap: () => CustomEndDrawer.showMenu(context),
-                        child: Container(
-                          margin: const EdgeInsets.only(top: 4),
-                          width: 40,
-                          height: 40,
-                          child: Image.asset(
-                            'assets/images/logo.png',
-                            width: 32,
-                            height: 32,
-                            color: const Color(0xFFC23147),
+                        child: Text(
+                          widget.userRole,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
+                      const SizedBox(width: 12),
+                      Builder(
+                        builder: (ctx) => GestureDetector(
+                          onTap: () => CustomEndDrawer.showMenu(context),
+                          child: Container(
+                            margin: const EdgeInsets.only(top: 4),
+                            width: 40,
+                            height: 40,
+                            child: Image.asset(
+                              'assets/images/logo.png',
+                              width: 32,
+                              height: 32,
+                              color: const Color(0xFFC23147),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
 
                 // 2. BOTÃO VOLTAR
                 const SizedBox(height: 16),
