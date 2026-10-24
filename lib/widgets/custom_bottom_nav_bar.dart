@@ -230,9 +230,12 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
     final String historicoRoute = effectiveIsVehicle ? '/historico-veiculo' : '/historico-frota';
     const String gpsRoute = '/gps';
 
+    final bool hasGps = _isItemEnabled(4);
+    final int totalItems = hasGps ? 5 : 4;
+
     final bool showBubble = widget.selectedIndex != null &&
         widget.selectedIndex! >= 0 &&
-        widget.selectedIndex! < 5 &&
+        widget.selectedIndex! < totalItems &&
         _isItemEnabled(widget.selectedIndex!);
 
     return Container(
@@ -247,7 +250,7 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
           child: LayoutBuilder(
             builder: (context, constraints) {
               final double barWidth = constraints.maxWidth;
-              final double itemWidth = barWidth / 5;
+              final double itemWidth = barWidth / totalItems;
 
               return Stack(
                 clipBehavior: Clip.none,
@@ -297,16 +300,17 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
                         isEnabled: _isItemEnabled(3),
                         isActive: showBubble && widget.selectedIndex == 3,
                       ),
-                      _buildNavItem(
-                        context: context,
-                        index: 4,
-                        itemWidth: itemWidth,
-                        icon: Icons.location_on_outlined,
-                        label: 'GPS',
-                        routeName: gpsRoute,
-                        isEnabled: _isItemEnabled(4),
-                        isActive: showBubble && widget.selectedIndex == 4,
-                      ),
+                      if (hasGps)
+                        _buildNavItem(
+                          context: context,
+                          index: 4,
+                          itemWidth: itemWidth,
+                          icon: Icons.location_on_outlined,
+                          label: 'GPS',
+                          routeName: gpsRoute,
+                          isEnabled: _isItemEnabled(4),
+                          isActive: showBubble && widget.selectedIndex == 4,
+                        ),
                     ],
                   ),
 
@@ -316,7 +320,7 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
                       duration: const Duration(milliseconds: 400),
                       curve: Curves.easeOutBack,
                       bottom: _isInit ? 20 : 0,
-                      left: _calculateLeftPosition(barWidth, widget.selectedIndex!),
+                      left: _calculateLeftPosition(barWidth, widget.selectedIndex!, totalItems),
                       child: Container(
                         width: 56,
                         height: 56,
@@ -349,8 +353,8 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
     );
   }
 
-  double _calculateLeftPosition(double barWidth, int index) {
-    final itemWidth = barWidth / 5;
+  double _calculateLeftPosition(double barWidth, int index, int totalItems) {
+    final itemWidth = barWidth / totalItems;
     return (itemWidth * index) + (itemWidth / 2) - 28;
   }
 

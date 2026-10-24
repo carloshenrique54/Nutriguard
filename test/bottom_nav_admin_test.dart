@@ -38,16 +38,16 @@ void main() {
       adminContext.clearAll();
     });
 
-    testWidgets('1. No Fleet Selected: All bottom bar items are gray and non-clickable', (tester) async {
+    testWidgets('1. No Fleet Selected: Context items are gray and non-clickable, GPS is omitted', (tester) async {
       await tester.pumpWidget(createTestWidget(selectedIndex: null));
       await tester.pumpAndSettle();
 
-      // Verify all 5 labels are rendered
+      // Verify 4 contextual items are rendered, GPS is omitted
       expect(find.text('Alertas'), findsOneWidget);
       expect(find.text('Relatórios'), findsOneWidget);
       expect(find.text('Dashboard'), findsOneWidget);
       expect(find.text('Histórico'), findsOneWidget);
-      expect(find.text('GPS'), findsOneWidget);
+      expect(find.text('GPS'), findsNothing);
 
       // Verify that the text styles are gray (Color(0xFF757575))
       final alertaText = tester.widget<Text>(find.text('Alertas'));
@@ -62,9 +62,6 @@ void main() {
       final historicoText = tester.widget<Text>(find.text('Histórico'));
       expect(historicoText.style?.color, equals(const Color(0xFF757575)));
 
-      final gpsText = tester.widget<Text>(find.text('GPS'));
-      expect(gpsText.style?.color, equals(const Color(0xFF757575)));
-
       // Verify that icons are gray (Color(0xFF757575))
       final icons = tester.widgetList<Icon>(find.byType(Icon));
       for (final icon in icons) {
@@ -77,18 +74,15 @@ void main() {
       expect(find.text('Content'), findsOneWidget); // still on same screen
     });
 
-    testWidgets('2. Fleet Selected: Fleet items are enabled, but GPS remains gray and non-clickable', (tester) async {
+    testWidgets('2. Fleet Selected: Fleet items are enabled, and GPS is omitted', (tester) async {
       adminContext.setFrota(testFrota);
 
       await tester.pumpWidget(createTestWidget(selectedIndex: 2));
       await tester.pumpAndSettle();
 
-      // GPS must still be gray (Color(0xFF757575))
-      final gpsText = tester.widget<Text>(find.text('GPS'));
-      expect(gpsText.style?.color, equals(const Color(0xFF757575)));
-
-      final gpsIcon = tester.widget<Icon>(find.byIcon(Icons.location_on_outlined));
-      expect(gpsIcon.color, equals(const Color(0xFF757575)));
+      // GPS must be omitted in fleet context
+      expect(find.text('GPS'), findsNothing);
+      expect(find.byIcon(Icons.location_on_outlined), findsNothing);
 
       // Enabled items must be black (Colors.black87)
       final alertaText = tester.widget<Text>(find.text('Alertas'));
@@ -119,7 +113,7 @@ void main() {
       expect(alertaText.style?.color, equals(Colors.black87));
     });
 
-    testWidgets('4. Gerente in fleet context (isVehicleContext: false): GPS remains gray and non-clickable', (tester) async {
+    testWidgets('4. Gerente in fleet context (isVehicleContext: false): GPS is omitted', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
@@ -134,20 +128,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // GPS must be gray (Color(0xFF757575)) because fleet dashboard cannot take to GPS
-      final gpsText = tester.widget<Text>(find.text('GPS'));
-      expect(gpsText.style?.color, equals(const Color(0xFF757575)));
-
-      final gpsIcon = tester.widget<Icon>(find.byIcon(Icons.location_on_outlined));
-      expect(gpsIcon.color, equals(const Color(0xFF757575)));
-
-      // Tap GPS does nothing
-      await tester.tap(find.text('GPS'));
-      await tester.pumpAndSettle();
-      expect(find.text('Gerente Fleet Dashboard'), findsOneWidget);
+      // GPS must be omitted because fleet dashboard cannot take to GPS
+      expect(find.text('GPS'), findsNothing);
+      expect(find.byIcon(Icons.location_on_outlined), findsNothing);
     });
 
-    testWidgets('5. GPS is disabled when hasDevicesOverride: false even in vehicle context', (tester) async {
+    testWidgets('5. GPS is omitted when hasDevicesOverride: false even in vehicle context', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
@@ -163,11 +149,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final gpsText = tester.widget<Text>(find.text('GPS'));
-      expect(gpsText.style?.color, equals(const Color(0xFF757575)));
-
-      final gpsIcon = tester.widget<Icon>(find.byIcon(Icons.location_on_outlined));
-      expect(gpsIcon.color, equals(const Color(0xFF757575)));
+      expect(find.text('GPS'), findsNothing);
+      expect(find.byIcon(Icons.location_on_outlined), findsNothing);
     });
   });
 }

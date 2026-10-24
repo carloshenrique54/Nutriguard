@@ -5,7 +5,6 @@ import '../../widgets/custom_bottom_nav_bar.dart';
 import '../../widgets/custom_end_drawer.dart';
 import '../../services/supabase_service.dart';
 import '../../models/models.dart';
-import '../../widgets/animated_components.dart';
 import '../../widgets/watermark_background.dart';
 import '../../services/admin_context_service.dart';
 
@@ -140,10 +139,10 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
         }
       } else if (_userRole == 'gerente') {
         frotas = await _supabase.getFrotasByGerente(currentUserId);
-        for (var f in frotas) {
-          final fDevs = await _supabase.getDispositivosByFrota(f.id);
-          devs.addAll(fDevs);
-        }
+        final devLists = await Future.wait(
+          frotas.map((f) => _supabase.getDispositivosByFrota(f.id)),
+        );
+        devs.addAll(devLists.expand((l) => l));
       } else {
         // Operador
         devs = await _supabase.getDispositivosByOperador(currentUserId);
@@ -767,7 +766,7 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
           borderRadius: BorderRadius.circular(8),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.04),
+              color: Colors.black.withValues(alpha: 0.04),
               blurRadius: 4,
               offset: const Offset(0, 1),
             ),
@@ -855,7 +854,7 @@ class TimelineCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.04),
+              color: Colors.black.withValues(alpha: 0.04),
               blurRadius: 10,
               offset: const Offset(0, 3),
             ),

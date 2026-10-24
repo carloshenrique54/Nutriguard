@@ -113,18 +113,15 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
         _userRole = perfil.role;
       }
 
-      // Buscar frotas de acordo com a regra de permissão:
-      // ADM: todas as frotas
-      // Gerente: apenas frotas em que é id_gerente
-      List<FrotaModel> frotas = [];
-      if (_userRole == 'admin') {
-        frotas = await _supabase.getFrotas();
-      } else {
-        frotas = await _supabase.getFrotasByGerente(currentUserId);
-      }
+      // Buscar frotas de acordo com a regra de permissão e dispositivos em paralelo
+      final frotasFuture = _userRole == 'admin'
+          ? _supabase.getFrotas()
+          : _supabase.getFrotasByGerente(currentUserId);
+      final devicesFuture = _supabase.getDispositivos();
+      final results = await Future.wait([frotasFuture, devicesFuture]);
 
-      // Buscar todos os dispositivos do sistema para checagem de estado vazio (ADM)
-      final allSystemDevices = await _supabase.getDispositivos();
+      List<FrotaModel> frotas = results[0] as List<FrotaModel>;
+      final allSystemDevices = results[1] as List<DispositivoModel>;
       _totalSystemDevices = allSystemDevices.length;
 
       // Definir frota selecionada (se passada por argumento ou contexto do ADM)
@@ -156,10 +153,10 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
       if (selected != null) {
         activeDevices = await _supabase.getDispositivosByFrota(selected.id);
       } else if (frotas.isNotEmpty) {
-        for (var f in frotas) {
-          final devs = await _supabase.getDispositivosByFrota(f.id);
-          activeDevices.addAll(devs);
-        }
+        final devLists = await Future.wait(
+          frotas.map((f) => _supabase.getDispositivosByFrota(f.id)),
+        );
+        activeDevices = devLists.expand((devs) => devs).toList();
       }
 
       // Contagem de dispositivos por frota

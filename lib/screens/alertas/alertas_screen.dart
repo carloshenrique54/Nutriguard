@@ -101,10 +101,10 @@ class _AlertasScreenState extends State<AlertasScreen> {
         }
       } else if (role == 'gerente') {
         frotas = await _supabase.getFrotasByGerente(user.id);
-        for (var f in frotas) {
-          final fDevs = await _supabase.getDispositivosByFrota(f.id);
-          devs.addAll(fDevs);
-        }
+        final devLists = await Future.wait(
+          frotas.map((f) => _supabase.getDispositivosByFrota(f.id)),
+        );
+        devs.addAll(devLists.expand((l) => l));
       } else {
         // Operador
         devs = await _supabase.getDispositivosByOperador(user.id);

@@ -27,23 +27,23 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
     
     _mainController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2200),
+      duration: const Duration(milliseconds: 1100),
     );
 
     _shimmerController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1000),
+      duration: const Duration(milliseconds: 400),
     );
 
-    // 1. Apple Outline (0 - 800ms)
+    // 1. Apple Outline (0 - 400ms)
     _outlineOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _mainController,
-        curve: const Interval(0.0, 0.36, curve: Curves.easeIn), // 800ms
+        curve: const Interval(0.0, 0.36, curve: Curves.easeIn),
       ),
     );
 
-    // 2. Apple Fill (800ms - 1200ms)
+    // 2. Apple Fill (400ms - 600ms)
     _fillOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _mainController,
@@ -51,18 +51,18 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
       ),
     );
 
-    // 3. Apple Pulse (800ms - 1400ms)
+    // 3. Apple Pulse (400ms - 700ms)
     _scalePulse = TweenSequence<double>([
       TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.1).chain(CurveTween(curve: Curves.easeOut)), weight: 50),
       TweenSequenceItem(tween: Tween(begin: 1.1, end: 1.0).chain(CurveTween(curve: Curves.easeIn)), weight: 50),
     ]).animate(
       CurvedAnimation(
         parent: _mainController,
-        curve: const Interval(0.36, 0.63), // 800ms to ~1400ms
+        curve: const Interval(0.36, 0.63),
       ),
     );
 
-    // 4. Text Fade & Slide (1000ms - 1800ms)
+    // 4. Text Fade & Slide (500ms - 900ms)
     _textFade = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _mainController,
@@ -76,7 +76,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
       ),
     );
     
-    // 5. Letter Spacing (1000ms - 2200ms)
+    // 5. Letter Spacing (500ms - 1100ms)
     _letterSpacing = Tween<double>(begin: 0.0, end: 2.0).animate(
       CurvedAnimation(
         parent: _mainController,
@@ -85,10 +85,10 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
     );
 
     _mainController.addListener(() {
-      if (_mainController.value >= 0.36 && _mainController.value <= 0.38) {
+      if (_mainController.value >= 0.36 && _mainController.value <= 0.40) {
         HapticFeedback.lightImpact(); // Início do pulso
       }
-      if (_mainController.value >= 0.50 && _mainController.value <= 0.52) {
+      if (_mainController.value >= 0.50 && _mainController.value <= 0.54) {
         HapticFeedback.heavyImpact(); // Pico do pulso
       }
       if (_mainController.value >= 0.99) {
@@ -100,7 +100,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
 
     _mainController.forward();
 
-    Future.delayed(const Duration(milliseconds: 3000), () {
+    Future.delayed(const Duration(milliseconds: 1300), () {
       if (mounted) {
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(
@@ -108,7 +108,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
             transitionsBuilder: (context, animation, secondaryAnimation, child) {
               return FadeTransition(opacity: animation, child: child);
             },
-            transitionDuration: const Duration(milliseconds: 800),
+            transitionDuration: const Duration(milliseconds: 350),
           ),
         );
       }
