@@ -487,12 +487,15 @@ class _GpsScreenState extends State<GpsScreen> {
   Widget _buildHeader(BuildContext context) {
     return Row(
       children: [
-        const Text(
-          'GPS — Veículo',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFFC23147),
+        const Flexible(
+          child: Text(
+            'GPS — Veículo',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFFC23147),
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
         ),
         const SizedBox(width: 8),

@@ -6,6 +6,7 @@ import '../../models/models.dart';
 import '../../widgets/animated_components.dart';
 import '../../widgets/watermark_background.dart';
 import '../../widgets/confirmation_dialog.dart';
+import '../../widgets/responsive_layout.dart';
 
 class ListarOperadoresScreen extends StatefulWidget {
   final String title;
@@ -122,21 +123,26 @@ class _ListarOperadoresScreenState extends State<ListarOperadoresScreen> {
       backgroundColor: const Color(0xFFFFF2E0),
       body: WatermarkBackground(
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.only(left: 16.0, top: 16.0, right: 16.0),
-            child: Column(
-              children: [
-                // 1. CABEÇALHO
-                Row(
-                  children: [
-                    Text(
-                      widget.title,
-                      style: const TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFFC23147),
+          child: ResponsiveContentWrapper(
+            maxWidth: ResponsiveBreakpoints.maxContentWidth,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 16.0, top: 16.0, right: 16.0),
+              child: Column(
+                children: [
+                  // 1. CABEÇALHO
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          widget.title,
+                          style: const TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFFC23147),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
                     const SizedBox(width: 12),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -260,6 +266,7 @@ class _ListarOperadoresScreenState extends State<ListarOperadoresScreen> {
                 ),
               ],
             ),
+          ),
           ),
         ),
       ),

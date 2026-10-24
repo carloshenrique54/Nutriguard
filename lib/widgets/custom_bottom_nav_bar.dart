@@ -407,12 +407,19 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
               AnimatedOpacity(
                 duration: const Duration(milliseconds: 200),
                 opacity: isActive ? 0.0 : 1.0,
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: itemColor,
-                    fontSize: 10,
-                    fontWeight: isEnabled ? FontWeight.w600 : FontWeight.normal,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2.0),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      style: TextStyle(
+                        color: itemColor,
+                        fontSize: 10,
+                        fontWeight: isEnabled ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                    ),
                   ),
                 ),
               ),

@@ -468,9 +468,12 @@ class _IniciarViagemScreenState extends State<IniciarViagemScreen> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      _perfil?.email ?? '',
-                      style: const TextStyle(fontSize: 12, color: Colors.black54),
+                    Flexible(
+                      child: Text(
+                        _perfil?.email ?? '',
+                        style: const TextStyle(fontSize: 12, color: Colors.black54),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ],
                 ),

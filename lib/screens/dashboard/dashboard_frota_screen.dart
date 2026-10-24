@@ -621,12 +621,15 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
       children: [
         Row(
           children: [
-            Text(
-              (isGerenteEmpty || isFrotaEmpty) ? 'Dashboard — Frota' : 'Dashboard',
-              style: const TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFFC23147),
+            Flexible(
+              child: Text(
+                (isGerenteEmpty || isFrotaEmpty) ? 'Dashboard — Frota' : 'Dashboard',
+                style: const TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFFC23147),
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
             const SizedBox(width: 8),
@@ -703,9 +706,12 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
             const Icon(Icons.local_shipping_outlined, color: Color(0xFF8DB600), size: 16),
             const SizedBox(width: 6),
             const Text('Vendo: ', style: TextStyle(color: Colors.black54, fontSize: 12)),
-            Text(
-              '$frotaNome ($devCount veículos)',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87),
+            Flexible(
+              child: Text(
+                '$frotaNome ($devCount veículos)',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
         ),
@@ -728,11 +734,14 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
                 size: 18,
               ),
               const SizedBox(width: 8),
-              Text(
-                f.nome ?? 'Sem Nome',
-                style: TextStyle(
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                  color: isSelected ? const Color(0xFFC23147) : Colors.black87,
+              Expanded(
+                child: Text(
+                  f.nome ?? 'Sem Nome',
+                  style: TextStyle(
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    color: isSelected ? const Color(0xFFC23147) : Colors.black87,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               const SizedBox(width: 8),
@@ -754,9 +763,12 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
             const Icon(Icons.local_shipping_outlined, color: Color(0xFF8DB600), size: 16),
             const SizedBox(width: 6),
             const Text('Vendo: ', style: TextStyle(color: Colors.black54, fontSize: 12)),
-            Text(
-              '$frotaNome ($devCount veículos)',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87),
+            Flexible(
+              child: Text(
+                '$frotaNome ($devCount veículos)',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
             const SizedBox(width: 4),
             const Icon(Icons.keyboard_arrow_down, size: 16, color: Colors.black54),
@@ -1021,7 +1033,12 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Umidade média', style: TextStyle(fontSize: 11, color: Colors.black54, fontWeight: FontWeight.w500)),
+                          Text(
+                            'Umidade média',
+                            style: TextStyle(fontSize: 11, color: Colors.black54, fontWeight: FontWeight.w500),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                           Text('32%', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFFC23147))),
                         ],
                       ),
@@ -1091,7 +1108,12 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Veículos em viagem', style: TextStyle(fontSize: 11, color: Colors.black54, fontWeight: FontWeight.w500)),
+                          const Text(
+                            'Veículos em viagem',
+                            style: TextStyle(fontSize: 11, color: Colors.black54, fontWeight: FontWeight.w500),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                           Text(
                             devCount > 0 ? '$emViagemCount/$devCount' : '0/0',
                             style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),

@@ -7,6 +7,7 @@ import '../../services/supabase_service.dart';
 import '../../models/models.dart';
 import '../../widgets/watermark_background.dart';
 import '../../services/admin_context_service.dart';
+import '../../widgets/responsive_layout.dart';
 
 class HistoricoItem {
   final String id;
@@ -597,12 +598,14 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
         child: SafeArea(
           child: _isLoading
               ? const Center(child: CircularProgressIndicator(color: Color(0xFFC23147)))
-              : Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildHeader(context),
+              : ResponsiveContentWrapper(
+                  maxWidth: ResponsiveBreakpoints.maxContentWidth,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildHeader(context),
                       const SizedBox(height: 14),
                       _buildVehicleChip(),
                       const SizedBox(height: 16),
@@ -685,6 +688,7 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
                     ],
                   ),
                 ),
+              ),
         ),
       ),
     );
@@ -707,13 +711,16 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
             ),
           ),
         ],
-        const Text(
-          'Historico',
-          style: TextStyle(
-            fontSize: 26,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFFC23147),
-            letterSpacing: -0.5,
+        const Flexible(
+          child: Text(
+            'Historico',
+            style: TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFFC23147),
+              letterSpacing: -0.5,
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
         ),
         const SizedBox(width: 10),

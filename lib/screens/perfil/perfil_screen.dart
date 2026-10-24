@@ -6,6 +6,7 @@ import '../../services/supabase_service.dart';
 import '../../services/admin_context_service.dart';
 import '../../models/models.dart';
 import '../../widgets/confirmation_dialog.dart';
+import '../../widgets/responsive_layout.dart';
 
 enum UserRole { adm, gerente, operador }
 
@@ -297,19 +298,22 @@ class _PerfilScreenState extends State<PerfilScreen> {
                     ],
                   ),
                 )
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildHeader(),
-                      const SizedBox(height: 24),
-                      _buildProfileCard(),
-                      const SizedBox(height: 24),
-                      _buildActionButtons(),
-                      const SizedBox(height: 24),
-                      _buildListSection(),
-                    ],
+              : ResponsiveContentWrapper(
+                  maxWidth: ResponsiveBreakpoints.maxFormWidth,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildHeader(),
+                        const SizedBox(height: 24),
+                        _buildProfileCard(),
+                        const SizedBox(height: 24),
+                        _buildActionButtons(),
+                        const SizedBox(height: 24),
+                        _buildListSection(),
+                      ],
+                    ),
                   ),
                 ),
         ),
@@ -346,12 +350,15 @@ class _PerfilScreenState extends State<PerfilScreen> {
           ),
           const SizedBox(width: 8),
         ],
-        Text(
-          !isOwner ? 'Perfil do Funcionário' : 'Perfil',
-          style: const TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFFC23147),
+        Flexible(
+          child: Text(
+            !isOwner ? 'Perfil do Funcionário' : 'Perfil',
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFFC23147),
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
         ),
         const SizedBox(width: 8),

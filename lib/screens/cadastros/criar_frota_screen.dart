@@ -6,6 +6,7 @@ import '../../services/admin_context_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/models.dart';
 import '../../widgets/watermark_background.dart';
+import '../../widgets/responsive_layout.dart';
 
 class VeiculoItem {
   final DispositivoModel device;
@@ -348,22 +349,27 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
       
       body: WatermarkBackground(
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 1. CABEÇALHO
-              Row(
+          child: ResponsiveContentWrapper(
+            maxWidth: ResponsiveBreakpoints.maxFormWidth,
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    isEditing ? 'Editar frota' : 'Criar frota',
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFFC23147),
-                    ),
-                  ),
+                  // 1. CABEÇALHO
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          isEditing ? 'Editar frota' : 'Criar frota',
+                          style: const TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFFC23147),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                   const SizedBox(width: 12),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -731,6 +737,7 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
               ),
             ],
           ),
+        ),
         ),
         ),
       ),
