@@ -795,67 +795,75 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
 
     return Row(
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Text(
-                  'Dashboard',
-                  style: TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFFC23147),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Flexible(
+                    child: Text(
+                      'Dashboard',
+                      style: TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFC23147),
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFC23147),
-                    borderRadius: BorderRadius.circular(8),
+                  const SizedBox(width: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFC23147),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      roleText,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
                   ),
-                  child: Text(
-                    roleText,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5,
+                ],
+              ),
+              if (_userRole == 'admin' && AdminContextService().hasFrota)
+                GestureDetector(
+                  onTap: () {
+                    AdminContextService().clearVehicle();
+                    Navigator.pushNamed(context, '/dashboard-frota', arguments: AdminContextService().selectedFrota);
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 4.0),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.arrow_back, size: 14, color: Color(0xFFC23147)),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            'Frota: ${AdminContextService().currentFrotaName}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFFC23147),
+                              fontWeight: FontWeight.w600,
+                              decoration: TextDecoration.underline,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              ],
-            ),
-            if (_userRole == 'admin' && AdminContextService().hasFrota)
-              GestureDetector(
-                onTap: () {
-                  AdminContextService().clearVehicle();
-                  Navigator.pushNamed(context, '/dashboard-frota', arguments: AdminContextService().selectedFrota);
-                },
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 4.0),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.arrow_back, size: 14, color: Color(0xFFC23147)),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Frota: ${AdminContextService().currentFrotaName}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFFC23147),
-                          fontWeight: FontWeight.w600,
-                          decoration: TextDecoration.underline,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-          ],
+            ],
+          ),
         ),
-        const Spacer(),
+        const SizedBox(width: 8),
         Builder(
           builder: (ctx) => GestureDetector(
             onTap: () {
@@ -903,9 +911,12 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
             const Icon(Icons.local_shipping_outlined, color: Color(0xFF8DB600), size: 16),
             const SizedBox(width: 6),
             const Text('Vendo: ', style: TextStyle(color: Colors.black54, fontSize: 12)),
-            Text(
-              devName,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87),
+            Flexible(
+              child: Text(
+                devName,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
         ),
@@ -921,9 +932,12 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
             children: [
               const Icon(Icons.directions_car, color: Color(0xFF8DB600), size: 18),
               const SizedBox(width: 8),
-              Text(
-                d.placaVeiculo ?? d.nomeDispositivo ?? 'Veículo',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              Expanded(
+                child: Text(
+                  d.placaVeiculo ?? d.nomeDispositivo ?? 'Veículo',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
               if (d.modeloVeiculo != null) ...[
                 const SizedBox(width: 4),
@@ -946,9 +960,12 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
             const Icon(Icons.local_shipping_outlined, color: Color(0xFF8DB600), size: 16),
             const SizedBox(width: 6),
             const Text('Vendo: ', style: TextStyle(color: Colors.black54, fontSize: 12)),
-            Text(
-              devName,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87),
+            Flexible(
+              child: Text(
+                devName,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
             const SizedBox(width: 4),
             const Icon(Icons.arrow_drop_down, color: Color(0xFFC23147), size: 18),

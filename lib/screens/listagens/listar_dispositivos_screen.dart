@@ -8,6 +8,7 @@ import '../../widgets/animated_components.dart';
 import '../../widgets/watermark_background.dart';
 import '../../services/admin_context_service.dart';
 import '../../widgets/confirmation_dialog.dart';
+import '../../widgets/responsive_layout.dart';
 
 class ListarDispositivosScreen extends StatefulWidget {
   final SupabaseService? supabaseService;
@@ -159,9 +160,11 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
       ),
       body: WatermarkBackground(
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.only(left: 16.0, top: 16.0, right: 16.0),
-            child: Column(
+          child: ResponsiveContentWrapper(
+            maxWidth: ResponsiveBreakpoints.maxContentWidth,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 16.0, top: 16.0, right: 16.0),
+              child: Column(
               children: [
                 // 1. CABEÇALHO
                 Row(
@@ -418,6 +421,7 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
                 ),
               ],
             ),
+          ),
           ),
         ),
       ),

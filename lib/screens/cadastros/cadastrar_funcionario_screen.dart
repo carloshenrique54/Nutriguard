@@ -4,6 +4,7 @@ import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../../widgets/custom_end_drawer.dart';
 import '../../services/supabase_service.dart';
 import '../../widgets/watermark_background.dart';
+import '../../widgets/responsive_layout.dart';
 
 class CadastrarFuncionarioScreen extends StatefulWidget {
   final bool bypassAccessCheck;
@@ -417,25 +418,30 @@ class _CadastrarFuncionarioScreenState extends State<CadastrarFuncionarioScreen>
       backgroundColor: const Color(0xFFFFF2E0),
       body: WatermarkBackground(
         child: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 1. CABEÇALHO
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Cadastrar\nFuncionário',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFFC23147),
-                        height: 1.1,
+          child: ResponsiveContentWrapper(
+            maxWidth: ResponsiveBreakpoints.maxFormWidth,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 1. CABEÇALHO
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Cadastrar\nFuncionário',
+                          style: const TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFFC23147),
+                            height: 1.1,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
-                    const Spacer(),
+                    const SizedBox(width: 8),
                     Container(
                       margin: const EdgeInsets.only(top: 8),
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -452,18 +458,18 @@ class _CadastrarFuncionarioScreenState extends State<CadastrarFuncionarioScreen>
                         ),
                       ),
                     ),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 12),
                     Builder(
                       builder: (ctx) => GestureDetector(
                         onTap: () => CustomEndDrawer.showMenu(context),
                         child: Container(
                           margin: const EdgeInsets.only(top: 4),
-                          width: 40,
-                          height: 40,
+                          width: 44,
+                          height: 44,
                           child: Image.asset(
                             'assets/images/logo.png',
-                            width: 32,
-                            height: 32,
+                            width: 38,
+                            height: 38,
                             color: const Color(0xFFC23147),
                           ),
                         ),
@@ -730,6 +736,7 @@ class _CadastrarFuncionarioScreenState extends State<CadastrarFuncionarioScreen>
                 const SizedBox(height: 40),
               ],
             ),
+          ),
           ),
         ),
       ),

@@ -12,6 +12,7 @@ import '../../services/supabase_service.dart';
 import '../../models/models.dart';
 import '../../services/admin_context_service.dart';
 import '../../services/trip_service.dart';
+import '../../widgets/responsive_layout.dart';
 
 class ViagemData {
   final DispositivoModel dispositivo;
@@ -455,44 +456,47 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
                         ? _buildNoContextSelectedState('frota', noRegisteredEntities: false)
                         : (_perfil?.role == 'admin' && widget.isVehicleContext && _selectedDispositivoId == null)
                             ? _buildNoContextSelectedState('veículo', noRegisteredEntities: false)
-                            : SingleChildScrollView(
-                                padding: const EdgeInsets.all(16.0),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    _buildHeader(context),
-                                    const SizedBox(height: 16),
-                                    if (_errorMessage.isNotEmpty)
-                                      Container(
-                                        padding: const EdgeInsets.all(12),
-                                        margin: const EdgeInsets.only(bottom: 16),
-                                        decoration: BoxDecoration(
-                                          color: Colors.red.withValues(alpha: 0.1),
-                                          borderRadius: BorderRadius.circular(12),
+                            : ResponsiveContentWrapper(
+                                maxWidth: ResponsiveBreakpoints.maxContentWidth,
+                                child: SingleChildScrollView(
+                                  padding: const EdgeInsets.all(16.0),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      _buildHeader(context),
+                                      const SizedBox(height: 16),
+                                      if (_errorMessage.isNotEmpty)
+                                        Container(
+                                          padding: const EdgeInsets.all(12),
+                                          margin: const EdgeInsets.only(bottom: 16),
+                                          decoration: BoxDecoration(
+                                            color: Colors.red.withValues(alpha: 0.1),
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: Text(_errorMessage, style: const TextStyle(color: Colors.red)),
                                         ),
-                                        child: Text(_errorMessage, style: const TextStyle(color: Colors.red)),
-                                      ),
-                                    _buildFiltrosExtras(),
-                                    const SizedBox(height: 16),
-                                    _buildPeriodToggle(),
-                                    const SizedBox(height: 20),
-                                    if (_medicoes.isEmpty && _ocorrencias.isEmpty && _viagens.isEmpty)
-                                      _buildEmptyPeriodBanner(),
-                                    _buildMetricsGrid(),
-                                    const SizedBox(height: 20),
-                                    _buildRecentTelemetryCards(),
-                                    const SizedBox(height: 24),
-                                    _buildChart1(),
-                                    const SizedBox(height: 24),
-                                    _buildChart2(),
-                                    const SizedBox(height: 24),
-                                    _buildRecentAlertsSection(),
-                                    const SizedBox(height: 24),
-                                    _buildViagens(),
-                                    const SizedBox(height: 24),
-                                    _buildExportButton(),
-                                    const SizedBox(height: 80),
-                                  ],
+                                      _buildFiltrosExtras(),
+                                      const SizedBox(height: 16),
+                                      _buildPeriodToggle(),
+                                      const SizedBox(height: 20),
+                                      if (_medicoes.isEmpty && _ocorrencias.isEmpty && _viagens.isEmpty)
+                                        _buildEmptyPeriodBanner(),
+                                      _buildMetricsGrid(),
+                                      const SizedBox(height: 20),
+                                      _buildRecentTelemetryCards(),
+                                      const SizedBox(height: 24),
+                                      _buildChart1(),
+                                      const SizedBox(height: 24),
+                                      _buildChart2(),
+                                      const SizedBox(height: 24),
+                                      _buildRecentAlertsSection(),
+                                      const SizedBox(height: 24),
+                                      _buildViagens(),
+                                      const SizedBox(height: 24),
+                                      _buildExportButton(),
+                                      const SizedBox(height: 80),
+                                    ],
+                                  ),
                                 ),
                               ),
         ),
@@ -849,33 +853,43 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
             ),
           ),
         ],
-        Text(
-          titleText,
-          style: const TextStyle(
-            color: Color(0xFFC23147),
-            fontSize: 26,
-            fontWeight: FontWeight.bold,
+        Expanded(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  titleText,
+                  style: const TextStyle(
+                    color: Color(0xFFC23147),
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (_perfil != null) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFC23147),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    roleBadge,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
-        if (_perfil != null) ...[
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: const Color(0xFFC23147),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              roleBadge,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ],
-        const Spacer(),
+        const SizedBox(width: 8),
         GestureDetector(
           onTap: () => CustomEndDrawer.showMenu(
             context,
@@ -1038,35 +1052,41 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
       conformidadeStr = '${_conformidade.toStringAsFixed(0)}%';
     }
 
-    return GridView.count(
-      crossAxisCount: 2,
-      crossAxisSpacing: 10,
-      mainAxisSpacing: 10,
-      shrinkWrap: true,
-      childAspectRatio: 2.3,
-      physics: const NeverScrollableScrollPhysics(),
-      children: [
-        _buildMetricCard(
-          title: 'Viagens no período',
-          value: '$_totalViagens',
-          icon: Icons.map_outlined,
-        ),
-        _buildMetricCard(
-          title: tempoTitle,
-          value: tempoStr,
-          icon: showRotaAtual ? Icons.access_time_rounded : Icons.timer_outlined,
-        ),
-        _buildMetricCard(
-          title: 'Conformidade',
-          value: conformidadeStr,
-          icon: Icons.check_box_rounded,
-        ),
-        _buildMetricCard(
-          title: 'Alertas recebidos',
-          value: '$_alertasRecebidos',
-          icon: Icons.warning_amber_rounded,
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth >= 700;
+        final isSmall = constraints.maxWidth < 360;
+        return GridView.count(
+          crossAxisCount: isWide ? 4 : 2,
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 10,
+          shrinkWrap: true,
+          childAspectRatio: isWide ? 2.6 : (isSmall ? 1.9 : 2.3),
+          physics: const NeverScrollableScrollPhysics(),
+          children: [
+            _buildMetricCard(
+              title: 'Viagens no período',
+              value: '$_totalViagens',
+              icon: Icons.map_outlined,
+            ),
+            _buildMetricCard(
+              title: tempoTitle,
+              value: tempoStr,
+              icon: showRotaAtual ? Icons.access_time_rounded : Icons.timer_outlined,
+            ),
+            _buildMetricCard(
+              title: 'Conformidade',
+              value: conformidadeStr,
+              icon: Icons.check_box_rounded,
+            ),
+            _buildMetricCard(
+              title: 'Alertas recebidos',
+              value: '$_alertasRecebidos',
+              icon: Icons.warning_amber_rounded,
+            ),
+          ],
+        );
+      },
     );
   }
 

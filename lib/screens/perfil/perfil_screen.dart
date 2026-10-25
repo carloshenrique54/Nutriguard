@@ -6,6 +6,7 @@ import '../../services/supabase_service.dart';
 import '../../services/admin_context_service.dart';
 import '../../models/models.dart';
 import '../../widgets/confirmation_dialog.dart';
+import '../../widgets/responsive_layout.dart';
 
 enum UserRole { adm, gerente, operador }
 
@@ -297,19 +298,22 @@ class _PerfilScreenState extends State<PerfilScreen> {
                     ],
                   ),
                 )
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildHeader(),
-                      const SizedBox(height: 24),
-                      _buildProfileCard(),
-                      const SizedBox(height: 24),
-                      _buildActionButtons(),
-                      const SizedBox(height: 24),
-                      _buildListSection(),
-                    ],
+              : ResponsiveContentWrapper(
+                  maxWidth: ResponsiveBreakpoints.maxFormWidth,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildHeader(),
+                        const SizedBox(height: 24),
+                        _buildProfileCard(),
+                        const SizedBox(height: 24),
+                        _buildActionButtons(),
+                        const SizedBox(height: 24),
+                        _buildListSection(),
+                      ],
+                    ),
                   ),
                 ),
         ),
@@ -346,35 +350,47 @@ class _PerfilScreenState extends State<PerfilScreen> {
           ),
           const SizedBox(width: 8),
         ],
-        Text(
-          !isOwner ? 'Perfil do Funcionário' : 'Perfil',
-          style: const TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFFC23147),
+        Expanded(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  !isOwner ? 'Perfil do Funcionário' : 'Perfil',
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFC23147),
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFC23147),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  roleText,
+                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
           ),
         ),
         const SizedBox(width: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: const Color(0xFFC23147),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            roleText,
-            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-          ),
-        ),
-        const Spacer(),
         Builder(
           builder: (context) => GestureDetector(
             onTap: () => CustomEndDrawer.showMenu(context),
             child: SizedBox(
-              width: 40,
-              height: 40,
+              width: 44,
+              height: 44,
               child: Image.asset(
                 'assets/images/logo.png',
+                width: 38,
+                height: 38,
                 errorBuilder: (ctx, error, stackTrace) =>
                     const Icon(Icons.local_shipping_outlined, color: Color(0xFFC23147), size: 32),
               ),

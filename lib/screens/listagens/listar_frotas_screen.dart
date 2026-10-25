@@ -7,6 +7,7 @@ import '../../widgets/animated_components.dart';
 import '../../widgets/watermark_background.dart';
 import '../../services/admin_context_service.dart';
 import '../../widgets/confirmation_dialog.dart';
+import '../../widgets/responsive_layout.dart';
 
 class ListarFrotasScreen extends StatefulWidget {
   const ListarFrotasScreen({super.key});
@@ -113,60 +114,72 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
       backgroundColor: const Color(0xFFFFF2E0),
       body: WatermarkBackground(
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.only(left: 16.0, top: 16.0, right: 16.0),
-            child: Column(
-              children: [
-                // 1. CABEÇALHO
-                Row(
-                  children: [
-                    const Text(
-                      'Frotas',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFFC23147),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFC23147),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        (_userRole == 'admin' || _userRole == 'adm') ? 'ADM' : _userRole.toUpperCase(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
+          child: ResponsiveContentWrapper(
+            maxWidth: ResponsiveBreakpoints.maxContentWidth,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 16.0, top: 16.0, right: 16.0),
+              child: Column(
+                children: [
+                  // 1. CABEÇALHO
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Flexible(
+                              child: Text(
+                                'Frotas',
+                                style: TextStyle(
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFFC23147),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFC23147),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                (_userRole == 'admin' || _userRole == 'adm') ? 'ADM' : _userRole.toUpperCase(),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                    const Spacer(),
-                    Builder(
-                      builder: (ctx) => GestureDetector(
-                        onTap: () => CustomEndDrawer.showMenu(
-                          context,
-                          userRoleOverride: _userRole.isNotEmpty ? _userRole : null,
-                          hasFleetsOverride: _frotas.isNotEmpty,
-                          hasDevicesOverride: _hasDevices,
-                        ),
-                        child: SizedBox(
-                          width: 40,
-                          height: 40,
-                          child: Image.asset(
-                            'assets/images/logo.png',
-                            width: 32,
-                            height: 32,
-                            color: const Color(0xFFC23147),
+                      const SizedBox(width: 8),
+                      Builder(
+                        builder: (ctx) => GestureDetector(
+                          onTap: () => CustomEndDrawer.showMenu(
+                            context,
+                            userRoleOverride: _userRole.isNotEmpty ? _userRole : null,
+                            hasFleetsOverride: _frotas.isNotEmpty,
+                            hasDevicesOverride: _hasDevices,
+                          ),
+                          child: SizedBox(
+                            width: 44,
+                            height: 44,
+                            child: Image.asset(
+                              'assets/images/logo.png',
+                              width: 38,
+                              height: 38,
+                              color: const Color(0xFFC23147),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
                 const SizedBox(height: 24),
 
                 // 2. LISTA DE Frotas
@@ -181,7 +194,7 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
                         ? ListView.builder(
                             itemCount: 4,
                             itemBuilder: (context, index) => const Padding(
-                              padding: EdgeInsets.only(bottom: 16.0, right: 12),
+                              padding: EdgeInsets.only(bottom: 16.0),
                               child: ShimmerEffect(
                                 width: double.infinity,
                                 height: 120,
@@ -218,7 +231,7 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
                                   background: Container(
                                     alignment: Alignment.centerLeft,
                                     padding: const EdgeInsets.symmetric(horizontal: 20),
-                                    margin: const EdgeInsets.only(bottom: 16, right: 12),
+                                    margin: const EdgeInsets.only(bottom: 16),
                                     decoration: BoxDecoration(
                                       color: const Color(0xFF8DB600),
                                       borderRadius: BorderRadius.circular(12),
@@ -228,7 +241,7 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
                                   secondaryBackground: Container(
                                     alignment: Alignment.centerRight,
                                     padding: const EdgeInsets.symmetric(horizontal: 20),
-                                    margin: const EdgeInsets.only(bottom: 16, right: 12),
+                                    margin: const EdgeInsets.only(bottom: 16),
                                     decoration: BoxDecoration(
                                       color: const Color(0xFFC23147),
                                       borderRadius: BorderRadius.circular(12),
@@ -265,6 +278,7 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
                 ),
               ],
             ),
+          ),
           ),
         ),
       ),
@@ -336,7 +350,7 @@ class FleetCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 16, right: 12),
+      margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),

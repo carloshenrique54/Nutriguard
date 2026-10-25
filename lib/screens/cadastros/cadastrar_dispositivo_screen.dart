@@ -6,6 +6,7 @@ import '../../services/supabase_service.dart';
 import '../../services/admin_context_service.dart';
 import '../../models/models.dart';
 import '../../widgets/watermark_background.dart';
+import '../../widgets/responsive_layout.dart';
 
 /// Formatador de texto para transformar caracteres em caixa alta (ex: Placas de veículos)
 class UpperCaseTextFormatter extends TextInputFormatter {
@@ -571,60 +572,65 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
       backgroundColor: const Color(0xFFFFF2E0),
       body: WatermarkBackground(
         child: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 1. CABEÇALHO
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      isEditing ? 'Editar\nDispositivo' : 'Cadastrar\nDispositivo',
-                      style: const TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFFC23147),
-                        height: 1.1,
-                      ),
-                    ),
-                    const Spacer(),
-                    Container(
-                      margin: const EdgeInsets.only(top: 8),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFC23147),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        widget.userRole,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
+          child: ResponsiveContentWrapper(
+            maxWidth: ResponsiveBreakpoints.maxFormWidth,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 1. CABEÇALHO
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          isEditing ? 'Editar\nDispositivo' : 'Cadastrar\nDispositivo',
+                          style: const TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFFC23147),
+                            height: 1.1,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 16),
-                    Builder(
-                      builder: (ctx) => GestureDetector(
-                        onTap: () => CustomEndDrawer.showMenu(context),
-                        child: Container(
-                          margin: const EdgeInsets.only(top: 4),
-                          width: 40,
-                          height: 40,
-                          child: Image.asset(
-                            'assets/images/logo.png',
-                            width: 32,
-                            height: 32,
-                            color: const Color(0xFFC23147),
+                      const SizedBox(width: 8),
+                      Container(
+                        margin: const EdgeInsets.only(top: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFC23147),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          widget.userRole,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
+                      const SizedBox(width: 12),
+                      Builder(
+                        builder: (ctx) => GestureDetector(
+                          onTap: () => CustomEndDrawer.showMenu(context),
+                          child: Container(
+                            margin: const EdgeInsets.only(top: 4),
+                            width: 40,
+                            height: 40,
+                            child: Image.asset(
+                              'assets/images/logo.png',
+                              width: 32,
+                              height: 32,
+                              color: const Color(0xFFC23147),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
 
                 // 2. BOTÃO VOLTAR
                 const SizedBox(height: 16),
@@ -797,7 +803,10 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
 
                 // 5. SEÇÃO 3: CONFIGURAÇÕES DOS SENSORES (APENAS NÚMEROS)
                 const SizedBox(height: 20),
-                Row(
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     const Text(
                       'Configurações dos sensores (Todos obrigatórios)',
@@ -807,7 +816,6 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
                         fontSize: 14,
                       ),
                     ),
-                    const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
@@ -963,6 +971,7 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
                 const SizedBox(height: 40),
               ],
             ),
+          ),
           ),
         ),
       ),

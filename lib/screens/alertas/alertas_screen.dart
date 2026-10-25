@@ -5,6 +5,7 @@ import '../../widgets/watermark_background.dart';
 import '../../services/supabase_service.dart';
 import '../../models/models.dart';
 import '../../services/admin_context_service.dart';
+import '../../widgets/responsive_layout.dart';
 
 class AlertasScreen extends StatefulWidget {
   final bool isVehicleContext;
@@ -231,12 +232,14 @@ class _AlertasScreenState extends State<AlertasScreen> {
                 ? _buildNoContextSelectedState('frota')
                 : (_perfil?.role == 'admin' && widget.isVehicleContext && _selectedDevice == null)
                     ? _buildNoContextSelectedState('veículo')
-                    : SingleChildScrollView(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildHeader(context, title),
+                    : ResponsiveContentWrapper(
+                        maxWidth: ResponsiveBreakpoints.maxContentWidth,
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildHeader(context, title),
                     const SizedBox(height: 16),
                     _buildContextFilter(),
                     const SizedBox(height: 16),
@@ -270,6 +273,7 @@ class _AlertasScreenState extends State<AlertasScreen> {
                   ],
                 ),
               ),
+            ),
         ),
       ),
     );
@@ -331,43 +335,49 @@ class _AlertasScreenState extends State<AlertasScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Row(
-          children: [
-            GestureDetector(
-              onTap: () => Navigator.pop(context),
-              child: const Icon(
-                Icons.arrow_back,
-                color: Color(0xFFC23147),
-                size: 28,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              title,
-              style: const TextStyle(
-                color: Color(0xFFC23147),
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFFC23147),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                (role == 'admin' || role == 'adm') ? 'ADM' : role.toUpperCase(),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
+        Expanded(
+          child: Row(
+            children: [
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: const Icon(
+                  Icons.arrow_back,
+                  color: Color(0xFFC23147),
+                  size: 28,
                 ),
               ),
-            ),
-          ],
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: Color(0xFFC23147),
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFC23147),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  (role == 'admin' || role == 'adm') ? 'ADM' : role.toUpperCase(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
+        const SizedBox(width: 8),
         GestureDetector(
           onTap: () => CustomEndDrawer.showMenu(context),
           child: SizedBox(

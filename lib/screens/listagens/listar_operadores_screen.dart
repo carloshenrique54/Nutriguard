@@ -6,6 +6,7 @@ import '../../models/models.dart';
 import '../../widgets/animated_components.dart';
 import '../../widgets/watermark_background.dart';
 import '../../widgets/confirmation_dialog.dart';
+import '../../widgets/responsive_layout.dart';
 
 class ListarOperadoresScreen extends StatefulWidget {
   final String title;
@@ -122,55 +123,67 @@ class _ListarOperadoresScreenState extends State<ListarOperadoresScreen> {
       backgroundColor: const Color(0xFFFFF2E0),
       body: WatermarkBackground(
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.only(left: 16.0, top: 16.0, right: 16.0),
-            child: Column(
-              children: [
-                // 1. CABEÇALHO
-                Row(
-                  children: [
-                    Text(
-                      widget.title,
-                      style: const TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFFC23147),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFC23147),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        (_userRole == 'admin' || _userRole == 'adm') ? 'ADM' : _userRole.toUpperCase(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
+          child: ResponsiveContentWrapper(
+            maxWidth: ResponsiveBreakpoints.maxContentWidth,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 16.0, top: 16.0, right: 16.0),
+              child: Column(
+                children: [
+                  // 1. CABEÇALHO
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                widget.title,
+                                style: const TextStyle(
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFFC23147),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFC23147),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                (_userRole == 'admin' || _userRole == 'adm') ? 'ADM' : _userRole.toUpperCase(),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                    const Spacer(),
-                    Builder(
-                      builder: (ctx) => GestureDetector(
-                        onTap: () => CustomEndDrawer.showMenu(context),
-                        child: SizedBox(
-                          width: 40,
-                          height: 40,
-                          child: Image.asset(
-                            'assets/images/logo.png',
-                            width: 32,
-                            height: 32,
-                            color: const Color(0xFFC23147),
+                      const SizedBox(width: 8),
+                      Builder(
+                        builder: (ctx) => GestureDetector(
+                          onTap: () => CustomEndDrawer.showMenu(context),
+                          child: SizedBox(
+                            width: 44,
+                            height: 44,
+                            child: Image.asset(
+                              'assets/images/logo.png',
+                              width: 38,
+                              height: 38,
+                              color: const Color(0xFFC23147),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
                 const SizedBox(height: 24),
 
                 // 2. LISTA DE COLABORADORES
@@ -260,6 +273,7 @@ class _ListarOperadoresScreenState extends State<ListarOperadoresScreen> {
                 ),
               ],
             ),
+          ),
           ),
         ),
       ),
