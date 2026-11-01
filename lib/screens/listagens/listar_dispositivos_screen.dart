@@ -40,6 +40,7 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
 
   Future<void> _fetchData() async {
     setState(() => _isLoading = true);
+    final routeArg = ModalRoute.of(context)?.settings.arguments;
     try {
       final currentUserId = _supabase.currentUser?.id;
       if (currentUserId != null) {
@@ -48,21 +49,20 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
       }
 
       if (!mounted) return;
-      final routeArg = ModalRoute.of(context)?.settings.arguments;
+      List<FrotaModel> frotasList = [];
+      try {
+        frotasList = await _supabase.getFrotas();
+      } catch (_) {}
+
       if (routeArg is FrotaModel) {
         _currentFrota = routeArg;
       } else if (routeArg is String) {
-        final frotas = await _supabase.getFrotas();
-        _currentFrota = frotas.where((f) => f.id == routeArg).firstOrNull;
+        _currentFrota = frotasList.where((f) => f.id == routeArg).firstOrNull;
       } else if (_userRole == 'admin' && AdminContextService().selectedFrota != null) {
         _currentFrota = AdminContextService().selectedFrota;
       }
 
       List<DispositivoModel> dispositivos = [];
-      List<FrotaModel> frotasList = [];
-      try {
-        frotasList = await _supabase.getFrotas();
-      } catch (_) {}
       final frotasMap = {for (var f in frotasList) f.id: f.nome ?? 'Sem nome'};
       final frotasObjMap = {for (var f in frotasList) f.id: f};
 
@@ -93,15 +93,14 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
         }
       }
 
-      Map<String, String> opsMap = {};
-      for (var d in dispositivos) {
-        if (d.idOperador != null) {
-          if (!opsMap.containsKey(d.idOperador)) {
-            final op = await _supabase.getUsuarioPerfil(d.idOperador!);
-            opsMap[d.idOperador!] = op?.nome ?? 'Sem Operador';
-          }
-        }
-      }
+      final operadorIds = dispositivos.map((d) => d.idOperador).whereType<String>().toSet();
+      final opEntries = await Future.wait(
+        operadorIds.map((id) async {
+          final op = await _supabase.getUsuarioPerfil(id);
+          return MapEntry(id, op?.nome ?? 'Sem Operador');
+        }),
+      );
+      final Map<String, String> opsMap = Map.fromEntries(opEntries);
 
       if (mounted) {
         setState(() {
@@ -131,7 +130,7 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
       setState(() => _userRole = role);
     }
     
-    List<String> allowedRoles = ['admin', 'gerente'];
+    final List<String> allowedRoles = ['admin', 'gerente'];
 
     if (!allowedRoles.contains(role)) {
       if (mounted) {

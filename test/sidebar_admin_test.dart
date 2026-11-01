@@ -47,9 +47,7 @@ void main() {
       );
     }
 
-    setUp(() {
-      adminContext.clearAll();
-    });
+    setUp(adminContext.clearAll);
 
     testWidgets('1. No Fleet Selected: Context items are disabled and GPS is omitted', (tester) async {
       await tester.pumpWidget(createTestWidget());

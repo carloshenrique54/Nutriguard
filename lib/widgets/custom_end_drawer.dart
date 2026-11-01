@@ -53,7 +53,7 @@ class CustomEndDrawer {
                   child: SizedBox(
                     width: MediaQuery.of(context).size.width * 0.8,
                     height: MediaQuery.of(context).size.height,
-                    child: Container(
+                    child: DecoratedBox(
                       decoration: const BoxDecoration(
                         color: Color(0xFFFFF2E0),
                         borderRadius: BorderRadius.horizontal(left: Radius.circular(24)),
@@ -188,22 +188,21 @@ class _MenuContentState extends State<_MenuContent> {
           } catch (_) {}
         }
       } else if (role == 'operador') {
-        if (widget.hasDevicesOverride == null) {
+        final needDevs = widget.hasDevicesOverride == null;
+        final needTrip = widget.isTripActiveOverride == null;
+        if (needDevs || needTrip) {
           try {
-            final devs = await client.getDispositivosByOperador(currentUserId);
+            final devFuture = needDevs
+                ? client.getDispositivosByOperador(currentUserId)
+                : Future.value([]);
+            final tripFuture = needTrip
+                ? TripService().isTripActive(currentUserId)
+                : Future.value(false);
+            final results = await Future.wait([devFuture, tripFuture]);
             if (mounted) {
               setState(() {
-                _hasDevices = devs.isNotEmpty;
-              });
-            }
-          } catch (_) {}
-        }
-        if (widget.isTripActiveOverride == null) {
-          try {
-            final trip = await TripService().isTripActive(currentUserId);
-            if (mounted) {
-              setState(() {
-                _isTripActive = trip;
+                if (needDevs) _hasDevices = (results[0] as List).isNotEmpty;
+                if (needTrip) _isTripActive = results[1] as bool;
               });
             }
           } catch (_) {}
@@ -211,8 +210,12 @@ class _MenuContentState extends State<_MenuContent> {
       } else if (role == 'admin') {
         if (widget.hasFleetsOverride == null || widget.hasDevicesOverride == null) {
           try {
-            final frotas = await client.getFrotas();
-            final allDevices = await client.getDispositivos();
+            final results = await Future.wait([
+              client.getFrotas(),
+              client.getDispositivos(),
+            ]);
+            final frotas = results[0] as List;
+            final allDevices = results[1] as List;
             if (mounted) {
               setState(() {
                 if (widget.hasFleetsOverride == null) _hasFleets = frotas.isNotEmpty;
@@ -420,11 +423,11 @@ class _MenuContentState extends State<_MenuContent> {
               ),
             ],
           ),
-          child: Column(
+          child: const Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
-                children: const [
+                children: [
                   Icon(Icons.info_outline, size: 16, color: Color(0xFFC23147)),
                   SizedBox(width: 6),
                   Text(
@@ -437,8 +440,8 @@ class _MenuContentState extends State<_MenuContent> {
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
-              const Text(
+              SizedBox(height: 4),
+              Text(
                 'Cadastre uma frota para habilitar as opções do sistema.',
                 style: TextStyle(fontSize: 11, color: Colors.black54),
               ),
@@ -461,11 +464,11 @@ class _MenuContentState extends State<_MenuContent> {
               ),
             ],
           ),
-          child: Column(
+          child: const Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
-                children: const [
+                children: [
                   Icon(Icons.info_outline, size: 16, color: Color(0xFFC23147)),
                   SizedBox(width: 6),
                   Text(
@@ -478,8 +481,8 @@ class _MenuContentState extends State<_MenuContent> {
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
-              const Text(
+              SizedBox(height: 4),
+              Text(
                 'Selecione uma frota para habilitar as opções contextuais.',
                 style: TextStyle(fontSize: 11, color: Colors.black54),
               ),
@@ -564,11 +567,11 @@ class _MenuContentState extends State<_MenuContent> {
                 ),
               ],
             ),
-            child: Column(
+            child: const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-                  children: const [
+                  children: [
                     Icon(Icons.info_outline, size: 16, color: Color(0xFFC23147)),
                     SizedBox(width: 6),
                     Text(
@@ -581,8 +584,8 @@ class _MenuContentState extends State<_MenuContent> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 4),
-                const Text(
+                SizedBox(height: 4),
+                Text(
                   'Esta frota não possui dispositivos cadastrados. As opções dependentes estão indisponíveis.',
                   style: TextStyle(fontSize: 11, color: Colors.black54),
                 ),
@@ -854,11 +857,11 @@ class _MenuContentState extends State<_MenuContent> {
                 ),
               ],
             ),
-            child: Column(
+            child: const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-                  children: const [
+                  children: [
                     Icon(Icons.info_outline, size: 16, color: Color(0xFFC23147)),
                     SizedBox(width: 6),
                     Text(
@@ -871,8 +874,8 @@ class _MenuContentState extends State<_MenuContent> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 4),
-                const Text(
+                SizedBox(height: 4),
+                Text(
                   'As opções que dependem de frota estão indisponíveis.',
                   style: TextStyle(fontSize: 11, color: Colors.black54),
                 ),
@@ -895,11 +898,11 @@ class _MenuContentState extends State<_MenuContent> {
                 ),
               ],
             ),
-            child: Column(
+            child: const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-                  children: const [
+                  children: [
                     Icon(Icons.info_outline, size: 16, color: Color(0xFFC23147)),
                     SizedBox(width: 6),
                     Text(
@@ -912,8 +915,8 @@ class _MenuContentState extends State<_MenuContent> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 4),
-                const Text(
+                SizedBox(height: 4),
+                Text(
                   'As opções que dependem de dispositivo estão indisponíveis.',
                   style: TextStyle(fontSize: 11, color: Colors.black54),
                 ),
@@ -1042,11 +1045,11 @@ class _MenuContentState extends State<_MenuContent> {
                 ),
               ],
             ),
-            child: Column(
+            child: const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-                  children: const [
+                  children: [
                     Icon(Icons.info_outline, size: 16, color: Color(0xFFC23147)),
                     SizedBox(width: 6),
                     Text(
@@ -1059,8 +1062,8 @@ class _MenuContentState extends State<_MenuContent> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 4),
-                const Text(
+                SizedBox(height: 4),
+                Text(
                   'As opções que dependem de veículo estão indisponíveis.',
                   style: TextStyle(fontSize: 11, color: Colors.black54),
                 ),

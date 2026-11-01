@@ -34,9 +34,7 @@ void main() {
       );
     }
 
-    setUp(() {
-      adminContext.clearAll();
-    });
+    setUp(adminContext.clearAll);
 
     testWidgets('1. No Fleet Selected: Context items are gray and non-clickable, GPS is omitted', (tester) async {
       await tester.pumpWidget(createTestWidget(selectedIndex: null));

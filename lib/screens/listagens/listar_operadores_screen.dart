@@ -58,7 +58,7 @@ class _ListarOperadoresScreenState extends State<ListarOperadoresScreen> {
       final isGerente = widget.title == 'Gerentes';
       final filteredUsers = allUsers.where((u) => u.cargo?.toLowerCase() == (isGerente ? 'gerente' : 'operador')).toList();
 
-      Map<String, String> info = {};
+      final Map<String, String> info = {};
       for (var u in filteredUsers) {
         if (isGerente) {
           final f = frotas.where((f) => f.idGerente == u.id).toList();

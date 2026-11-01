@@ -38,6 +38,8 @@ class _GpsScreenState extends State<GpsScreen> {
   TripInfo? _selectedTripInfo;
   DispositivoModel? _selectedDevice;
   Timer? _timer;
+  bool _isRefreshing = false;
+  DateTime? _lastRefreshAt;
   final MapController _mapController = MapController();
 
   @override
@@ -69,6 +71,7 @@ class _GpsScreenState extends State<GpsScreen> {
 
   Future<void> _fetchData() async {
     setState(() => _isLoading = true);
+    _lastRefreshAt = null;
     try {
       final user = _supabase.currentUser;
       if (user == null) {
@@ -97,9 +100,9 @@ class _GpsScreenState extends State<GpsScreen> {
         devs = await _supabase.getDispositivos();
       } else if (_userRole == 'gerente') {
         final frotas = await _supabase.getFrotasByGerente(user.id);
-        for (var f in frotas) {
-          final fleetDevs = await _supabase.getDispositivosByFrota(f.id);
-          devs.addAll(fleetDevs);
+        final fleetDevs = await Future.wait(frotas.map((f) => _supabase.getDispositivosByFrota(f.id)));
+        for (final lista in fleetDevs) {
+          devs.addAll(lista);
         }
       } else {
         // Operador
@@ -146,9 +149,11 @@ class _GpsScreenState extends State<GpsScreen> {
       final currentUserId = user?.id ?? '';
       final Set<String> inTrip = {};
 
-      for (final d in _dispositivos) {
-        final active = await _tripService.isDeviceInTrip(d.id, operatorId: d.idOperador);
-        if (active) inTrip.add(d.id);
+      final tripFlags = await Future.wait(
+        _dispositivos.map((d) => _tripService.isDeviceInTrip(d.id, operatorId: d.idOperador)),
+      );
+      for (var i = 0; i < _dispositivos.length; i++) {
+        if (tripFlags[i]) inTrip.add(_dispositivos[i].id);
       }
 
       TripInfo? trip;
@@ -178,39 +183,47 @@ class _GpsScreenState extends State<GpsScreen> {
   }
 
   Future<void> _refreshLocations() async {
-    if (_dispositivos.isEmpty) return;
+    if (_dispositivos.isEmpty || _isRefreshing) return;
+    _isRefreshing = true;
     try {
-      List<String> ids = _dispositivos.map((d) => d.id).toList();
-      DateTime agora = DateTime.now();
-      DateTime inicio = agora.subtract(const Duration(days: 30));
-      
+      final ids = _dispositivos.map((d) => d.id).toList();
+      final agora = DateTime.now();
+      // Primeiro ciclo: histórico de 30 dias. Ciclos seguintes: apenas o que chegou
+      // desde a última atualização (com folga), mesclado às posições já conhecidas.
+      final primeiroCiclo = _lastRefreshAt == null;
+      final inicio = primeiroCiclo
+          ? agora.subtract(const Duration(days: 30))
+          : _lastRefreshAt!.subtract(const Duration(minutes: 2));
+
       final medicoes = await _supabase.getMedicoesFiltro(ids, inicio, agora);
-      
-      Map<String, MedicaoModel> latest = {};
-      for (var m in medicoes) {
-        if (m.latitude != null && m.longitude != null && m.idDispositivo != null) {
-          if (!latest.containsKey(m.idDispositivo)) {
-            latest[m.idDispositivo!] = m;
-          } else {
-            if (m.registradoEm!.isAfter(latest[m.idDispositivo!]!.registradoEm!)) {
-              latest[m.idDispositivo!] = m;
-            }
+
+      final Map<String, MedicaoModel> latest = primeiroCiclo ? {} : Map.of(_latestMedicoes);
+      for (final m in medicoes) {
+        final id = m.idDispositivo;
+        if (m.latitude != null && m.longitude != null && id != null) {
+          final atual = latest[id];
+          if (atual == null || m.registradoEm!.isAfter(atual.registradoEm!)) {
+            latest[id] = m;
           }
         }
       }
 
-      // Fallback: se algum dispositivo não tiver sido capturado no filtro, busca última medição direta
-      for (var d in _dispositivos) {
-        if (!latest.containsKey(d.id)) {
-          final mDirect = await _supabase.getLatestMedicao(d.id);
+      // Fallback (apenas no primeiro ciclo): dispositivos sem medição no período
+      // buscam a última medição direta, todos em paralelo.
+      if (primeiroCiclo) {
+        final faltantes = _dispositivos.where((d) => !latest.containsKey(d.id)).toList();
+        final diretas = await Future.wait(faltantes.map((d) => _supabase.getLatestMedicao(d.id)));
+        for (var i = 0; i < faltantes.length; i++) {
+          final mDirect = diretas[i];
           if (mDirect != null && mDirect.latitude != null && mDirect.longitude != null) {
-            latest[d.id] = mDirect;
+            latest[faltantes[i].id] = mDirect;
           }
         }
       }
 
+      _lastRefreshAt = agora;
       await _updateTripStatus();
-      
+
       if (mounted) {
         setState(() {
           _latestMedicoes = latest;
@@ -218,6 +231,8 @@ class _GpsScreenState extends State<GpsScreen> {
       }
     } catch (e) {
       debugPrint('Erro atualizar location: $e');
+    } finally {
+      _isRefreshing = false;
     }
   }
 
@@ -346,8 +361,8 @@ class _GpsScreenState extends State<GpsScreen> {
                 ),
               ],
             ),
-            child: Column(
-              children: const [
+            child: const Column(
+              children: [
                 Icon(Icons.location_searching, size: 56, color: Color(0xFFC23147)),
                 SizedBox(height: 12),
                 Text(
@@ -650,17 +665,17 @@ class _GpsScreenState extends State<GpsScreen> {
   }
 
   Widget _buildMapBackground() {
-    List<Marker> markers = [];
+    final List<Marker> markers = [];
     final bool isSelectedInTrip = _selectedDevice != null && (
       _devicesInTrip.contains(_selectedDevice!.id) ||
       (_userRole == 'operador' && _selectedTripInfo != null)
     );
 
     for (var d in _dispositivos) {
-      var m = _latestMedicoes[d.id];
+      final m = _latestMedicoes[d.id];
       if (m != null && m.latitude != null && m.longitude != null) {
-        bool isSelected = _selectedDevice?.id == d.id;
-        bool devInTrip = _devicesInTrip.contains(d.id) || (isSelected && isSelectedInTrip);
+        final bool isSelected = _selectedDevice?.id == d.id;
+        final bool devInTrip = _devicesInTrip.contains(d.id) || (isSelected && isSelectedInTrip);
 
         markers.add(
           Marker(
@@ -738,7 +753,7 @@ class _GpsScreenState extends State<GpsScreen> {
     }
 
     // Traçado da rota e marcador de destino se houver viagem ativa com coordenadas
-    List<Polyline> polylines = [];
+    final List<Polyline> polylines = [];
     if (isSelectedInTrip && _selectedTripInfo != null &&
         _selectedTripInfo!.destinationLatitude != null &&
         _selectedTripInfo!.destinationLongitude != null) {
@@ -798,7 +813,7 @@ class _GpsScreenState extends State<GpsScreen> {
         ),
       );
 
-      var currentMed = _latestMedicoes[_selectedDevice!.id];
+      final currentMed = _latestMedicoes[_selectedDevice!.id];
       if (currentMed != null && currentMed.latitude != null && currentMed.longitude != null) {
         polylines.add(
           Polyline(
@@ -843,7 +858,7 @@ class _GpsScreenState extends State<GpsScreen> {
   }
 
   Widget _buildMapActionButtons() {
-    return Container(
+    return DecoratedBox(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -860,7 +875,7 @@ class _GpsScreenState extends State<GpsScreen> {
         children: [
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.black87, size: 22),
-            onPressed: () => _refreshLocations(),
+            onPressed: _refreshLocations,
             constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
             padding: EdgeInsets.zero,
           ),
@@ -869,7 +884,7 @@ class _GpsScreenState extends State<GpsScreen> {
             icon: const Icon(Icons.my_location, color: Color(0xFFC23147), size: 22),
             onPressed: () {
               if (_selectedDevice != null && _latestMedicoes.containsKey(_selectedDevice!.id)) {
-                var m = _latestMedicoes[_selectedDevice!.id]!;
+                final m = _latestMedicoes[_selectedDevice!.id]!;
                 if (m.latitude != null && m.longitude != null) {
                   _mapController.move(LatLng(m.latitude!.toDouble(), m.longitude!.toDouble()), 16.0);
                 }
@@ -888,7 +903,7 @@ class _GpsScreenState extends State<GpsScreen> {
       return const SizedBox.shrink();
     }
 
-    var m = _latestMedicoes[_selectedDevice!.id];
+    final m = _latestMedicoes[_selectedDevice!.id];
     final bool isInTrip = _selectedDevice != null && (
       _devicesInTrip.contains(_selectedDevice!.id) ||
       (_userRole == 'operador' && _selectedTripInfo != null)
@@ -910,7 +925,7 @@ class _GpsScreenState extends State<GpsScreen> {
       statusStr = 'Em trânsito';
       statusColor = const Color(0xFF2E7D32);
     } else if (m != null && m.registradoEm != null) {
-      bool isRecent = DateTime.now().difference(m.registradoEm!).inHours < 2;
+      final bool isRecent = DateTime.now().difference(m.registradoEm!).inHours < 2;
       statusStr = isRecent ? 'Parado' : 'Parado / Offline';
       statusColor = isRecent ? const Color(0xFF1565C0) : Colors.black45;
     } else {

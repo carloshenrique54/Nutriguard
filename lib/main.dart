@@ -21,13 +21,14 @@ import 'screens/acoes/parar_viagem_screen.dart';
 import 'screens/acoes/configuracoes_screen.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'services/supabase_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   await Supabase.initialize(
-    url: 'https://tlcsqlemhpxftatpivac.supabase.co',
-    publishableKey: 'sb_publishable_RkyrNG8clRlnHWJFvmOEPQ_DIRp4SKV',
+    url: SupabaseService.supabaseUrl,
+    publishableKey: SupabaseService.supabaseAnonKey,
   );
 
   runApp(const NutriGuardApp());

@@ -190,9 +190,9 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
     if (_perfil == null) return;
     setState(() { _isLoading = true; });
     try {
-      DateTime agora = DateTime.now();
+      final DateTime agora = DateTime.now();
       DateTime inicio;
-      DateTime fim = agora;
+      final DateTime fim = agora;
 
       if (_periodoSelecionado == 'Dia') {
         inicio = DateTime(agora.year, agora.month, agora.day);
@@ -211,10 +211,14 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
         targetDevices = targetDevices.where((d) => d.id == _selectedDispositivoId).toList();
       }
 
-      List<String> deviceIds = targetDevices.map((d) => d.id).toList();
+      final List<String> deviceIds = targetDevices.map((d) => d.id).toList();
 
-      _medicoes = await _supabase.getMedicoesFiltro(deviceIds, inicio, fim);
-      _ocorrencias = await _supabase.getOcorrenciasFiltro(deviceIds, inicio, fim);
+      final results = await Future.wait([
+        _supabase.getMedicoesFiltro(deviceIds, inicio, fim),
+        _supabase.getOcorrenciasFiltro(deviceIds, inicio, fim),
+      ]);
+      _medicoes = results[0] as List<MedicaoModel>;
+      _ocorrencias = results[1] as List<OcorrenciaModel>;
 
       await _calculateMetrics(targetDevices);
     } catch (e) {
@@ -237,25 +241,45 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
     const num minTempDefault = 2.0;
     const num maxTempDefault = 8.0;
 
-    for (var d in devices) {
-      var meds = _medicoes.where((m) => m.idDispositivo == d.id).toList();
-      if (meds.isNotEmpty) {
+    // Indexa medicoes e ocorrencias por dispositivo para lookup O(1)
+    final Map<String, List<MedicaoModel>> medsByDev = {};
+    for (final m in _medicoes) {
+      if (m.idDispositivo != null) {
+        medsByDev.putIfAbsent(m.idDispositivo!, () => []).add(m);
+      }
+    }
+    final Map<String, int> alertasByDev = {};
+    for (final o in _ocorrencias) {
+      if (o.idDispositivo != null) {
+        alertasByDev[o.idDispositivo!] = (alertasByDev[o.idDispositivo!] ?? 0) + 1;
+      }
+    }
+    final Map<String, FrotaModel> frotasById = {for (var f in _frotas) f.id: f};
+
+    // Pre-consulta status de viagem em paralelo para todos os dispositivos
+    final tripFlags = await Future.wait(
+      devices.map((d) => TripService().isDeviceInTrip(d.id, operatorId: d.idOperador)),
+    );
+
+    for (var i = 0; i < devices.length; i++) {
+      final d = devices[i];
+      final meds = medsByDev[d.id];
+      if (meds != null && meds.isNotEmpty) {
         meds.sort((a, b) => a.registradoEm!.compareTo(b.registradoEm!));
         
-        DateTime inicio = meds.first.registradoEm!;
-        DateTime fim = meds.last.registradoEm!;
+        final DateTime inicio = meds.first.registradoEm!;
+        final DateTime fim = meds.last.registradoEm!;
         
-        // Verifica se o dispositivo está com uma viagem realmente ativa no TripService
-        bool ativa = await TripService().isDeviceInTrip(d.id, operatorId: d.idOperador);
-        int duracao = fim.difference(inicio).inMinutes;
+        // Status de viagem calculado em paralelo
+        final bool ativa = tripFlags[i];
+        final int duracao = fim.difference(inicio).inMinutes;
 
         if (ativa && duracao > _tempoRotaAtual) {
           _tempoRotaAtual = duracao;
         }
 
-        int qtdeAl = _ocorrencias.where((o) => o.idDispositivo == d.id).length;
-        
-        FrotaModel? f = _frotas.where((f) => f.id == d.idFrota).firstOrNull;
+        final int qtdeAl = alertasByDev[d.id] ?? 0;
+        final FrotaModel? f = d.idFrota != null ? frotasById[d.idFrota!] : null;
         
         _viagens.add(ViagemData(
           dispositivo: d,
@@ -267,8 +291,8 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
           qtdeAlertas: qtdeAl,
         ));
 
-        num tMin = d.temperaturaMinima ?? minTempDefault;
-        num tMax = d.temperaturaMaxima ?? maxTempDefault;
+        final num tMin = d.temperaturaMinima ?? minTempDefault;
+        final num tMax = d.temperaturaMaxima ?? maxTempDefault;
 
         for (var m in meds) {
           if (m.temperatura != null) {
@@ -344,20 +368,20 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
               child: pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Text('NutriGuard - Relatório', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold, color: PdfColors.red800)),
+                  pw.Text('NutriGuard - Relatório', style: const pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold, color: PdfColors.red800)),
                   pw.Text(DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now()), style: const pw.TextStyle(fontSize: 12)),
                 ]
               )
             ),
             pw.SizedBox(height: 16),
-            pw.Text('Filtros Aplicados:', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+            pw.Text('Filtros Aplicados:', style: const pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
             pw.Text('Período: $_periodoSelecionado', style: const pw.TextStyle(fontSize: 11)),
             if (_selectedFrotaId != null && _selectedFrotaId!.isNotEmpty)
                pw.Text('Frota ID: $_selectedFrotaId', style: const pw.TextStyle(fontSize: 11)),
             if (_selectedDispositivoId != null && _selectedDispositivoId!.isNotEmpty)
                pw.Text('Dispositivo ID: $_selectedDispositivoId', style: const pw.TextStyle(fontSize: 11)),
             pw.SizedBox(height: 16),
-            pw.Text('Resumo dos Indicadores:', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+            pw.Text('Resumo dos Indicadores:', style: const pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
             pw.Bullet(text: 'Viagens no período: $_totalViagens'),
             pw.Bullet(
               text: widget.isVehicleContext
@@ -371,7 +395,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
             pw.SizedBox(height: 16),
             pw.Text(
               _selectedDispositivoId == null ? 'Telemetria Consolidada da Frota:' : 'Telemetria e Condições Ambientais:',
-              style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+              style: const pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
             ),
             if (_selectedDispositivoId == null) ...[
               pw.Bullet(text: 'Temperatura Média da Frota: ${avgTemp != null ? "${avgTemp.toStringAsFixed(1)}°C" : "N/D"} | Mín: ${minTemp?.toStringAsFixed(1) ?? "N/D"}°C | Máx: ${maxTemp?.toStringAsFixed(1) ?? "N/D"}°C'),
@@ -385,10 +409,10 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
               pw.Bullet(text: 'Bateria e Compartimento: ${latestMed?.bateria != null ? "${latestMed!.bateria!.toStringAsFixed(0)}%" : "N/D"} | Porta: ${latestMed?.portaAberta == true ? "Aberta" : "Fechada"}'),
             ],
             pw.SizedBox(height: 16),
-            pw.Text('Alertas e Ocorrências Recentes (${_ocorrencias.length}):', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+            pw.Text('Alertas e Ocorrências Recentes (${_ocorrencias.length}):', style: const pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
             pw.SizedBox(height: 8),
             if (sortedOcorrencias.isEmpty)
-              pw.Text('Nenhum alerta registrado neste período.', style: pw.TextStyle(fontStyle: pw.FontStyle.italic, color: PdfColors.grey, fontSize: 11))
+              pw.Text('Nenhum alerta registrado neste período.', style: const pw.TextStyle(fontStyle: pw.FontStyle.italic, color: PdfColors.grey, fontSize: 11))
             else
               pw.TableHelper.fromTextArray(
                 context: context,
@@ -406,10 +430,10 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
                 }).toList(),
               ),
             pw.SizedBox(height: 16),
-            pw.Text('Lista de Viagens (${_viagens.length}):', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+            pw.Text('Lista de Viagens (${_viagens.length}):', style: const pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
             pw.SizedBox(height: 8),
             if (_viagens.isEmpty)
-              pw.Text('Nenhuma viagem realizada neste período.', style: pw.TextStyle(fontStyle: pw.FontStyle.italic, color: PdfColors.grey, fontSize: 11))
+              pw.Text('Nenhuma viagem realizada neste período.', style: const pw.TextStyle(fontStyle: pw.FontStyle.italic, color: PdfColors.grey, fontSize: 11))
             else
               pw.TableHelper.fromTextArray(
                 context: context,
@@ -998,7 +1022,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
       padding: const EdgeInsets.all(4),
       child: Row(
         children: ['Dia', 'Semana', 'Mês'].map((period) {
-          bool isSelected = _periodoSelecionado == period;
+          final bool isSelected = _periodoSelecionado == period;
           return Expanded(
             child: GestureDetector(
               onTap: () {
@@ -1550,7 +1574,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
 
     final sorted = List<MedicaoModel>.from(_medicoes);
     sorted.sort((a, b) => a.registradoEm!.compareTo(b.registradoEm!));
-    DateTime t0 = sorted.first.registradoEm!;
+    final DateTime t0 = sorted.first.registradoEm!;
     DateTime tEnd = sorted.last.registradoEm!;
     if (tEnd.difference(t0).inMinutes < 60) {
       tEnd = t0.add(const Duration(hours: 1));
@@ -1560,21 +1584,21 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
     const int numSlots = 7;
     final double slotWidthMin = totalMin / (numSlots - 1);
 
-    List<String> timeLabels = [];
-    List<FlSpot> spots = [];
-    List<BarChartGroupData> barGroups = [];
+    final List<String> timeLabels = [];
+    final List<FlSpot> spots = [];
+    final List<BarChartGroupData> barGroups = [];
     bool hasAnyAlert = false;
     double maxYFound = limit;
     double minYFound = limit;
 
     for (int i = 0; i < numSlots; i++) {
-      DateTime slotCenter = t0.add(Duration(minutes: (slotWidthMin * i).round()));
-      DateTime windowStart = slotCenter.subtract(Duration(minutes: (slotWidthMin / 2).round()));
-      DateTime windowEnd = slotCenter.add(Duration(minutes: (slotWidthMin / 2).round()));
+      final DateTime slotCenter = t0.add(Duration(minutes: (slotWidthMin * i).round()));
+      final DateTime windowStart = slotCenter.subtract(Duration(minutes: (slotWidthMin / 2).round()));
+      final DateTime windowEnd = slotCenter.add(Duration(minutes: (slotWidthMin / 2).round()));
 
       timeLabels.add(DateFormat('H:mm').format(slotCenter));
 
-      List<double> slotVals = [];
+      final List<double> slotVals = [];
       for (var m in sorted) {
         final reg = m.registradoEm!;
         if (!reg.isBefore(windowStart) && !reg.isAfter(windowEnd)) {
@@ -1597,7 +1621,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
         double? nearestVal;
         int minDiff = 99999999;
         for (var m in sorted) {
-          int diff = (m.registradoEm!.difference(slotCenter).inMinutes).abs();
+          final int diff = (m.registradoEm!.difference(slotCenter).inMinutes).abs();
           if (diff < minDiff) {
             minDiff = diff;
             if (_selectedTelemetriaParametro == 'Umidade') {
@@ -1812,7 +1836,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
                                 showTitles: true,
                                 reservedSize: 22,
                                 getTitlesWidget: (value, meta) {
-                                  int idx = value.round();
+                                  final int idx = value.round();
                                   if (idx >= 0 && idx < timeLabels.length) {
                                     return Padding(
                                       padding: const EdgeInsets.only(top: 4.0),
@@ -1879,7 +1903,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
                                 reservedSize: 22,
                                 interval: 1,
                                 getTitlesWidget: (value, meta) {
-                                  int idx = value.round();
+                                  final int idx = value.round();
                                   if (idx >= 0 && idx < timeLabels.length) {
                                     return Padding(
                                       padding: const EdgeInsets.only(top: 4.0),
@@ -2094,9 +2118,9 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
     }
     final int totalMin = tEnd.difference(t0).inMinutes;
 
-    List<String> timeLabels = [];
+    final List<String> timeLabels = [];
     for (int i = 0; i < 7; i++) {
-      DateTime slotTime = t0.add(Duration(minutes: (totalMin * (i / 6)).round()));
+      final DateTime slotTime = t0.add(Duration(minutes: (totalMin * (i / 6)).round()));
       if (i == 0) {
         timeLabels.add('${DateFormat('H:mm').format(slotTime)}\n(Início)');
       } else if (i == 6) {
@@ -2106,18 +2130,18 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
       }
     }
 
-    List<int> countsPerSlot = List.filled(7, 0);
+    final List<int> countsPerSlot = List.filled(7, 0);
     for (var o in _ocorrencias) {
       if (o.criadoEm != null) {
-        int mMin = o.criadoEm!.difference(t0).inMinutes;
-        int slot = ((mMin / totalMin) * 6.0).clamp(0.0, 6.0).round();
+        final int mMin = o.criadoEm!.difference(t0).inMinutes;
+        final int slot = ((mMin / totalMin) * 6.0).clamp(0.0, 6.0).round();
         countsPerSlot[slot]++;
       }
     }
 
-    List<BarChartGroupData> barGroups = [];
+    final List<BarChartGroupData> barGroups = [];
     for (int i = 0; i < 7; i++) {
-      int count = countsPerSlot[i];
+      final int count = countsPerSlot[i];
       barGroups.add(
         BarChartGroupData(
           x: i,
@@ -2180,7 +2204,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
                     reservedSize: 32,
                     interval: 1,
                     getTitlesWidget: (value, meta) {
-                      int idx = value.round();
+                      final int idx = value.round();
                       if (idx >= 0 && idx < timeLabels.length) {
                         return Padding(
                           padding: const EdgeInsets.only(top: 4.0),
@@ -2298,7 +2322,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
             ),
           )
         else
-          ...sortedOcorrencias.take(5).map((o) => _buildAlertCard(o)),
+          ...sortedOcorrencias.take(5).map(_buildAlertCard),
       ],
     );
   }
@@ -2474,7 +2498,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
             ),
           )
         else
-          ..._viagens.map((v) => _buildViagemCard(v)),
+          ..._viagens.map(_buildViagemCard),
       ],
     );
   }

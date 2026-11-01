@@ -429,10 +429,10 @@ class _CadastrarFuncionarioScreenState extends State<CadastrarFuncionarioScreen>
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
+                      const Expanded(
                         child: Text(
                           'Cadastrar\nFuncionário',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 28,
                             fontWeight: FontWeight.bold,
                             color: Color(0xFFC23147),

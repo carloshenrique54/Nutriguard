@@ -477,7 +477,7 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
     final perfil = await _supabase.getUsuarioPerfil(currentUserId);
     final role = perfil?.role ?? '';
 
-    List<String> allowedRoles = ['admin'];
+    final List<String> allowedRoles = ['admin'];
 
     if (!allowedRoles.contains(role)) {
       if (mounted) {

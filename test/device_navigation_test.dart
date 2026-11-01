@@ -25,9 +25,7 @@ void main() {
       modeloVeiculo: 'Volvo FH 540',
     );
 
-    setUp(() {
-      adminContext.clearAll();
-    });
+    setUp(adminContext.clearAll);
 
     testWidgets('1. DeviceCard has Ver mais button that triggers onTap callback with device context', (tester) async {
       bool tapped = false;

@@ -496,11 +496,11 @@ class _IniciarViagemScreenState extends State<IniciarViagemScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          const Row(
             children: [
-              const Icon(Icons.navigation_rounded, color: Color(0xFF2E7D32), size: 24),
-              const SizedBox(width: 8),
-              const Expanded(
+              Icon(Icons.navigation_rounded, color: Color(0xFF2E7D32), size: 24),
+              SizedBox(width: 8),
+              Expanded(
                 child: Text(
                   'Você já possui uma viagem em andamento!',
                   style: TextStyle(
@@ -897,7 +897,7 @@ class _IniciarViagemScreenState extends State<IniciarViagemScreen> {
   Widget _buildDestinationMapSection() {
     final initialPos = _destinationLatLng ?? _originLatLng ?? const LatLng(-23.5505, -46.6333);
 
-    return Container(
+    return DecoratedBox(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
@@ -941,8 +941,8 @@ class _IniciarViagemScreenState extends State<IniciarViagemScreen> {
                 const Spacer(),
                 InkWell(
                   onTap: _abrirModalMapaCompleto,
-                  child: Row(
-                    children: const [
+                  child: const Row(
+                    children: [
                       Icon(Icons.fullscreen_rounded, size: 16, color: Color(0xFFC23147)),
                       SizedBox(width: 2),
                       Text(
@@ -1258,13 +1258,13 @@ class _FullScreenMapPickerState extends State<_FullScreenMapPicker> {
           ),
           const Divider(height: 1, color: Colors.black12),
           // Search & Hints
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             child: Row(
               children: [
-                const Icon(Icons.info_outline, size: 16, color: Color(0xFF8DB600)),
-                const SizedBox(width: 6),
-                const Expanded(
+                Icon(Icons.info_outline, size: 16, color: Color(0xFF8DB600)),
+                SizedBox(width: 6),
+                Expanded(
                   child: Text(
                     'Toque em qualquer ponto do mapa para posicionar a bandeira de destino.',
                     style: TextStyle(fontSize: 12, color: Colors.black87),

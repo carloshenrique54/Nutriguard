@@ -166,6 +166,7 @@ class TemperatureMiniChartPainter extends CustomPainter {
   bool shouldRepaint(covariant TemperatureMiniChartPainter oldDelegate) {
     return oldDelegate.currentTemp != currentTemp ||
         oldDelegate.points != points ||
+        oldDelegate.dataPoints != dataPoints ||
         oldDelegate.minLimit != minLimit ||
         oldDelegate.maxLimit != maxLimit;
   }

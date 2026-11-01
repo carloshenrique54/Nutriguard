@@ -444,7 +444,7 @@ class _PararViagemScreenState extends State<PararViagemScreen> {
     String? hint,
     TextInputType keyboardType = TextInputType.text,
   }) {
-    return Container(
+    return DecoratedBox(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(8),

@@ -28,9 +28,7 @@ void main() {
       modeloVeiculo: 'Scania',
     );
 
-    setUp(() {
-      service.clearAll();
-    });
+    setUp(service.clearAll);
 
     test('Initial state is completely empty', () {
       expect(service.hasFrota, isFalse);

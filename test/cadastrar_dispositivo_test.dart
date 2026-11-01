@@ -238,7 +238,7 @@ void main() {
 
     test('4. SupabaseService.formatarErro formats id_frota not-null constraint error', () {
       // Simulate raw PostgrestException from Postgres constraint 23502
-      final error = PostgrestException(
+      const error = PostgrestException(
         message: 'null value in column "id_frota" of relation "Dispositivos" violates not-null constraint',
         code: '23502',
       );

@@ -94,12 +94,13 @@ class _AlertasScreenState extends State<AlertasScreen> {
       List<DispositivoModel> devs = [];
 
       if (role == 'admin') {
-        frotas = await _supabase.getFrotas();
-        if (widget.isVehicleContext && AdminContextService().selectedFrota != null) {
-          devs = await _supabase.getDispositivosByFrota(AdminContextService().selectedFrota!.id);
-        } else {
-          devs = await _supabase.getDispositivos();
-        }
+        final frotasFuture = _supabase.getFrotas();
+        final devsFuture = (widget.isVehicleContext && AdminContextService().selectedFrota != null)
+            ? _supabase.getDispositivosByFrota(AdminContextService().selectedFrota!.id)
+            : _supabase.getDispositivos();
+        final results = await Future.wait([frotasFuture, devsFuture]);
+        frotas = results[0] as List<FrotaModel>;
+        devs = results[1] as List<DispositivoModel>;
       } else if (role == 'gerente') {
         frotas = await _supabase.getFrotasByGerente(user.id);
         final devLists = await Future.wait(
@@ -152,7 +153,7 @@ class _AlertasScreenState extends State<AlertasScreen> {
   }
 
   Future<void> _loadOcorrencias() async {
-    DateTime agora = DateTime.now();
+    final DateTime agora = DateTime.now();
     DateTime inicio = agora.subtract(const Duration(days: 365)); // Todos
     
     if (_periodoSelecionado == 'Hoje') {
@@ -268,7 +269,7 @@ class _AlertasScreenState extends State<AlertasScreen> {
                         ),
                       )
                     else
-                      ..._ocorrencias.map((o) => _buildAlertCard(o)),
+                      ..._ocorrencias.map(_buildAlertCard),
                     const SizedBox(height: 80),
                   ],
                 ),
@@ -525,7 +526,7 @@ class _AlertasScreenState extends State<AlertasScreen> {
   }
 
   Widget _buildStatusCard() {
-    int ativos = _ocorrencias.where((o) => o.status != 'Resolvido').length;
+    final int ativos = _ocorrencias.where((o) => o.status != 'Resolvido').length;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -564,7 +565,7 @@ class _AlertasScreenState extends State<AlertasScreen> {
   }
 
   Widget _buildAlertCard(OcorrenciaModel o) {
-    bool isCritical = o.tipo != null && o.tipo!.toLowerCase().contains('crítico');
+    final bool isCritical = o.tipo != null && o.tipo!.toLowerCase().contains('crítico');
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(

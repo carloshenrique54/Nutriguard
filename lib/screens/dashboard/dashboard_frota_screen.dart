@@ -65,11 +65,11 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
   Future<void> _updateActiveTrips(List<DispositivoModel> devices) async {
     final tripService = TripService();
     final Set<String> inTrip = {};
-    for (final d in devices) {
-      final active = await tripService.isDeviceInTrip(d.id, operatorId: d.idOperador);
-      if (active) {
-        inTrip.add(d.id);
-      }
+    final flags = await Future.wait(
+      devices.map((d) => tripService.isDeviceInTrip(d.id, operatorId: d.idOperador)),
+    );
+    for (var i = 0; i < devices.length; i++) {
+      if (flags[i]) inTrip.add(devices[i].id);
     }
     if (mounted) {
       setState(() {
@@ -120,7 +120,7 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
       final devicesFuture = _supabase.getDispositivos();
       final results = await Future.wait([frotasFuture, devicesFuture]);
 
-      List<FrotaModel> frotas = results[0] as List<FrotaModel>;
+      final List<FrotaModel> frotas = results[0] as List<FrotaModel>;
       final allSystemDevices = results[1] as List<DispositivoModel>;
       _totalSystemDevices = allSystemDevices.length;
 
@@ -148,28 +148,27 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
         AdminContextService().clearVehicle();
       }
 
-      // Dispositivos da frota selecionada ou de todas as frotas do gerente/admin
+      // Dispositivos da frota selecionada ou de todas as frotas do gerente/admin,
+      // derivados da lista completa já carregada (sem novas consultas).
       List<DispositivoModel> activeDevices = [];
       if (selected != null) {
-        activeDevices = await _supabase.getDispositivosByFrota(selected.id);
+        activeDevices = allSystemDevices.where((d) => d.idFrota == selected!.id).toList();
       } else if (frotas.isNotEmpty) {
-        final devLists = await Future.wait(
-          frotas.map((f) => _supabase.getDispositivosByFrota(f.id)),
-        );
-        activeDevices = devLists.expand((devs) => devs).toList();
+        final frotaIds = frotas.map((f) => f.id).toSet();
+        activeDevices = allSystemDevices.where((d) => frotaIds.contains(d.idFrota)).toList();
       }
 
       // Contagem de dispositivos por frota
-      Map<String, int> counts = {};
+      final Map<String, int> counts = {};
       for (var f in frotas) {
         counts[f.id] = allSystemDevices.where((d) => d.idFrota == f.id).length;
       }
 
       // Ocorrências recentes dos dispositivos da frota
-      List<String> devIds = activeDevices.map((d) => d.id).toList();
-      DateTime agora = DateTime.now();
-      DateTime inicio = agora.subtract(const Duration(days: 30));
-      List<OcorrenciaModel> ocorrencias = await _supabase.getOcorrenciasFiltro(devIds, inicio, agora);
+      final List<String> devIds = activeDevices.map((d) => d.id).toList();
+      final DateTime agora = DateTime.now();
+      final DateTime inicio = agora.subtract(const Duration(days: 30));
+      final List<OcorrenciaModel> ocorrencias = await _supabase.getOcorrenciasFiltro(devIds, inicio, agora);
       ocorrencias.sort((a, b) => (b.criadoEm ?? agora).compareTo(a.criadoEm ?? agora));
 
       if (mounted) {
@@ -200,9 +199,9 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
     });
     try {
       final devs = await _supabase.getDispositivosByFrota(f.id);
-      List<String> devIds = devs.map((d) => d.id).toList();
-      DateTime agora = DateTime.now();
-      DateTime inicio = agora.subtract(const Duration(days: 30));
+      final List<String> devIds = devs.map((d) => d.id).toList();
+      final DateTime agora = DateTime.now();
+      final DateTime inicio = agora.subtract(const Duration(days: 30));
       final ocorrencias = await _supabase.getOcorrenciasFiltro(devIds, inicio, agora);
       ocorrencias.sort((a, b) => (b.criadoEm ?? agora).compareTo(a.criadoEm ?? agora));
 
@@ -570,7 +569,7 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         OutlinedButton.icon(
-                          onPressed: () => _fetchData(),
+                          onPressed: _fetchData,
                           icon: const Icon(Icons.refresh, color: Color(0xFFC23147)),
                           label: const Text(
                             'Atualizar',
@@ -1437,7 +1436,7 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
             child: const Text('Nenhum dispositivo cadastrado', style: TextStyle(color: Colors.black54), textAlign: TextAlign.center),
           )
         else
-          Container(
+          DecoratedBox(
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),

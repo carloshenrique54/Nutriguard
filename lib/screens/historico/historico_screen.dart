@@ -220,79 +220,85 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
       }
     }
 
-    DateTime agora = DateTime.now();
-    DateTime inicio = agora.subtract(const Duration(days: 30));
+    final DateTime agora = DateTime.now();
+    final DateTime inicio = agora.subtract(const Duration(days: 30));
 
     List<HistoricoItem> items = [];
 
     if (targetIds.isNotEmpty) {
-      // 1. Fetch Occurrences (Alerts)
+      List<OcorrenciaModel> ocorrencias = [];
+      List<MedicaoModel> medicoes = [];
       try {
-        final ocorrencias = await _supabase.getOcorrenciasFiltro(targetIds, inicio, agora);
-        for (var o in ocorrencias) {
-          final date = o.criadoEm ?? agora;
-          final hora = DateFormat('H:mm').format(date);
-          final tipo = o.tipo ?? 'Alerta registrado';
-          final lower = tipo.toLowerCase();
-
-          String title = tipo;
-          String? detail;
-          IconData icon = Icons.thermostat_outlined;
-
-          if (lower.contains('vibra') || lower.contains('impacto')) {
-            title = 'Impacto elevado';
-            icon = Icons.view_in_ar_outlined;
-            detail = o.valorRegistrado != null
-                ? 'Intensidade ${o.valorRegistrado.toString().replaceAll(RegExp(r'\.0$'), '')}Kg'
-                : 'Intensidade 2Kg';
-          } else if (lower.contains('temperatura') || lower.contains('térmico')) {
-            final lim = o.limiteConfigurado != null
-                ? '${o.limiteConfigurado.toString().replaceAll(RegExp(r'\.0$'), '')}°C'
-                : '8°C';
-            title = 'Temperatura acima do limite de $lim';
-            icon = Icons.thermostat_outlined;
-            detail = o.valorRegistrado != null
-                ? '${o.valorRegistrado.toString().replaceAll(RegExp(r'\.0$'), '')}°C'
-                : '10°C';
-          } else if (lower.contains('porta')) {
-            title = 'Porta aberta detectada';
-            icon = Icons.sensor_door_outlined;
-            detail = 'Duração excessiva';
-          } else if (lower.contains('umidade')) {
-            final lim = o.limiteConfigurado != null
-                ? '${o.limiteConfigurado.toString().replaceAll(RegExp(r'\.0$'), '')}%'
-                : 'limite';
-            title = 'Umidade fora do limite ($lim)';
-            icon = Icons.water_drop_outlined;
-            detail = o.valorRegistrado != null ? '${o.valorRegistrado}%' : null;
-          }
-
-          items.add(HistoricoItem(
-            id: o.id,
-            title: title,
-            location: 'São José dos Campos',
-            time: hora,
-            timestamp: date,
-            isAlert: true,
-            extraDetail: detail,
-            icon: icon,
-            iconColor: const Color(0xFFC23147),
-            iconBgColor: const Color(0xFFFDE8EC),
-            iconBorderColor: const Color(0xFFF8BBD0),
-          ));
-        }
+        final results = await Future.wait([
+          _supabase.getOcorrenciasFiltro(targetIds, inicio, agora),
+          _supabase.getMedicoesFiltro(targetIds, inicio, agora),
+        ]);
+        ocorrencias = results[0] as List<OcorrenciaModel>;
+        medicoes = results[1] as List<MedicaoModel>;
       } catch (e) {
-        debugPrint('Erro ao buscar ocorrencias: $e');
+        debugPrint('Erro ao buscar dados do histórico: $e');
       }
 
-      // 2. Fetch Measurements (Normal Telemetry Checkpoints)
-      try {
-        final medicoes = await _supabase.getMedicoesFiltro(targetIds, inicio, agora);
-        for (var m in medicoes) {
-          final date = m.registradoEm ?? agora;
-          final hora = DateFormat('H:mm').format(date);
+      // 1. Process Occurrences (Alerts)
+      for (var o in ocorrencias) {
+        final date = o.criadoEm ?? agora;
+        final hora = DateFormat('H:mm').format(date);
+        final tipo = o.tipo ?? 'Alerta registrado';
+        final lower = tipo.toLowerCase();
 
-          if (m.umidade != null) {
+        String title = tipo;
+        String? detail;
+        IconData icon = Icons.thermostat_outlined;
+
+        if (lower.contains('vibra') || lower.contains('impacto')) {
+          title = 'Impacto elevado';
+          icon = Icons.view_in_ar_outlined;
+          detail = o.valorRegistrado != null
+              ? 'Intensidade ${o.valorRegistrado.toString().replaceAll(RegExp(r'\.0$'), '')}Kg'
+              : 'Intensidade 2Kg';
+        } else if (lower.contains('temperatura') || lower.contains('térmico')) {
+          final lim = o.limiteConfigurado != null
+              ? '${o.limiteConfigurado.toString().replaceAll(RegExp(r'\.0$'), '')}°C'
+              : '8°C';
+          title = 'Temperatura acima do limite de $lim';
+          icon = Icons.thermostat_outlined;
+          detail = o.valorRegistrado != null
+              ? '${o.valorRegistrado.toString().replaceAll(RegExp(r'\.0$'), '')}°C'
+              : '10°C';
+        } else if (lower.contains('porta')) {
+          title = 'Porta aberta detectada';
+          icon = Icons.sensor_door_outlined;
+          detail = 'Duração excessiva';
+        } else if (lower.contains('umidade')) {
+          final lim = o.limiteConfigurado != null
+              ? '${o.limiteConfigurado.toString().replaceAll(RegExp(r'\.0$'), '')}%'
+              : 'limite';
+          title = 'Umidade fora do limite ($lim)';
+          icon = Icons.water_drop_outlined;
+          detail = o.valorRegistrado != null ? '${o.valorRegistrado}%' : null;
+        }
+
+        items.add(HistoricoItem(
+          id: o.id,
+          title: title,
+          location: 'São José dos Campos',
+          time: hora,
+          timestamp: date,
+          isAlert: true,
+          extraDetail: detail,
+          icon: icon,
+          iconColor: const Color(0xFFC23147),
+          iconBgColor: const Color(0xFFFDE8EC),
+          iconBorderColor: const Color(0xFFF8BBD0),
+        ));
+      }
+
+      // 2. Process Measurements (Normal Telemetry Checkpoints)
+      for (var m in medicoes) {
+        final date = m.registradoEm ?? agora;
+        final hora = DateFormat('H:mm').format(date);
+
+        if (m.umidade != null) {
             items.add(HistoricoItem(
               id: '${m.id}_umi',
               title: 'Umidade dentro do limite',
@@ -324,10 +330,7 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
             ));
           }
         }
-      } catch (e) {
-        debugPrint('Erro ao buscar medicoes: $e');
       }
-    }
 
     // 3. Fallback demo data if items is empty, perfectly matching prototype mockup
     if (items.isEmpty) {
@@ -863,7 +866,7 @@ class TimelineCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
-      child: Container(
+      child: DecoratedBox(
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),

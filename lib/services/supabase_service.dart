@@ -77,8 +77,7 @@ class SupabaseService {
         await _client.from('Usuarios').upsert(profileData, onConflict: 'id');
       } on PostgrestException catch (e) {
         // A conta já foi criada; a trigger é a fonte principal do perfil.
-        // ignore: avoid_print
-        print('Aviso ao salvar perfil: ${e.message}');
+        debugPrint('Aviso ao salvar perfil: ${e.message}');
       }
     }
     return response;
@@ -103,9 +102,22 @@ class SupabaseService {
     final cpfDigits = cleanCpf.replaceAll(RegExp(r'\D'), '');
 
     // 1) Pré-validação com a sessão ativa do Administrador:
-    // Evita erros 500 do banco ao verificar se e-mail ou CPF já existem na tabela Usuarios
+    // Evita erros 500 do banco ao verificar se e-mail ou CPF já existem na tabela Usuarios.
+    // O filtro é feito no servidor (apenas candidatos coincidentes são trazidos),
+    // em vez de baixar a tabela inteira.
     try {
-      final existingUsers = await _client.from('Usuarios').select('id, nome, email, cpf');
+      final cpfFormatado = cpfDigits.length == 11
+          ? '${cpfDigits.substring(0, 3)}.${cpfDigits.substring(3, 6)}.${cpfDigits.substring(6, 9)}-${cpfDigits.substring(9)}'
+          : cleanCpf;
+      final cpfCandidatos = <String>{cleanCpf, cpfDigits, cpfFormatado}..removeWhere((c) => c.isEmpty);
+      final filtros = <String>[
+        'email.eq."$cleanEmail"',
+        for (final c in cpfCandidatos) 'cpf.eq."$c"',
+      ];
+      final existingUsers = await _client
+          .from('Usuarios')
+          .select('id, nome, email, cpf')
+          .or(filtros.join(','));
       for (var u in (existingUsers as List)) {
         final existingEmail = (u['email'] ?? '').toString().trim().toLowerCase();
         if (existingEmail.isNotEmpty && existingEmail == cleanEmail) {
@@ -194,8 +206,7 @@ class SupabaseService {
           }
         }
       } catch (e) {
-        // ignore: avoid_print
-        print('Aviso ao sincronizar perfil de funcionário: $e');
+        debugPrint('Aviso ao sincronizar perfil de funcionário: $e');
       }
 
       return response;
@@ -361,14 +372,40 @@ class SupabaseService {
   static UsuarioModel? _cachedPerfil;
   static UsuarioModel? get currentCachedPerfil => _cachedPerfil;
 
+  /// Cache em memória dos perfis lidos do banco (TTL curto) e requisições em
+  /// andamento, para não repetir a mesma consulta em telas que carregam juntas.
+  static const Duration _perfilTtl = Duration(seconds: 60);
+  static final Map<String, ({UsuarioModel perfil, DateTime at})> _perfilCache = {};
+  static final Map<String, Future<UsuarioModel?>> _perfilEmAndamento = {};
+
+  /// Descarta perfis em cache (um específico ou todos). Chamado em toda escrita
+  /// que possa alterar a tabela Usuarios.
+  static void invalidarCachePerfil([String? userId]) {
+    if (userId == null) {
+      _perfilCache.clear();
+    } else {
+      _perfilCache.remove(userId);
+    }
+  }
+
   Future<void> signOut() async {
     _cachedPerfil = null;
+    invalidarCachePerfil();
     await _client.auth.signOut();
   }
 
   User? get currentUser => _client.auth.currentUser;
 
-  Future<UsuarioModel?> getUsuarioPerfil(String userId) async {
+  Future<UsuarioModel?> getUsuarioPerfil(String userId) {
+    final cached = _perfilCache[userId];
+    if (cached != null && DateTime.now().difference(cached.at) < _perfilTtl) {
+      return Future.value(cached.perfil);
+    }
+    return _perfilEmAndamento[userId] ??=
+        _buscarUsuarioPerfil(userId).whenComplete(() => _perfilEmAndamento.remove(userId));
+  }
+
+  Future<UsuarioModel?> _buscarUsuarioPerfil(String userId) async {
     try {
       var data = await _client.from('Usuarios').select().eq('id', userId).maybeSingle();
       if (data == null && userId == currentUser?.id && currentUser?.email != null) {
@@ -409,6 +446,7 @@ class SupabaseService {
         return null;
       }
       final perfil = UsuarioModel.fromJson(data);
+      _perfilCache[userId] = (perfil: perfil, at: DateTime.now());
       if (userId == currentUser?.id) {
         _cachedPerfil = perfil;
       }
@@ -460,7 +498,11 @@ class SupabaseService {
   }
 
   Future<void> updateUsuario(String userId, Map<String, dynamic> data) async {
-    await _client.from('Usuarios').update(data).eq('id', userId);
+    try {
+      await _client.from('Usuarios').update(data).eq('id', userId);
+    } finally {
+      invalidarCachePerfil(userId);
+    }
   }
 
   Future<String?> uploadProfilePicture(String userId, Uint8List fileBytes, String fileName) async {
@@ -552,7 +594,11 @@ class SupabaseService {
     // Desvincular frotas associadas ao gerente
     await _client.from('Frotas').update({'id_gerente': null}).eq('id_gerente', id);
     // Deletar da tabela Usuarios
-    await _client.from('Usuarios').delete().eq('id', id);
+    try {
+      await _client.from('Usuarios').delete().eq('id', id);
+    } finally {
+      invalidarCachePerfil(id);
+    }
   }
 
   Future<List<DispositivoModel>> getDispositivosByFrota(String frotaId) async {
@@ -755,20 +801,6 @@ class SupabaseService {
     } catch (e) {
       throw Exception(formatarErro(e));
     }
-  }
-
-  // --- Medicoes (Streams) ---
-  Stream<List<MedicaoModel>> streamMedicoes() {
-    return _client.from('medicoes').stream(primaryKey: ['id']).map(
-      (data) => data.map((e) => MedicaoModel.fromJson(e)).toList(),
-    );
-  }
-
-  // --- Ocorrencias (Streams) ---
-  Stream<List<OcorrenciaModel>> streamOcorrencias() {
-    return _client.from('ocorrencias').stream(primaryKey: ['id']).map(
-      (data) => data.map((e) => OcorrenciaModel.fromJson(e)).toList(),
-    );
   }
 
   Future<List<OcorrenciaModel>> getOcorrencias() async {

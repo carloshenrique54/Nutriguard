@@ -177,8 +177,8 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
   }
 
   Future<void> _loadTelemetryForDevice(DispositivoModel device) async {
-    DateTime agora = DateTime.now();
-    DateTime inicio = agora.subtract(const Duration(days: 30));
+    final DateTime agora = DateTime.now();
+    final DateTime inicio = agora.subtract(const Duration(days: 30));
 
     final isOperador = _userRole == 'operador';
     final user = _supabase.currentUser;
@@ -204,9 +204,14 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
     }
 
     // "e as informações do dashboard tem que ser sempre a mais recente"
-    final latestDirect = await _supabase.getLatestMedicao(device.id);
-    final medicoes = await _supabase.getMedicoesFiltro([device.id], inicio, agora);
-    final ocorrencias = await _supabase.getOcorrenciasFiltro([device.id], inicio, agora);
+    final telemetryResults = await Future.wait([
+      _supabase.getLatestMedicao(device.id),
+      _supabase.getMedicoesFiltro([device.id], inicio, agora),
+      _supabase.getOcorrenciasFiltro([device.id], inicio, agora),
+    ]);
+    final latestDirect = telemetryResults[0] as MedicaoModel?;
+    final medicoes = telemetryResults[1] as List<MedicaoModel>;
+    final ocorrencias = telemetryResults[2] as List<OcorrenciaModel>;
     ocorrencias.sort((a, b) => (b.criadoEm ?? DateTime(1970)).compareTo(a.criadoEm ?? DateTime(1970)));
 
     MedicaoModel? latest = latestDirect;
@@ -231,8 +236,8 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
       ativa = agora.difference(latest!.registradoEm!).inHours < 2;
       if (ativa && medicoes.isNotEmpty) {
         medicoes.sort((a, b) => (a.registradoEm ?? agora).compareTo(b.registradoEm ?? agora));
-        DateTime first = medicoes.first.registradoEm ?? agora;
-        int duracao = agora.difference(first).inMinutes;
+        final DateTime first = medicoes.first.registradoEm ?? agora;
+        final int duracao = agora.difference(first).inMinutes;
         duracaoStr = '${duracao ~/ 60}h ${duracao % 60}m';
       }
     }
@@ -789,7 +794,7 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
   }
 
   Widget _buildHeader(BuildContext context) {
-    String roleText = (_userRole == 'admin' || _userRole == 'adm')
+    final String roleText = (_userRole == 'admin' || _userRole == 'adm')
         ? 'ADM'
         : (_userRole == 'gerente' ? 'GERENTE' : 'OPERADOR');
 
@@ -924,7 +929,7 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
     }
 
     return PopupMenuButton<DispositivoModel>(
-      onSelected: (d) => _onSwitchDevice(d),
+      onSelected: _onSwitchDevice,
       itemBuilder: (ctx) => _accessibleDevices.map((d) {
         return PopupMenuItem<DispositivoModel>(
           value: d,
@@ -976,7 +981,7 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
   }
 
   Widget _buildGpsQuickBanner() {
-    return Container(
+    return DecoratedBox(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),

@@ -55,8 +55,8 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
       final frotas = res[0] as List<FrotaModel>;
       final dispositivos = res[1] as List<DispositivoModel>;
 
-      Map<String, String> gerentesMap = {};
-      Map<String, int> countsMap = {};
+      final Map<String, String> gerentesMap = {};
+      final Map<String, int> countsMap = {};
 
       final gerenteIds = frotas.map((f) => f.idGerente).whereType<String>().toSet();
       final perfilEntries = await Future.wait(
@@ -96,7 +96,7 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
     final perfil = await _supabase.getUsuarioPerfil(currentUserId);
     final role = perfil?.role ?? '';
     
-    List<String> allowedRoles = ['admin', 'gerente'];
+    final List<String> allowedRoles = ['admin', 'gerente'];
 
     if (!allowedRoles.contains(role)) {
       if (mounted) {

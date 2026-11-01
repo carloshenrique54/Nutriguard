@@ -271,9 +271,12 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
         final newFrota = FrotaModel.fromJson(response);
         final newFrotaId = newFrota.id;
 
-        // Atualizar o id_frota nos dispositivos selecionados (se houver algum)
-        for (var devId in selectedDevices) {
-          await Supabase.instance.client.from('Dispositivos').update({'id_frota': newFrotaId}).eq('id', devId);
+        // Atualizar o id_frota nos dispositivos selecionados (se houver algum) em lote
+        if (selectedDevices.isNotEmpty) {
+          await Supabase.instance.client
+              .from('Dispositivos')
+              .update({'id_frota': newFrotaId})
+              .inFilter('id', selectedDevices);
         }
 
         // Ativa imediatamente a nova frota no contexto administrativo
@@ -330,7 +333,7 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
     final perfil = await _supabase.getUsuarioPerfil(currentUserId);
     final role = perfil?.role ?? '';
     
-    List<String> allowedRoles = ['admin'];
+    final List<String> allowedRoles = ['admin'];
 
     if (!allowedRoles.contains(role)) {
       if (mounted) {
