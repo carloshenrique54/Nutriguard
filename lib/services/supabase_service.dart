@@ -11,7 +11,23 @@ class SupabaseService {
   // --- Auth & Users ---
   Future<AuthResponse> signIn(String email, String password) async {
     try {
-      return await _client.auth.signInWithPassword(email: email, password: password);
+      final response = await _client.auth.signInWithPassword(email: email, password: password);
+      final user = response.user;
+      if (user != null) {
+        final meta = user.userMetadata;
+        if (meta != null && meta['cargo'] != null) {
+          final provisional = UsuarioModel(
+            id: user.id,
+            nome: meta['nome']?.toString(),
+            email: user.email,
+            cpf: meta['cpf']?.toString(),
+            telefone: meta['telefone']?.toString(),
+            cargo: meta['cargo']?.toString(),
+          );
+          _cachedPerfil = provisional;
+        }
+      }
+      return response;
     } catch (e) {
       throw Exception(formatarErro(e));
     }
@@ -519,6 +535,16 @@ class SupabaseService {
     return (data as List).map((e) => FrotaModel.fromJson(e)).toList();
   }
 
+  /// Checa se existe ao menos uma frota cadastrada (LIMIT 1, ultra-rápido).
+  Future<bool> hasFrotas() async {
+    try {
+      final data = await _client.from('Frotas').select('id').limit(1);
+      return (data as List).isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<List<FrotaModel>> getFrotasByGerente(String gerenteId) async {
     final data = await _client.from('Frotas').select().eq('id_gerente', gerenteId);
     return (data as List).map((e) => FrotaModel.fromJson(e)).toList();
@@ -577,6 +603,16 @@ class SupabaseService {
   Future<List<DispositivoModel>> getDispositivos() async {
     final data = await _client.from('Dispositivos').select();
     return (data as List).map((e) => DispositivoModel.fromJson(e)).toList();
+  }
+
+  /// Checa se existe ao menos um dispositivo cadastrado (LIMIT 1, ultra-rápido).
+  Future<bool> hasDispositivos() async {
+    try {
+      final data = await _client.from('Dispositivos').select('id').limit(1);
+      return (data as List).isNotEmpty;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<DispositivoModel?> getDispositivoById(String id) async {

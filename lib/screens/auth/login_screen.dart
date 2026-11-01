@@ -22,45 +22,74 @@ class _LoginScreenState extends State<LoginScreen> {
     HapticFeedback.lightImpact();
     setState(() => _isLoading = true);
     try {
-      await _supabaseService.signIn(_emailCtrl.text.trim(), _senhaCtrl.text.trim());
-      
-      final currentUserId = _supabaseService.currentUser?.id;
-      if (currentUserId == null) throw Exception('User not found');
-      
-      final perfil = await _supabaseService.getUsuarioPerfil(currentUserId);
-      
+      final authResponse = await _supabaseService.signIn(
+        _emailCtrl.text.trim(),
+        _senhaCtrl.text.trim(),
+      );
+
+      final user = authResponse.user ?? _supabaseService.currentUser;
+      if (user == null) throw Exception('User not found');
+      final currentUserId = user.id;
+
+      // Inicia a busca do perfil imediatamente
+      final perfilFuture = _supabaseService.getUsuarioPerfil(currentUserId);
+      final roleHint = user.userMetadata?['cargo']?.toString().toLowerCase();
+
+      String targetRoute = '/dashboard-frota';
+
+      if (roleHint == 'admin') {
+        // Para admin: validações de existência (LIMIT 1) concorrentes com a busca do perfil
+        final results = await Future.wait([
+          perfilFuture,
+          _supabaseService.hasDispositivos(),
+          _supabaseService.hasFrotas(),
+        ]);
+        final perfil = results[0] as UsuarioModel?;
+        final hasDevices = results[1] as bool;
+        final hasFrotas = results[2] as bool;
+
+        final effectiveRole = perfil?.role ?? 'admin';
+        if (effectiveRole == 'admin') {
+          targetRoute = (!hasDevices || !hasFrotas) ? '/dashboard-frota' : '/listar-frotas';
+        } else if (effectiveRole == 'gerente') {
+          targetRoute = '/dashboard-frota';
+        } else if (effectiveRole == 'operador') {
+          final tripActive = await TripService().isTripActive(currentUserId);
+          targetRoute = tripActive ? '/dashboard-veiculo' : '/iniciar-viagem';
+        }
+      } else if (roleHint == 'gerente') {
+        await perfilFuture;
+        targetRoute = '/dashboard-frota';
+      } else if (roleHint == 'operador') {
+        final results = await Future.wait([
+          perfilFuture,
+          TripService().isTripActive(currentUserId),
+        ]);
+        final tripActive = results[1] as bool;
+        targetRoute = tripActive ? '/dashboard-veiculo' : '/iniciar-viagem';
+      } else {
+        // Fallback caso não haja metadado de cargo na autenticação
+        final perfil = await perfilFuture;
+        final role = perfil?.role ?? '';
+        if (role == 'admin') {
+          final results = await Future.wait([
+            _supabaseService.hasDispositivos(),
+            _supabaseService.hasFrotas(),
+          ]);
+          final hasDevices = results[0];
+          final hasFrotas = results[1];
+          targetRoute = (!hasDevices || !hasFrotas) ? '/dashboard-frota' : '/listar-frotas';
+        } else if (role == 'operador') {
+          final tripActive = await TripService().isTripActive(currentUserId);
+          targetRoute = tripActive ? '/dashboard-veiculo' : '/iniciar-viagem';
+        } else {
+          targetRoute = '/dashboard-frota';
+        }
+      }
+
       HapticFeedback.mediumImpact();
       if (!mounted) return;
-      
-      final role = perfil?.role ?? '';
-      if (role == 'admin') {
-        final results = await Future.wait([
-          _supabaseService.getDispositivos(),
-          _supabaseService.getFrotas(),
-        ]);
-        final devices = results[0] as List<DispositivoModel>;
-        final frotas = results[1] as List<FrotaModel>;
-        if (!mounted) return;
-        // Sem dispositivos ou sem frotas: o Dashboard — Frota exibe o estado
-        // vazio com botão para /cadastrar-dispositivo ou /criar-frota.
-        if (devices.isEmpty || frotas.isEmpty) {
-          Navigator.pushNamedAndRemoveUntil(context, '/dashboard-frota', (route) => false);
-        } else {
-          Navigator.pushNamedAndRemoveUntil(context, '/listar-frotas', (route) => false);
-        }
-      } else if (role == 'gerente') {
-        Navigator.pushNamedAndRemoveUntil(context, '/dashboard-frota', (route) => false);
-      } else if (role == 'operador') {
-        final tripActive = await TripService().isTripActive(currentUserId);
-        if (!mounted) return;
-        if (!tripActive) {
-          Navigator.pushNamedAndRemoveUntil(context, '/iniciar-viagem', (route) => false);
-        } else {
-          Navigator.pushNamedAndRemoveUntil(context, '/dashboard-veiculo', (route) => false);
-        }
-      } else {
-        Navigator.pushNamedAndRemoveUntil(context, '/dashboard-frota', (route) => false);
-      }
+      Navigator.pushNamedAndRemoveUntil(context, targetRoute, (route) => false);
     } catch (e) {
       if (!mounted) return;
       final msg = SupabaseService.formatarErro(e);
