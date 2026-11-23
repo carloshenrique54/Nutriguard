@@ -61,7 +61,7 @@ void main() {
       const err = AuthException('Database error saving new user', statusCode: '500');
       expect(
         SupabaseService.formatarErro(err),
-        'Não foi possível salvar o funcionário no banco de dados. O CPF ou e-mail informado já está em uso por outro cadastro. Verifique os dados.',
+        'Não foi possível salvar o funcionário no banco de dados. O CPF, e-mail ou telefone informado já está em uso por outro cadastro. Verifique os dados.',
       );
     });
 

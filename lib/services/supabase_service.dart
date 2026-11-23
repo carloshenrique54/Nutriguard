@@ -44,6 +44,8 @@ class SupabaseService {
     String? numeroCnh,
     DateTime? validadeCnh,
   }) async {
+    await verificarDadosDisponiveis(email: email, cpf: cpf, telefone: telefone);
+
     final AuthResponse response;
     try {
       // O perfil em "Usuarios" é criado pela trigger on_auth_user_created
@@ -116,43 +118,9 @@ class SupabaseService {
   }) async {
     final cleanEmail = email.trim().toLowerCase();
     final cleanCpf = cpf.trim();
-    final cpfDigits = cleanCpf.replaceAll(RegExp(r'\D'), '');
 
-    // 1) Pré-validação com a sessão ativa do Administrador:
-    // Evita erros 500 do banco ao verificar se e-mail ou CPF já existem na tabela Usuarios.
-    // O filtro é feito no servidor (apenas candidatos coincidentes são trazidos),
-    // em vez de baixar a tabela inteira.
-    try {
-      final cpfFormatado = cpfDigits.length == 11
-          ? '${cpfDigits.substring(0, 3)}.${cpfDigits.substring(3, 6)}.${cpfDigits.substring(6, 9)}-${cpfDigits.substring(9)}'
-          : cleanCpf;
-      final cpfCandidatos = <String>{cleanCpf, cpfDigits, cpfFormatado}..removeWhere((c) => c.isEmpty);
-      final filtros = <String>[
-        'email.eq."$cleanEmail"',
-        for (final c in cpfCandidatos) 'cpf.eq."$c"',
-      ];
-      final existingUsers = await _client
-          .from('Usuarios')
-          .select('id, nome, email, cpf')
-          .or(filtros.join(','));
-      for (var u in (existingUsers as List)) {
-        final existingEmail = (u['email'] ?? '').toString().trim().toLowerCase();
-        if (existingEmail.isNotEmpty && existingEmail == cleanEmail) {
-          throw Exception('Este e-mail já está cadastrado para outro funcionário.');
-        }
-        final existingCpf = (u['cpf'] ?? '').toString().trim();
-        final existingCpfDigits = existingCpf.replaceAll(RegExp(r'\D'), '');
-        if (existingCpf == cleanCpf || (cpfDigits.isNotEmpty && existingCpfDigits == cpfDigits)) {
-          final nomeCadastrado = (u['nome'] ?? '').toString().trim();
-          final info = nomeCadastrado.isNotEmpty ? ' ($nomeCadastrado)' : '';
-          throw Exception('Já existe um funcionário cadastrado com este CPF$info.');
-        }
-      }
-    } catch (e) {
-      if (e.toString().contains('Já existe') || e.toString().contains('já está cadastrado')) {
-        rethrow;
-      }
-    }
+    // 1) Pré-validação: e-mail, CPF e telefone não podem se repetir.
+    await verificarDadosDisponiveis(email: cleanEmail, cpf: cleanCpf, telefone: telefone);
 
     // 2) Criação da conta no Supabase Auth usando cliente temporário com fluxo implícito
     final tempClient = SupabaseClient(
@@ -231,6 +199,49 @@ class SupabaseService {
     }
   }
 
+  /// Garante que e-mail, CPF e telefone não estejam em uso por outro usuário.
+  /// Lança [Exception] com mensagem amigável quando algum já existir.
+  ///
+  /// Usa a função `verificar_dados_em_uso` (supabase/unicidade_usuarios.sql),
+  /// que funciona inclusive no cadastro público, quando o usuário ainda não
+  /// tem permissão de ler a tabela Usuarios. Os índices únicos do banco são a
+  /// garantia final; esta checagem serve para dar uma mensagem clara antes.
+  Future<void> verificarDadosDisponiveis({
+    String? email,
+    String? cpf,
+    String? telefone,
+    String? ignorarId,
+  }) async {
+    dynamic res;
+    try {
+      res = await _client.rpc('verificar_dados_em_uso', params: {
+        'p_email': email?.trim(),
+        'p_cpf': cpf?.trim(),
+        'p_telefone': telefone?.trim(),
+        'p_ignorar_id': ignorarId,
+      }).timeout(const Duration(seconds: 10));
+    } catch (e) {
+      // Banco ainda sem a função (script não aplicado) ou falha de rede:
+      // segue adiante; os índices únicos continuam barrando repetições.
+      debugPrint('Aviso: verificação de duplicidade indisponível: $e');
+      return;
+    }
+    final linha = (res is List && res.isNotEmpty) ? res.first : res;
+    if (linha is! Map) return;
+
+    final repetidos = <String>[
+      if (linha['email_em_uso'] == true) 'e-mail',
+      if (linha['cpf_em_uso'] == true) 'CPF',
+      if (linha['telefone_em_uso'] == true) 'telefone',
+    ];
+    if (repetidos.isEmpty) return;
+    if (repetidos.length == 1) {
+      throw Exception('Este ${repetidos.first} já está cadastrado no sistema.');
+    }
+    final lista = '${repetidos.sublist(0, repetidos.length - 1).join(', ')} e ${repetidos.last}';
+    throw Exception('Já existem cadastros com este $lista.');
+  }
+
   /// Formata e traduz qualquer exceção ou erro técnico (Auth, Postgrest, rede, etc.)
   /// para uma mensagem amigável, clara e pronta para exibição em português.
   static String formatarErro(dynamic error) {
@@ -252,7 +263,7 @@ class SupabaseService {
         return 'Preencha todos os campos obrigatórios (nome, CPF, telefone).';
       }
       if (msg.contains('database error saving new user')) {
-        return 'Não foi possível salvar o funcionário no banco de dados. O CPF ou e-mail informado já está em uso por outro cadastro. Verifique os dados.';
+        return 'Não foi possível salvar o funcionário no banco de dados. O CPF, e-mail ou telefone informado já está em uso por outro cadastro. Verifique os dados.';
       }
       if (msg.contains('database error querying schema')) {
         return 'Erro no serviço de autenticação do Supabase (colunas de token nulas em auth.users). Execute a correção no SQL Editor.';
@@ -307,6 +318,9 @@ class SupabaseService {
         }
         if (msg.contains('email') || details.contains('email')) {
           return 'Este e-mail já está registrado no sistema.';
+        }
+        if (msg.contains('telefone') || details.contains('telefone')) {
+          return 'Este telefone já está cadastrado no sistema.';
         }
         if (msg.contains('placa') || details.contains('placa')) {
           return 'Já existe um veículo cadastrado com esta placa.';
@@ -415,8 +429,13 @@ class SupabaseService {
     if (cached != null && DateTime.now().difference(cached.at) < _perfilTtl) {
       return Future.value(cached.perfil);
     }
-    return _perfilEmAndamento[userId] ??=
-        _buscarUsuarioPerfil(userId).whenComplete(() => _perfilEmAndamento.remove(userId));
+    // Atenção: o callback de whenComplete precisa ter corpo em bloco. Com
+    // `() => _perfilEmAndamento.remove(userId)` ele devolveria o próprio Future
+    // removido do mapa, e o whenComplete ficaria esperando a si mesmo para
+    // sempre (deadlock) — era a causa do login/telas carregando infinitamente.
+    return _perfilEmAndamento[userId] ??= _buscarUsuarioPerfil(userId).whenComplete(() {
+      _perfilEmAndamento.remove(userId);
+    });
   }
 
   Future<UsuarioModel?> _buscarUsuarioPerfil(String userId) async {
@@ -512,6 +531,14 @@ class SupabaseService {
   }
 
   Future<void> updateUsuario(String userId, Map<String, dynamic> data) async {
+    if (data.containsKey('email') || data.containsKey('cpf') || data.containsKey('telefone')) {
+      await verificarDadosDisponiveis(
+        email: data['email']?.toString(),
+        cpf: data['cpf']?.toString(),
+        telefone: data['telefone']?.toString(),
+        ignorarId: userId,
+      );
+    }
     try {
       await _client.from('Usuarios').update(data).eq('id', userId);
     } finally {

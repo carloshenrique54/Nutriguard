@@ -1,40 +1,29 @@
 CONTAS DE ACESSO - NUTRIGUARD
+Criadas por supabase/seed_demo_completo.sql. Senha: nao versionada (solicite ao administrador).
 
-==================================================
-1. ADMINISTRADOR (ADM)
-Nome: Carlos Henrique (ADM)
-E-mail: admin@nutriguard.com
-Senha: (não versionada - solicite ao administrador)
-Cargo: admin
-Acesso: Gestão global do sistema (todas as frotas, dispositivos e cadastros)
+ADMINISTRADOR
+  Carlos Henrique - admin@nutriguard.com
 
-==================================================
-2. GERENTE
-Nome: Mariana Silveira
-E-mail: gerente.sul@nutriguard.com
-Senha: (não versionada - solicite ao administrador)
-Cargo: gerente
-Frota: Frota Sul - Congelados
+GERENTES
+  Mariana Silveira - gerente.mariana.silveira@nutriguard.com - Frota Grande São Paulo
+  Roberto Costa - gerente.roberto.costa@nutriguard.com - Frota Campinas
+  Fernanda Ribeiro - gerente.fernanda.ribeiro@nutriguard.com - Frota Rio de Janeiro
+  Paulo Henrique Alves - gerente.paulo.alves@nutriguard.com - Frota Belo Horizonte
+  Juliana Martins - gerente.juliana.martins@nutriguard.com - Frota Curitiba
+  Ricardo Nogueira - gerente.ricardo.nogueira@nutriguard.com - Frota Porto Alegre
+  Camila Duarte - gerente.camila.duarte@nutriguard.com - Frota Florianópolis
+  André Carvalho - gerente.andre.carvalho@nutriguard.com - Frota Salvador
+  Beatriz Lima - gerente.beatriz.lima@nutriguard.com - Frota Recife
+  Gustavo Moreira - gerente.gustavo.moreira@nutriguard.com - Frota Goiânia
 
-* Alternativo:
-Nome: Roberto Costa
-E-mail: gerente.sudeste@nutriguard.com
-Senha: (não versionada - solicite ao administrador)
-Cargo: gerente
-Frota: Frota Sudeste - Perecíveis
-
-==================================================
-3. OPERADOR
-Nome: Lucas Mendes
-E-mail: operador.lucas@nutriguard.com
-Senha: (não versionada - solicite ao administrador)
-Cargo: operador
-Veículo: Mercedes Sprinter 415 CDI (BRA-2E19)
-
-* Alternativo:
-Nome: Juliana Oliveira
-E-mail: operadora.juliana@nutriguard.com
-Senha: (não versionada - solicite ao administrador)
-Cargo: operador
-Veículo: VW Delivery 9.170 (SUL-8K42)
-==================================================
+OPERADORES
+  Lucas Mendes - operador.lucas.mendes@nutriguard.com - placa FUT0W51 - Frota Grande São Paulo
+  Juliana Oliveira - operador.juliana.oliveira@nutriguard.com - placa YXM7T67 - Frota Campinas
+  Rafael Souza - operador.rafael.souza@nutriguard.com - placa SPG1D94 - Frota Rio de Janeiro
+  Bruna Ferreira - operador.bruna.ferreira@nutriguard.com - placa XUA1H31 - Frota Belo Horizonte
+  Diego Santos - operador.diego.santos@nutriguard.com - placa TTF0T20 - Frota Curitiba
+  Larissa Rocha - operador.larissa.rocha@nutriguard.com - placa YXK7L19 - Frota Porto Alegre
+  Thiago Pereira - operador.thiago.pereira@nutriguard.com - placa DDU2J46 - Frota Florianópolis
+  Aline Barbosa - operador.aline.barbosa@nutriguard.com - placa UBM9U28 - Frota Salvador
+  Marcos Vinícius Cruz - operador.marcos.cruz@nutriguard.com - placa NBS3G68 - Frota Recife
+  Patrícia Gomes - operador.patricia.gomes@nutriguard.com - placa LPW8D59 - Frota Goiânia

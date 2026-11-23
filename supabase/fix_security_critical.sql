@@ -218,7 +218,7 @@ begin
 exception
   when unique_violation then
     -- O Auth devolve "Database error saving new user", já tratado no app.
-    raise exception 'CPF ou e-mail já cadastrado para outro usuário'
+    raise exception 'CPF, e-mail ou telefone já cadastrado para outro usuário'
       using errcode = '23505';
 end;
 $$;
@@ -445,6 +445,9 @@ begin
     $p$;
   end if;
 end $$;
+
+-- Atualiza o cache do PostgREST para as funções novas aparecerem na API
+notify pgrst, 'reload schema';
 
 -- -----------------------------------------------------------------------------
 -- Conferência: lista ADMs e gerentes atuais. Se alguém tiver se promovido
