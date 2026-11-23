@@ -135,62 +135,11 @@ truncate table public."Dispositivos" cascade;
 truncate table public."Frotas" cascade;
 
 -- ==============================================================================
--- 3. BLINDAGEM DA TRIGGER handle_new_user
+-- 3. TRIGGER handle_new_user
+-- A trigger segura (cargo sempre 'operador', sem sequestro por CPF) fica em
+-- supabase/fix_security_critical.sql — NÃO redefina aqui. Este seed insere os
+-- perfis diretamente em public."Usuarios" com o cargo correto (passo 4.2).
 -- ==============================================================================
-create or replace function public.handle_new_user()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_nome text;
-  v_cpf text;
-  v_telefone text;
-  v_cargo text;
-  v_data_nascimento date;
-  v_numero_cnh text;
-  v_validade_cnh date;
-begin
-  v_nome := coalesce(nullif(new.raw_user_meta_data->>'nome', ''), split_part(new.email, '@', 1));
-  v_cpf := coalesce(nullif(new.raw_user_meta_data->>'cpf', ''), '000.000.000-00');
-  v_telefone := nullif(new.raw_user_meta_data->>'telefone', '');
-  v_cargo := coalesce(nullif(new.raw_user_meta_data->>'cargo', ''), 'operador');
-
-  begin
-    v_data_nascimento := nullif(new.raw_user_meta_data->>'data_nascimento', '')::date;
-  exception when others then
-    v_data_nascimento := null;
-  end;
-
-  v_numero_cnh := nullif(new.raw_user_meta_data->>'numero_cnh', '');
-
-  begin
-    v_validade_cnh := nullif(new.raw_user_meta_data->>'validade_cnh', '')::date;
-  exception when others then
-    v_validade_cnh := null;
-  end;
-
-  insert into public."Usuarios" (
-    id, nome, email, cpf, telefone, cargo, data_nascimento, numero_cnh, validade_cnh, created_at, updated_at
-  ) values (
-    new.id, v_nome, new.email, v_cpf, v_telefone, v_cargo, v_data_nascimento, v_numero_cnh, v_validade_cnh, now(), now()
-  )
-  on conflict (id) do update set
-    nome = excluded.nome,
-    cpf = coalesce(excluded.cpf, public."Usuarios".cpf),
-    telefone = coalesce(excluded.telefone, public."Usuarios".telefone),
-    cargo = excluded.cargo,
-    data_nascimento = coalesce(excluded.data_nascimento, public."Usuarios".data_nascimento),
-    numero_cnh = coalesce(excluded.numero_cnh, public."Usuarios".numero_cnh),
-    validade_cnh = coalesce(excluded.validade_cnh, public."Usuarios".validade_cnh),
-    updated_at = now();
-
-  return new;
-exception when others then
-  return new;
-end;
-$$;
 
 -- Bucket de fotos e anexos
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
@@ -301,9 +250,14 @@ declare
   v_med2_alerta_vib uuid := gen_random_uuid();
   v_med4_alerta_bat uuid := gen_random_uuid();
 
-  -- Senha padrão para todos: '123456'
-  v_senha_hash text := crypt('123456', gen_salt('bf'));
+  -- Defina uma senha forte ANTES de executar (não versione a senha real).
+  v_senha text := 'TROQUE_ESTA_SENHA';
+  v_senha_hash text;
 begin
+  if v_senha = 'TROQUE_ESTA_SENHA' or length(v_senha) < 8 then
+    raise exception 'Defina v_senha (mín. 8 caracteres) no seed antes de executar.';
+  end if;
+  v_senha_hash := crypt(v_senha, gen_salt('bf'));
   -- 4.1. Usuários no Auth do Supabase com CPF no metadata
   if exists (select 1 from auth.users where email = 'admin@nutriguard.com') then
     select id into v_admin_id from auth.users where email = 'admin@nutriguard.com';
@@ -455,7 +409,7 @@ begin
     numero_cnh = excluded.numero_cnh, validade_cnh = excluded.validade_cnh,
     foto_url = excluded.foto_url, updated_at = now();
 
-  update public."Usuarios" set cargo = 'admin' where cargo is null or cargo = '';
+  update public."Usuarios" set cargo = 'operador' where cargo is null or cargo = '';
 
   -- 4.3. Frotas (id_gerente -> Usuarios.id)
   insert into public."Frotas" (id, nome, id_gerente, created_at, updated_at)

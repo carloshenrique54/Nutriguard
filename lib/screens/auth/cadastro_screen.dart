@@ -49,7 +49,9 @@ class _CadastroScreenState extends State<CadastroScreen> {
         nome: _nomeCtrl.text.trim(),
         cpf: _cpfCtrl.text.trim(),
         telefone: _telefoneCtrl.text.trim(),
-        cargo: 'operador', // default
+        // Cadastro público = Administrador (especificação). O cargo final é
+        // definido pela trigger handle_new_user no banco.
+        cargo: 'admin',
       );
 
       final user = response.user;
@@ -62,10 +64,10 @@ class _CadastroScreenState extends State<CadastroScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Cadastro realizado com sucesso!'), backgroundColor: Colors.green),
         );
-        Navigator.pushNamedAndRemoveUntil(context, '/iniciar-viagem', (route) => false);
+        Navigator.pushNamedAndRemoveUntil(context, '/dashboard-frota', (route) => false);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Cadastro realizado! Faça login para iniciar a viagem.'), backgroundColor: Colors.green),
+          const SnackBar(content: Text('Cadastro realizado! Faça login para acessar o painel administrativo.'), backgroundColor: Colors.green),
         );
         Navigator.pop(context); // Voltar para a tela de login
       }

@@ -27,6 +27,7 @@ class _CadastrarFuncionarioScreenState extends State<CadastrarFuncionarioScreen>
   final SupabaseService _supabase = SupabaseService();
 
   String _selectedRole = 'gerente';
+  bool _isGerente = false;
   bool _isLoading = false;
   bool _obscureSenha = true;
   bool _obscureConfirmaSenha = true;
@@ -77,11 +78,23 @@ class _CadastrarFuncionarioScreenState extends State<CadastrarFuncionarioScreen>
     final perfil = await _supabase.getUsuarioPerfil(currentUserId);
     final role = perfil?.role ?? '';
 
+    // Especificação: o ADM cadastra gerentes e operadores; o gerente cadastra
+    // apenas operadores para a sua frota. O banco reforça essa regra (RLS).
+    if (role == 'gerente') {
+      if (mounted) {
+        setState(() {
+          _isGerente = true;
+          _selectedRole = 'operador';
+        });
+      }
+      return;
+    }
+
     if (role != 'admin') {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Acesso permitido apenas para Administradores.', style: TextStyle(color: Colors.white)),
+            content: Text('Acesso permitido apenas para Administradores e Gerentes.', style: TextStyle(color: Colors.white)),
             backgroundColor: Color(0xFFC23147),
           ),
         );
@@ -531,12 +544,15 @@ class _CadastrarFuncionarioScreenState extends State<CadastrarFuncionarioScreen>
                       value: _selectedRole,
                       isExpanded: true,
                       icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFFC23147)),
-                      items: const [
-                        DropdownMenuItem(value: 'gerente', child: Text('Gerente')),
-                        DropdownMenuItem(value: 'operador', child: Text('Operador')),
-                        DropdownMenuItem(value: 'admin', child: Text('Administrador')),
-                      ],
-                      onChanged: _isLoading
+                      items: _isGerente
+                          ? const [
+                              DropdownMenuItem(value: 'operador', child: Text('Operador')),
+                            ]
+                          : const [
+                              DropdownMenuItem(value: 'gerente', child: Text('Gerente')),
+                              DropdownMenuItem(value: 'operador', child: Text('Operador')),
+                            ],
+                      onChanged: _isLoading || _isGerente
                           ? null
                           : (val) {
                               if (val != null) setState(() => _selectedRole = val);

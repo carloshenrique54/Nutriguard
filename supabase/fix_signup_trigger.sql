@@ -1,3 +1,7 @@
+-- ⚠️ OBSOLETO / INSEGURO: NÃO EXECUTE este script novamente.
+-- Ele reabre falhas de segurança (cargo vindo do cliente / políticas using(true)).
+-- Substituído por supabase/fix_security_critical.sql.
+
 -- =====================================================================
 -- NutriGuard - Correção do erro 500 "Database error saving new user"
 -- Execute TODO este script no Supabase: Dashboard > SQL Editor > New query

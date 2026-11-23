@@ -71,6 +71,8 @@ class SupabaseService {
     final user = response.user;
     // Se houver sessão (confirmação de e-mail desativada), garante o perfil
     // via upsert direto — idempotente caso a trigger já tenha inserido.
+    // O cargo não é enviado: quem o define é a trigger handle_new_user
+    // (supabase/fix_security_critical.sql), e só o banco decide cargos.
     if (user != null && response.session != null) {
       try {
         final profileData = <String, dynamic>{
@@ -79,7 +81,6 @@ class SupabaseService {
           'email': email,
           'cpf': cpf,
           'telefone': telefone,
-          'cargo': cargo,
         };
         if (dataNascimento != null) {
           profileData['data_nascimento'] = dataNascimento.toIso8601String().split('T').first;
@@ -186,43 +187,40 @@ class SupabaseService {
         throw Exception('Falha ao registrar usuário no sistema.');
       }
 
-      // 3) Garantir persistência na tabela public."Usuarios"
-      // A trigger handle_new_user() insere os dados via security definer.
-      // Caso a trigger tenha atraso ou não tenha sido acionada, realizamos a verificação
-      // e inserção direta para garantir que o funcionário exista na tabela Usuarios.
-      await Future.delayed(const Duration(milliseconds: 300));
+      // 3) Completa o perfil com a sessão de quem está cadastrando (ADM ou gerente).
+      // A trigger handle_new_user() já criou a linha com o cargo pedido
+      // ('gerente'/'operador') — supabase/fix_security_critical.sql. Usamos
+      // update (e não upsert) porque o RLS só permite ao gerente ATUALIZAR
+      // operadores que gerencia, nunca inserir perfis de terceiros.
+      final profileData = <String, dynamic>{
+        'nome': nome,
+        'email': cleanEmail,
+        'cpf': cleanCpf,
+        'telefone': telefone,
+        'cargo': cargo,
+      };
+      if (dataNascimento != null) {
+        profileData['data_nascimento'] = dataNascimento.toIso8601String().split('T').first;
+      }
+      if (numeroCnh != null && numeroCnh.isNotEmpty) {
+        profileData['numero_cnh'] = numeroCnh;
+      }
+      if (validadeCnh != null) {
+        profileData['validade_cnh'] = validadeCnh.toIso8601String().split('T').first;
+      }
       try {
-        final profile = await _client.from('Usuarios').select('id').eq('id', user.id).maybeSingle();
-        if (profile == null) {
-          final profileData = <String, dynamic>{
-            'id': user.id,
-            'nome': nome,
-            'email': cleanEmail,
-            'cpf': cleanCpf,
-            'telefone': telefone,
-            'cargo': cargo,
-          };
-          if (dataNascimento != null) {
-            profileData['data_nascimento'] = dataNascimento.toIso8601String().split('T').first;
-          }
-          if (numeroCnh != null && numeroCnh.isNotEmpty) {
-            profileData['numero_cnh'] = numeroCnh;
-          }
-          if (validadeCnh != null) {
-            profileData['validade_cnh'] = validadeCnh.toIso8601String().split('T').first;
-          }
-
-          // Tenta salvar via admin ou via tempClient
-          try {
-            await _client.from('Usuarios').upsert(profileData, onConflict: 'id');
-          } catch (_) {
-            if (response.session != null) {
-              await tempClient.from('Usuarios').upsert(profileData, onConflict: 'id');
-            }
-          }
+        final atualizados = await _client
+            .from('Usuarios')
+            .update(profileData)
+            .eq('id', user.id)
+            .select('id');
+        if ((atualizados as List).isEmpty) {
+          // Sem linha criada pela trigger (banco sem o script aplicado):
+          // só o ADM consegue inserir o perfil de outro usuário.
+          await _client.from('Usuarios').insert({'id': user.id, ...profileData});
         }
-      } catch (e) {
-        debugPrint('Aviso ao sincronizar perfil de funcionário: $e');
+      } finally {
+        invalidarCachePerfil(user.id);
       }
 
       return response;

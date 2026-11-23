@@ -947,6 +947,15 @@ class _MenuContentState extends State<_MenuContent> {
               ? 'Você não possui nenhuma frota atribuída para acessar esta opção.'
               : 'Sua frota não possui nenhum dispositivo cadastrado para acessar esta opção.',
         ),
+        if (_userRole == 'gerente')
+          MenuListItem(
+            icon: Icons.person_add_alt_1_outlined,
+            title: 'Cadastrar operador',
+            routeName: '/cadastrar-funcionario',
+            isEnabled: _hasFleets,
+            disabledReason: 'Requer frota',
+            disabledMessage: 'Você não possui nenhuma frota atribuída para acessar esta opção.',
+          ),
 
         const SizedBox(height: 12),
         _buildSectionHeader('ALERTAS'),

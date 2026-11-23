@@ -18,8 +18,8 @@ set
   reauthentication_token     = coalesce(reauthentication_token, ''),
   phone_change_token         = coalesce(phone_change_token, ''),
   phone_change               = coalesce(phone_change, ''),
-  email_confirmed_at         = coalesce(email_confirmed_at, now()),
-  encrypted_password         = crypt('123456', gen_salt('bf'))
+  email_confirmed_at         = coalesce(email_confirmed_at, now())
+  -- (a senha NÃO é mais redefinida aqui; troque senhas pelo painel Auth)
 where email in (
   'admin@nutriguard.com',
   'gerente.sudeste@nutriguard.com',
