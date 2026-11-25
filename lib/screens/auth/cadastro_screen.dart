@@ -13,6 +13,7 @@ class CadastroScreen extends StatefulWidget {
 
 class _CadastroScreenState extends State<CadastroScreen> {
   final _nomeCtrl = TextEditingController();
+  final _empresaCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _senhaCtrl = TextEditingController();
   final _confirmaSenhaCtrl = TextEditingController();
@@ -47,6 +48,7 @@ class _CadastroScreenState extends State<CadastroScreen> {
         email: _emailCtrl.text.trim(),
         password: _senhaCtrl.text.trim(),
         nome: _nomeCtrl.text.trim(),
+        empresa: _empresaCtrl.text.trim(),
         cpf: _cpfCtrl.text.trim(),
         telefone: _telefoneCtrl.text.trim(),
         // Cadastro público = Administrador (especificação). O cargo final é
@@ -91,6 +93,7 @@ class _CadastroScreenState extends State<CadastroScreen> {
   @override
   void dispose() {
     _nomeCtrl.dispose();
+    _empresaCtrl.dispose();
     _emailCtrl.dispose();
     _senhaCtrl.dispose();
     _confirmaSenhaCtrl.dispose();
@@ -122,6 +125,11 @@ class _CadastroScreenState extends State<CadastroScreen> {
                     child: SingleChildScrollView(
                       child: Column(
                         children: [
+                          CustomTextField(
+                            controller: _empresaCtrl,
+                            prefixIcon: Icons.business_outlined,
+                            hintText: "Nome da empresa",
+                          ),
                           CustomTextField(
                             controller: _nomeCtrl,
                             prefixIcon: Icons.person_outline,

@@ -1,5 +1,7 @@
-CONTAS DE ACESSO - NUTRIGUARD
-Criadas por supabase/seed_demo_completo.sql. Senha: nao versionada (solicite ao administrador).
+CONTAS DE ACESSO - NUTRIGUARD (dados ficticios de demonstracao)
+Senha: nao versionada (a mesma para todas as contas).
+
+VEICULO LIGADO AO ESP32 (WOKWI): RLD7R83 - Veículo 01 — Grande São Paulo | operador Luana Lima (operador.luana.lima@nutriguard.com) | gerente Mariana Silveira (gerente.mariana.silveira@nutriguard.com)
 
 ADMINISTRADOR
   Carlos Henrique - admin@nutriguard.com
@@ -7,23 +9,58 @@ ADMINISTRADOR
 GERENTES
   Mariana Silveira - gerente.mariana.silveira@nutriguard.com - Frota Grande São Paulo
   Roberto Costa - gerente.roberto.costa@nutriguard.com - Frota Campinas
-  Fernanda Ribeiro - gerente.fernanda.ribeiro@nutriguard.com - Frota Rio de Janeiro
+  Fernanda Ribeiro - gerente.fernanda.ribeiro@nutriguard.com - Frota Curitiba
   Paulo Henrique Alves - gerente.paulo.alves@nutriguard.com - Frota Belo Horizonte
-  Juliana Martins - gerente.juliana.martins@nutriguard.com - Frota Curitiba
-  Ricardo Nogueira - gerente.ricardo.nogueira@nutriguard.com - Frota Porto Alegre
-  Camila Duarte - gerente.camila.duarte@nutriguard.com - Frota Florianópolis
-  André Carvalho - gerente.andre.carvalho@nutriguard.com - Frota Salvador
-  Beatriz Lima - gerente.beatriz.lima@nutriguard.com - Frota Recife
-  Gustavo Moreira - gerente.gustavo.moreira@nutriguard.com - Frota Goiânia
+  Camila Duarte - gerente.camila.duarte@nutriguard.com - Frota Rio de Janeiro
 
 OPERADORES
-  Lucas Mendes - operador.lucas.mendes@nutriguard.com - placa FUT0W51 - Frota Grande São Paulo
-  Juliana Oliveira - operador.juliana.oliveira@nutriguard.com - placa YXM7T67 - Frota Campinas
-  Rafael Souza - operador.rafael.souza@nutriguard.com - placa SPG1D94 - Frota Rio de Janeiro
-  Bruna Ferreira - operador.bruna.ferreira@nutriguard.com - placa XUA1H31 - Frota Belo Horizonte
-  Diego Santos - operador.diego.santos@nutriguard.com - placa TTF0T20 - Frota Curitiba
-  Larissa Rocha - operador.larissa.rocha@nutriguard.com - placa YXK7L19 - Frota Porto Alegre
-  Thiago Pereira - operador.thiago.pereira@nutriguard.com - placa DDU2J46 - Frota Florianópolis
-  Aline Barbosa - operador.aline.barbosa@nutriguard.com - placa UBM9U28 - Frota Salvador
-  Marcos Vinícius Cruz - operador.marcos.cruz@nutriguard.com - placa NBS3G68 - Frota Recife
-  Patrícia Gomes - operador.patricia.gomes@nutriguard.com - placa LPW8D59 - Frota Goiânia
+  Luana Lima - operador.luana.lima@nutriguard.com - RLD7R83 - Frota Grande São Paulo
+  Renata Teixeira - operador.renata.teixeira@nutriguard.com - NJP8P20 - Frota Grande São Paulo
+  Simone Carvalho - operador.simone.carvalho@nutriguard.com - FMU9U37 - Frota Grande São Paulo
+  Vinícius Souza - operador.vinicius.souza@nutriguard.com - CAP4P11 - Frota Grande São Paulo
+  Gustavo Araújo - operador.gustavo.araujo@nutriguard.com - ZLK1K63 - Frota Grande São Paulo
+  Amanda Silva - operador.amanda.silva@nutriguard.com - UAY8Y81 - Frota Grande São Paulo
+  Bruno Cardoso - operador.bruno.cardoso@nutriguard.com - ENZ5H81 - Frota Grande São Paulo
+  Fábio Pinto - operador.fabio.pinto@nutriguard.com - GZV4V15 - Frota Grande São Paulo
+  Henrique Moura - operador.henrique.moura@nutriguard.com - UFT0F50 - Frota Grande São Paulo
+  Diego Reis - operador.diego.reis@nutriguard.com - UTH5Y68 - Frota Grande São Paulo
+  Daniela Ferreira - operador.daniela.ferreira@nutriguard.com - YEP4L25 - Frota Campinas
+  Priscila Carvalho - operador.priscila.carvalho@nutriguard.com - BNF0J81 - Frota Campinas
+  Juliana Nascimento - operador.juliana.nascimento@nutriguard.com - RGW2Z49 - Frota Campinas
+  Renan Nunes - operador.renan.nunes@nutriguard.com - SMJ7G57 - Frota Campinas
+  Tatiane Monteiro - operador.tatiane.monteiro@nutriguard.com - WGA7H36 - Frota Campinas
+  Rafael Reis - operador.rafael.reis@nutriguard.com - ZME7F33 - Frota Campinas
+  Wesley Correia - operador.wesley.correia@nutriguard.com - FTG1P94 - Frota Campinas
+  Leonardo Silva - operador.leonardo.silva@nutriguard.com - GPA8E92 - Frota Campinas
+  Letícia Moura - operador.leticia.moura@nutriguard.com - TTD4K14 - Frota Campinas
+  Marcos Araújo - operador.marcos.araujo@nutriguard.com - KSH5Z69 - Frota Campinas
+  Felipe Vieira - operador.felipe.vieira@nutriguard.com - JPV0M87 - Frota Curitiba
+  Otávio Nascimento - operador.otavio.nascimento@nutriguard.com - DRU0M98 - Frota Curitiba
+  Gabriel Cruz - operador.gabriel.cruz@nutriguard.com - HUN7C41 - Frota Curitiba
+  Carolina Reis - operador.carolina.reis@nutriguard.com - FSU1E10 - Frota Curitiba
+  Igor Carvalho - operador.igor.carvalho@nutriguard.com - VDH7F87 - Frota Curitiba
+  Natália Cardoso - operador.natalia.cardoso@nutriguard.com - KJR9P70 - Frota Curitiba
+  Elaine Vieira - operador.elaine.vieira@nutriguard.com - MRH2T48 - Frota Curitiba
+  Kelly Moura - operador.kelly.moura@nutriguard.com - APT6N89 - Frota Curitiba
+  Bruna Nascimento - operador.bruna.nascimento@nutriguard.com - XDP3L49 - Frota Curitiba
+  Michele Nascimento - operador.michele.nascimento@nutriguard.com - RSB7S54 - Frota Curitiba
+  Patrícia Nunes - operador.patricia.nunes@nutriguard.com - KHW8F77 - Frota Belo Horizonte
+  Yasmin Mendes - operador.yasmin.mendes@nutriguard.com - NXP9R87 - Frota Belo Horizonte
+  Larissa Cardoso - operador.larissa.cardoso@nutriguard.com - NKZ4A36 - Frota Belo Horizonte
+  Lucas Barbosa - operador.lucas.barbosa@nutriguard.com - KPM8Y66 - Frota Belo Horizonte
+  Vanessa Monteiro - operador.vanessa.monteiro@nutriguard.com - ADG7N19 - Frota Belo Horizonte
+  Pedro Santos - operador.pedro.santos@nutriguard.com - NJV7M34 - Frota Belo Horizonte
+  Jéssica Ramos - operador.jessica.ramos@nutriguard.com - LKK2Z16 - Frota Belo Horizonte
+  André Oliveira - operador.andre.oliveira@nutriguard.com - UJU8M61 - Frota Belo Horizonte
+  João Lopes - operador.joao.lopes@nutriguard.com - NXE3Z87 - Frota Belo Horizonte
+  Matheus Nascimento - operador.matheus.nascimento@nutriguard.com - HHK9P69 - Frota Belo Horizonte
+  Débora Silva - operador.debora.silva@nutriguard.com - AYK2V45 - Frota Rio de Janeiro
+  Raquel Freitas - operador.raquel.freitas@nutriguard.com - AVD7B35 - Frota Rio de Janeiro
+  Murilo Ferreira - operador.murilo.ferreira@nutriguard.com - HBB4A90 - Frota Rio de Janeiro
+  Rodrigo Lopes - operador.rodrigo.lopes@nutriguard.com - FVZ9F36 - Frota Rio de Janeiro
+  Thiago Correia - operador.thiago.correia@nutriguard.com - BPN3L22 - Frota Rio de Janeiro
+  Sabrina Carvalho - operador.sabrina.carvalho@nutriguard.com - EXE0K27 - Frota Rio de Janeiro
+  Viviane Moura - operador.viviane.moura@nutriguard.com - NVM6G92 - Frota Rio de Janeiro
+  Caio Santos - operador.caio.santos@nutriguard.com - HES4N50 - Frota Rio de Janeiro
+  Eduardo Moura - operador.eduardo.moura@nutriguard.com - GDN1B34 - Frota Rio de Janeiro
+  Aline Silva - operador.aline.silva@nutriguard.com - HME1E33 - Frota Rio de Janeiro

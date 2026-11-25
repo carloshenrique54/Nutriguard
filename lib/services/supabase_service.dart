@@ -40,6 +40,7 @@ class SupabaseService {
     required String cpf,
     required String telefone,
     required String cargo,
+    String? empresa,
     DateTime? dataNascimento,
     String? numeroCnh,
     DateTime? validadeCnh,
@@ -49,7 +50,8 @@ class SupabaseService {
     final AuthResponse response;
     try {
       // O perfil em "Usuarios" é criado pela trigger on_auth_user_created
-      // (supabase/fix_signup_trigger.sql) a partir deste metadata.
+      // (supabase/multiempresa.sql): sem convite, o cadastro cria uma empresa
+      // nova com este usuário como administrador.
       response = await _client.auth.signUp(
         email: email,
         password: password,
@@ -57,7 +59,7 @@ class SupabaseService {
           'nome': nome,
           'cpf': cpf,
           'telefone': telefone,
-          'cargo': cargo,
+          if (empresa != null && empresa.isNotEmpty) 'empresa': empresa,
           if (dataNascimento != null)
             'data_nascimento': dataNascimento.toIso8601String().split('T').first,
           if (numeroCnh != null && numeroCnh.isNotEmpty)
@@ -102,9 +104,13 @@ class SupabaseService {
     return response;
   }
 
-  /// Cadastra um novo funcionário (gerente, operador ou admin) criando a conta
-  /// em auth.users e garantindo a inserção na tabela public."Usuarios",
-  /// sem sobrescrever ou encerrar a sessão do Administrador atualmente logado.
+  /// Cadastra um novo funcionário (gerente ou operador) na empresa de quem
+  /// está logado, sem encerrar a sessão atual.
+  ///
+  /// Fluxo seguro (supabase/multiempresa.sql): primeiro registramos um convite
+  /// com o e-mail e o cargo (o banco confere se quem convida pode criar esse
+  /// cargo); depois criamos a conta. A trigger de cadastro lê o convite e
+  /// aplica o cargo e a empresa — nada disso é confiado ao app.
   Future<AuthResponse> cadastrarFuncionario({
     required String email,
     required String password,
@@ -122,7 +128,14 @@ class SupabaseService {
     // 1) Pré-validação: e-mail, CPF e telefone não podem se repetir.
     await verificarDadosDisponiveis(email: cleanEmail, cpf: cleanCpf, telefone: telefone);
 
-    // 2) Criação da conta no Supabase Auth usando cliente temporário com fluxo implícito
+    // 2) Convite: define cargo e empresa do novo funcionário no banco.
+    try {
+      await _client.rpc('criar_convite', params: {'p_email': cleanEmail, 'p_cargo': cargo});
+    } catch (e) {
+      throw Exception(formatarErro(e));
+    }
+
+    // 3) Criação da conta no Supabase Auth usando cliente temporário com fluxo implícito
     final tempClient = SupabaseClient(
       supabaseUrl,
       supabaseAnonKey,
@@ -140,7 +153,6 @@ class SupabaseService {
           'nome': nome,
           'cpf': cleanCpf,
           'telefone': telefone,
-          'cargo': cargo,
           if (dataNascimento != null)
             'data_nascimento': dataNascimento.toIso8601String().split('T').first,
           if (numeroCnh != null && numeroCnh.isNotEmpty)
@@ -155,41 +167,9 @@ class SupabaseService {
         throw Exception('Falha ao registrar usuário no sistema.');
       }
 
-      // 3) Completa o perfil com a sessão de quem está cadastrando (ADM ou gerente).
-      // A trigger handle_new_user() já criou a linha com o cargo pedido
-      // ('gerente'/'operador') — supabase/fix_security_critical.sql. Usamos
-      // update (e não upsert) porque o RLS só permite ao gerente ATUALIZAR
-      // operadores que gerencia, nunca inserir perfis de terceiros.
-      final profileData = <String, dynamic>{
-        'nome': nome,
-        'email': cleanEmail,
-        'cpf': cleanCpf,
-        'telefone': telefone,
-        'cargo': cargo,
-      };
-      if (dataNascimento != null) {
-        profileData['data_nascimento'] = dataNascimento.toIso8601String().split('T').first;
-      }
-      if (numeroCnh != null && numeroCnh.isNotEmpty) {
-        profileData['numero_cnh'] = numeroCnh;
-      }
-      if (validadeCnh != null) {
-        profileData['validade_cnh'] = validadeCnh.toIso8601String().split('T').first;
-      }
-      try {
-        final atualizados = await _client
-            .from('Usuarios')
-            .update(profileData)
-            .eq('id', user.id)
-            .select('id');
-        if ((atualizados as List).isEmpty) {
-          // Sem linha criada pela trigger (banco sem o script aplicado):
-          // só o ADM consegue inserir o perfil de outro usuário.
-          await _client.from('Usuarios').insert({'id': user.id, ...profileData});
-        }
-      } finally {
-        invalidarCachePerfil(user.id);
-      }
+      // O perfil (nome, CPF, CNH, cargo e empresa) é criado pela trigger
+      // handle_new_user a partir do convite e dos dados enviados acima.
+      invalidarCachePerfil(user.id);
 
       return response;
     } catch (e) {
@@ -646,17 +626,29 @@ class SupabaseService {
   }
 
   Future<void> deleteDispositivo(String id) async {
-    await _client.from('Dispositivos').delete().eq('id', id);
+    // .select() devolve as linhas apagadas: lista vazia = o RLS não permitiu
+    // (ex.: gerente tentando apagar veículo de outra frota).
+    final apagados = await _client.from('Dispositivos').delete().eq('id', id).select('id');
+    if ((apagados as List).isEmpty) {
+      throw Exception('Você não tem permissão para excluir este dispositivo.');
+    }
   }
 
+  /// Gera um novo token para o ESP32 do veículo (mostrado uma única vez; o
+  /// banco guarda apenas o hash). Admin da empresa ou gerente da frota.
+  Future<String> gerarTokenDispositivo(String idDispositivo) async {
+    final token = await _client.rpc('gerar_token_dispositivo', params: {'p_id_dispositivo': idDispositivo});
+    return token.toString();
+  }
+
+  /// Exclui o funcionário de verdade (login + perfil), desvinculando frota e
+  /// veículo. O banco confere a permissão (admin da empresa ou gerente do
+  /// operador) na função excluir_funcionario.
   Future<void> deleteUsuario(String id) async {
-    // Desvincular dispositivos associados ao operador
-    await _client.from('Dispositivos').update({'id_operador': null}).eq('id_operador', id);
-    // Desvincular frotas associadas ao gerente
-    await _client.from('Frotas').update({'id_gerente': null}).eq('id_gerente', id);
-    // Deletar da tabela Usuarios
     try {
-      await _client.from('Usuarios').delete().eq('id', id);
+      await _client.rpc('excluir_funcionario', params: {'p_usuario': id});
+    } catch (e) {
+      throw Exception(formatarErro(e));
     } finally {
       invalidarCachePerfil(id);
     }
@@ -877,8 +869,12 @@ class SupabaseService {
         .inFilter('id_dispositivo', dispositivoIds)
         .gte('registrado_em', inicio.toUtc().toIso8601String())
         .lte('registrado_em', fim.toUtc().toIso8601String())
-        .order('registrado_em', ascending: true);
-    return (data as List).map((e) => MedicaoModel.fromJson(e)).toList();
+        // Mais recentes primeiro: a API devolve no máximo 1000 linhas, e com a
+        // ordem crescente vinham as mais ANTIGAS do período. Invertidas abaixo
+        // para manter a ordem cronológica que as telas esperam.
+        .order('registrado_em', ascending: false)
+        .limit(1000);
+    return (data as List).map((e) => MedicaoModel.fromJson(e)).toList().reversed.toList();
   }
 
   Future<MedicaoModel?> getLatestMedicao(String dispositivoId) async {
@@ -908,8 +904,11 @@ class SupabaseService {
         .inFilter('id_dispositivo', dispositivoIds)
         .gte('criado_em', inicio.toUtc().toIso8601String())
         .lte('criado_em', fim.toUtc().toIso8601String())
-        .order('criado_em', ascending: true);
-    return (data as List).map((e) => OcorrenciaModel.fromJson(e)).toList();
+        // Mais recentes primeiro (limite de 1000 linhas da API), depois em
+        // ordem cronológica — ver getMedicoesFiltro.
+        .order('criado_em', ascending: false)
+        .limit(1000);
+    return (data as List).map((e) => OcorrenciaModel.fromJson(e)).toList().reversed.toList();
   }
 
   // --- Fins de Viagem / Paradas ---

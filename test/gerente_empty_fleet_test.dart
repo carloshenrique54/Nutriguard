@@ -289,7 +289,7 @@ void main() {
       expect(find.descendant(of: vehicleTile, matching: find.byIcon(Icons.chevron_right)), findsOneWidget);
     });
 
-    testWidgets('7. ListarDispositivosScreen for Gerente with no devices shows "Atualizar", hides "Cadastrar dispositivo" and shows gray bottom menu', (tester) async {
+    testWidgets('7. ListarDispositivosScreen for Gerente with no devices shows "Cadastrar dispositivo" (gerente cadastra veículos da própria frota) and gray bottom menu', (tester) async {
       final mockService = MockGerenteSupabaseService(
         role: 'gerente',
         frotas: [
@@ -311,10 +311,10 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      // Manager must NOT see "Cadastrar dispositivo"
-      expect(find.text('Cadastrar dispositivo'), findsNothing);
-      expect(find.text('Atualizar'), findsOneWidget);
-      expect(find.text('Aguarde o cadastro de dispositivos pelo Administrador.'), findsOneWidget);
+      // O gerente cadastra veículos na própria frota
+      expect(find.text('Cadastrar dispositivo'), findsOneWidget);
+      expect(find.text('Atualizar'), findsNothing);
+      expect(find.text('Cadastre um dispositivo para começar a monitorar seus veículos.'), findsOneWidget);
 
       // Bottom bar must be visible with all items gray
       expect(find.byType(CustomBottomNavBar), findsOneWidget);

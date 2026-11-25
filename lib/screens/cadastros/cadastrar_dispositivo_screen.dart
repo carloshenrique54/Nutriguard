@@ -184,6 +184,9 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
             final contextFrota = AdminContextService().selectedFrota;
             if (contextFrota != null && _frotas.any((f) => f.id == contextFrota.id)) {
               _selectedFrotaId = contextFrota.id;
+            } else if (_frotas.length == 1) {
+              // Gerente (ou empresa com uma frota só): a única frota visível
+              _selectedFrotaId = _frotas.first.id;
             }
           }
 
@@ -477,7 +480,9 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
     final perfil = await _supabase.getUsuarioPerfil(currentUserId);
     final role = perfil?.role ?? '';
 
-    final List<String> allowedRoles = ['admin'];
+    // Admin: qualquer frota da empresa. Gerente: apenas a própria frota
+    // (o banco restringe as frotas e operadores visíveis via RLS).
+    final List<String> allowedRoles = ['admin', 'gerente'];
 
     if (!allowedRoles.contains(role)) {
       if (mounted) {

@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "author": "Carlos Henrique",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 0, "left": 0, "attrs": {} },
+    {
+      "type": "wokwi-dht22",
+      "id": "dht1",
+      "top": -134.1,
+      "left": -159,
+      "attrs": { "temperature": "2", "humidity": "55" }
+    },
+    { "type": "wokwi-mpu6050", "id": "imu1", "top": -121.58, "left": 165.52, "attrs": {} },
+    { "type": "wokwi-potentiometer", "id": "pot1", "top": 152.3, "left": -191, "attrs": { "value": "870" } },
+    { "type": "wokwi-pushbutton", "id": "porta", "top": 54.2, "left": -211.2, "attrs": { "color": "blue", "label": "Porta" } },
+    { "type": "wokwi-buzzer", "id": "bz1", "top": 146.4, "left": 251.4, "attrs": { "volume": "0.1" } },
+    { "type": "wokwi-led", "id": "led_ok", "top": 34.8, "left": 253.4, "attrs": { "color": "limegreen", "label": "Normal" } },
+    { "type": "wokwi-led", "id": "led_aten", "top": 34.8, "left": 291.8, "attrs": { "color": "yellow", "label": "Atenção" } },
+    { "type": "wokwi-led", "id": "led_crit", "top": 34.8, "left": 330.2, "attrs": { "color": "red", "label": "Crítico" } },
+    { "type": "wokwi-resistor", "id": "r1", "top": 109.55, "left": 172.8, "attrs": { "value": "220" } },
+    { "type": "wokwi-resistor", "id": "r2", "top": 128.75, "left": 172.8, "attrs": { "value": "220" } },
+    { "type": "wokwi-resistor", "id": "r3", "top": 147.95, "left": 172.8, "attrs": { "value": "220" } }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+
+    [ "dht1:VCC", "esp:3V3", "red", [] ],
+    [ "dht1:GND", "esp:GND.1", "black", [] ],
+    [ "dht1:SDA", "esp:15", "green", [] ],
+
+    [ "imu1:VCC", "esp:3V3", "red", [] ],
+    [ "imu1:GND", "esp:GND.2", "black", [] ],
+    [ "imu1:SDA", "esp:21", "blue", [] ],
+    [ "imu1:SCL", "esp:22", "orange", [] ],
+
+    [ "pot1:VCC", "esp:3V3", "red", [] ],
+    [ "pot1:GND", "esp:GND.1", "black", [] ],
+    [ "pot1:SIG", "esp:34", "purple", [] ],
+
+    [ "porta:1.r", "esp:4", "gold", [] ],
+    [ "porta:2.r", "esp:GND.1", "black", [] ],
+
+    [ "bz1:2", "esp:26", "magenta", [] ],
+    [ "bz1:1", "esp:GND.2", "black", [] ],
+
+    [ "esp:25", "r1:1", "green", [] ],
+    [ "r1:2", "led_ok:A", "green", [] ],
+    [ "esp:33", "r2:1", "yellow", [] ],
+    [ "r2:2", "led_aten:A", "yellow", [] ],
+    [ "esp:32", "r3:1", "red", [] ],
+    [ "r3:2", "led_crit:A", "red", [] ],
+    [ "led_ok:C", "esp:GND.2", "black", [] ],
+    [ "led_aten:C", "esp:GND.2", "black", [] ],
+    [ "led_crit:C", "esp:GND.2", "black", [] ]
+  ],
+  "dependencies": {}
+}

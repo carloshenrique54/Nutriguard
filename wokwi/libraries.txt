@@ -1,0 +1,4 @@
+# Bibliotecas do projeto no Wokwi
+# (WiFi, WiFiClientSecure e HTTPClient já vêm com o ESP32)
+DHT sensor library for ESPx
+Adafruit MPU6050

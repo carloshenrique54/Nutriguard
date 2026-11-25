@@ -118,6 +118,13 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
     }
   }
 
+  /// Admin e gerente cadastram, editam e apagam veículos (o gerente, só os da
+  /// própria frota — o banco garante isso via RLS).
+  bool get _podeGerenciar {
+    final r = _userRole.toLowerCase();
+    return r == 'admin' || r == 'adm' || r == 'gerente';
+  }
+
   Future<void> _checkAccess() async {
     final currentUserId = _supabase.currentUser?.id;
     if (currentUserId == null) {
@@ -308,14 +315,14 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
                                       ),
                                       const SizedBox(height: 8),
                                       Text(
-                                        _userRole.toLowerCase() == 'admin' || _userRole.toLowerCase() == 'adm'
+                                        _podeGerenciar
                                             ? 'Cadastre um dispositivo para começar a monitorar seus veículos.'
                                             : 'Aguarde o cadastro de dispositivos pelo Administrador.',
                                         style: const TextStyle(fontSize: 13, color: Colors.black54),
                                         textAlign: TextAlign.center,
                                       ),
                                       const SizedBox(height: 20),
-                                      if (_userRole.toLowerCase() == 'admin' || _userRole.toLowerCase() == 'adm')
+                                      if (_podeGerenciar)
                                         ElevatedButton.icon(
                                           onPressed: () => Navigator.pushNamed(context, '/cadastrar-dispositivo'),
                                           style: ElevatedButton.styleFrom(
@@ -362,7 +369,7 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
                                         if (direction == DismissDirection.endToStart) {
                                           return await _showDeleteDialog(context, device);
                                         } else {
-                                          if (_userRole == 'admin' || _userRole == 'adm') {
+                                          if (_podeGerenciar) {
                                             final res = await Navigator.pushNamed(context, '/editar-dispositivo', arguments: device);
                                             if (res == true || mounted) _fetchData();
                                           }
@@ -393,7 +400,8 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
                                         device: device,
                                         operatorName: opName,
                                         frotaName: frotaName,
-                                        onEdit: (_userRole == 'admin' || _userRole == 'adm')
+                                        onToken: _podeGerenciar ? () => _mostrarTokenDialog(device) : null,
+                                        onEdit: _podeGerenciar
                                             ? () async {
                                                 HapticFeedback.lightImpact();
                                                 final res = await Navigator.pushNamed(context, '/editar-dispositivo', arguments: device);
@@ -425,6 +433,76 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
         ),
       ),
     );
+  }
+
+  /// Gera um novo token para o ESP32 deste veículo e mostra uma única vez.
+  Future<void> _mostrarTokenDialog(DispositivoModel device) async {
+    HapticFeedback.lightImpact();
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Token do dispositivo'),
+        content: const Text(
+          'Um novo token será gerado para o ESP32 deste veículo. O token anterior '
+          'deixa de funcionar. Copie e cole no sketch do Wokwi (TOKEN_DISPOSITIVO).',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFC23147)),
+            child: const Text('Gerar token', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true || !mounted) return;
+
+    try {
+      final token = await _supabase.gerarTokenDispositivo(device.id);
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('Token de ${device.placaVeiculo ?? device.nomeDispositivo ?? 'veículo'}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SelectableText(token, style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              const Text(
+                'Guarde este token: por segurança ele não será mostrado de novo.',
+                style: TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton.icon(
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: token));
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Token copiado.'), backgroundColor: Colors.green),
+                  );
+                }
+              },
+              icon: const Icon(Icons.copy, size: 18),
+              label: const Text('Copiar e fechar'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(SupabaseService.formatarErro(e), style: const TextStyle(color: Colors.white)),
+          backgroundColor: const Color(0xFFC23147),
+        ),
+      );
+    }
   }
 
   Future<bool?> _showDeleteDialog(BuildContext context, DispositivoModel device) async {
@@ -477,6 +555,7 @@ class DeviceCard extends StatelessWidget {
   final String? frotaName;
   final String cargoType;
   final VoidCallback? onEdit;
+  final VoidCallback? onToken;
   final VoidCallback onDelete;
   final VoidCallback onTap;
 
@@ -487,6 +566,7 @@ class DeviceCard extends StatelessWidget {
     this.frotaName,
     this.cargoType = 'Carga Padrão',
     this.onEdit,
+    this.onToken,
     required this.onDelete,
     required this.onTap,
   });
@@ -604,6 +684,16 @@ class DeviceCard extends StatelessWidget {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        if (onToken != null) ...[
+                          IconButton(
+                            icon: const Icon(Icons.key_outlined, color: Color(0xFF4A4A4A), size: 20),
+                            tooltip: 'Token do ESP32',
+                            onPressed: onToken,
+                            constraints: const BoxConstraints(),
+                            padding: EdgeInsets.zero,
+                          ),
+                          const SizedBox(width: 8),
+                        ],
                         if (onEdit != null) ...[
                           IconButton(
                             icon: const Icon(Icons.edit_outlined, color: Color(0xFF4A4A4A), size: 20),

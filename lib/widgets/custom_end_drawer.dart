@@ -949,6 +949,15 @@ class _MenuContentState extends State<_MenuContent> {
         ),
         if (_userRole == 'gerente')
           MenuListItem(
+            icon: Icons.add_box_outlined,
+            title: 'Cadastrar dispositivo',
+            routeName: '/cadastrar-dispositivo',
+            isEnabled: _hasFleets,
+            disabledReason: 'Requer frota',
+            disabledMessage: 'Você não possui nenhuma frota atribuída para acessar esta opção.',
+          ),
+        if (_userRole == 'gerente')
+          MenuListItem(
             icon: Icons.person_add_alt_1_outlined,
             title: 'Cadastrar operador',
             routeName: '/cadastrar-funcionario',
