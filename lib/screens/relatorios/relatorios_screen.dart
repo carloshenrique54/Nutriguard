@@ -1516,8 +1516,25 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
     );
   }
 
+  /// Passo "redondo" para o eixo Y (1, 2, 2.5, 5, 10, 20, 25, 50...).
+  double _passoEixo(double bruto) {
+    if (bruto <= 0) return 1;
+    double base = 1;
+    while (base * 10 <= bruto) {
+      base *= 10;
+    }
+    while (base > bruto) {
+      base /= 10;
+    }
+    for (final m in [1.0, 2.0, 2.5, 5.0, 10.0]) {
+      if (base * m >= bruto) return base * m;
+    }
+    return base * 10;
+  }
+
   Widget _buildChart1() {
     double limit = 8.0;
+    double? limitMin; // limite inferior (temperatura do veículo selecionado)
     String limitLabel = '8°C';
     String paramTitle = 'Temperatura média';
 
@@ -1536,6 +1553,10 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
         if (d?.temperaturaMaxima != null) {
           limit = d!.temperaturaMaxima!.toDouble();
           limitLabel = '${limit.toStringAsFixed(0)}°C';
+        }
+        if (d?.temperaturaMinima != null) {
+          limitMin = d!.temperaturaMinima!.toDouble();
+          limitLabel = '${limitMin.toStringAsFixed(0)} a ${limit.toStringAsFixed(0)}°C';
         }
       }
     }
@@ -1639,7 +1660,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
       final roundedY = double.parse(avgY.toStringAsFixed(1));
       if (roundedY > maxYFound) maxYFound = roundedY;
       if (roundedY < minYFound) minYFound = roundedY;
-      if (roundedY > limit) hasAnyAlert = true;
+      if (roundedY > limit || (limitMin != null && roundedY < limitMin)) hasAnyAlert = true;
 
       spots.add(FlSpot(i.toDouble(), roundedY));
     }
@@ -1660,18 +1681,22 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
       yInterval = 1.0;
       unitSuffix = 'G';
     } else {
-      // Temperatura
-      minY = 0.0;
-      maxY = (maxYFound > limit ? maxYFound + 3.0 : limit + 4.0).ceilToDouble();
-      if (maxY < 12.0) maxY = 12.0;
-      yInterval = (maxY / 3).roundToDouble();
-      if (yInterval < 2) yInterval = 2;
+      // Temperatura: a escala acompanha os dados (inclusive negativos, como
+      // em cargas congeladas) e sempre mostra os limites e o zero.
+      double lo = [minYFound, limitMin ?? limit, 0.0].reduce((a, b) => a < b ? a : b);
+      double hi = [maxYFound, limit, 0.0].reduce((a, b) => a > b ? a : b);
+      final double folga = ((hi - lo) * 0.15).clamp(2.0, double.infinity);
+      lo = lo < 0 ? lo - folga : 0.0;
+      hi = hi + folga;
+      yInterval = _passoEixo((hi - lo) / 4);
+      minY = (lo / yInterval).floorToDouble() * yInterval;
+      maxY = (hi / yInterval).ceilToDouble() * yInterval;
       unitSuffix = '°';
     }
 
     for (int i = 0; i < spots.length; i++) {
       final y = spots[i].y;
-      final bool isOverLimit = y > limit;
+      final bool isOverLimit = y > limit || (limitMin != null && y < limitMin);
       barGroups.add(
         BarChartGroupData(
           x: i,
@@ -1680,9 +1705,12 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
               toY: y,
               color: isOverLimit ? const Color(0xFFC23147) : const Color(0xFF8DB600),
               width: 16,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(5)),
+              borderRadius: y >= 0
+                  ? const BorderRadius.vertical(top: Radius.circular(5))
+                  : const BorderRadius.vertical(bottom: Radius.circular(5)),
               backDrawRodData: BackgroundBarChartRodData(
                 show: true,
+                fromY: minY,
                 toY: maxY,
                 color: Colors.black.withValues(alpha: 0.04),
               ),
@@ -1813,6 +1841,13 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
                                 strokeWidth: 1.2,
                                 dashArray: [4, 4],
                               ),
+                              if (limitMin != null)
+                                HorizontalLine(
+                                  y: limitMin,
+                                  color: const Color(0xFF2B6CB0).withValues(alpha: 0.6),
+                                  strokeWidth: 1.2,
+                                  dashArray: [4, 4],
+                                ),
                             ],
                           ),
                           titlesData: FlTitlesData(
@@ -1821,11 +1856,11 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
                             leftTitles: AxisTitles(
                               sideTitles: SideTitles(
                                 showTitles: true,
-                                reservedSize: 28,
+                                reservedSize: 34,
                                 interval: yInterval,
                                 getTitlesWidget: (value, meta) {
                                   return Text(
-                                    '${value.toInt()}$unitSuffix',
+                                    '${value == value.roundToDouble() ? value.toInt() : value.toStringAsFixed(1)}$unitSuffix',
                                     style: const TextStyle(fontSize: 9.5, color: Color(0xFF888888)),
                                   );
                                 },
@@ -1879,6 +1914,13 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
                                 strokeWidth: 1.2,
                                 dashArray: [4, 4],
                               ),
+                              if (limitMin != null)
+                                HorizontalLine(
+                                  y: limitMin,
+                                  color: const Color(0xFF2B6CB0).withValues(alpha: 0.6),
+                                  strokeWidth: 1.2,
+                                  dashArray: [4, 4],
+                                ),
                             ],
                           ),
                           titlesData: FlTitlesData(
@@ -1887,11 +1929,11 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
                             leftTitles: AxisTitles(
                               sideTitles: SideTitles(
                                 showTitles: true,
-                                reservedSize: 28,
+                                reservedSize: 34,
                                 interval: yInterval,
                                 getTitlesWidget: (value, meta) {
                                   return Text(
-                                    '${value.toInt()}$unitSuffix',
+                                    '${value == value.roundToDouble() ? value.toInt() : value.toStringAsFixed(1)}$unitSuffix',
                                     style: const TextStyle(fontSize: 9.5, color: Color(0xFF888888)),
                                   );
                                 },

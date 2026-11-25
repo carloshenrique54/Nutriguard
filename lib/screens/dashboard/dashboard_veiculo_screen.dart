@@ -7,6 +7,7 @@ import '../../models/models.dart';
 import '../../widgets/watermark_background.dart';
 import '../../services/admin_context_service.dart';
 import '../../services/trip_service.dart';
+import '../../services/veiculo_operador_service.dart';
 import '../../widgets/dashboard_charts.dart';
 import '../../widgets/responsive_layout.dart';
 
@@ -150,6 +151,10 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
       // 2. Determinar o veículo selecionado
       if (argDevice != null) {
         _selectedDevice = devices.firstWhere((d) => d.id == argDevice!.id, orElse: () => argDevice!);
+      } else if (role == 'operador' && devices.isNotEmpty) {
+        // Operador: veículo da viagem em andamento > escolha salva > primeiro
+        final operadorId = (perfil?.id ?? '').trim().isNotEmpty ? perfil!.id : user.id;
+        _selectedDevice = await VeiculoOperadorService().resolver(operadorId, devices) ?? devices.first;
       } else if (devices.isNotEmpty) {
         _selectedDevice = devices.first;
       } else {
@@ -282,6 +287,24 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
   void _onSwitchDevice(DispositivoModel d) async {
     if (_userRole == 'admin') {
       AdminContextService().setDevice(d, frota: AdminContextService().selectedFrota);
+    }
+    if (_userRole == 'operador') {
+      // A viagem pertence a um veículo: durante a viagem não se troca de veículo
+      final viagem = _currentTripInfo;
+      if (viagem != null && viagem.deviceId.isNotEmpty && viagem.deviceId != d.id) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Finalize a viagem atual para trocar de veículo.'),
+            backgroundColor: Color(0xFFC23147),
+          ),
+        );
+        return;
+      }
+      final operadorId = _currentPerfil?.id ?? _supabase.currentUser?.id ?? '';
+      if (operadorId.isNotEmpty) {
+        await VeiculoOperadorService().salvarEscolha(operadorId, d.id);
+      }
+      if (!mounted) return;
     }
     setState(() {
       _selectedDevice = d;

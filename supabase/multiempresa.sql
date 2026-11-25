@@ -40,6 +40,9 @@ create index if not exists idx_dispositivos_operador on public."Dispositivos"(id
 create index if not exists idx_medicoes_disp_data   on public.medicoes(id_dispositivo, registrado_em desc);
 create index if not exists idx_ocorrencias_disp_data on public.ocorrencias(id_dispositivo, criado_em desc);
 
+-- Veículo pode ser cadastrado sem frota (a empresa vem de quem cadastrou)
+alter table public."Dispositivos" alter column id_frota drop not null;
+
 create table if not exists public.convites (
   id uuid primary key default gen_random_uuid(),
   email text not null,

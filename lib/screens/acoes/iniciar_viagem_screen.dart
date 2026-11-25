@@ -7,6 +7,8 @@ import 'package:latlong2/latlong.dart';
 import '../../models/models.dart';
 import '../../services/supabase_service.dart';
 import '../../services/trip_service.dart';
+import '../../services/veiculo_operador_service.dart';
+import '../../widgets/seletor_veiculo.dart';
 import '../../widgets/custom_end_drawer.dart';
 import '../../widgets/watermark_background.dart';
 import '../../widgets/responsive_layout.dart';
@@ -38,6 +40,10 @@ class _IniciarViagemScreenState extends State<IniciarViagemScreen> {
   double _mapZoom = 12.0;
   UsuarioModel? _perfil;
   DispositivoModel? _dispositivo;
+  final VeiculoOperadorService _veiculosOperador = VeiculoOperadorService();
+  List<DispositivoModel> _meusVeiculos = [];
+  /// Operador com mais de um veículo que ainda não escolheu qual controlar.
+  bool _precisaEscolherVeiculo = false;
   TripInfo? _activeTrip;
   LatLng? _originLatLng;
   LatLng? _destinationLatLng;
@@ -76,24 +82,17 @@ class _IniciarViagemScreenState extends State<IniciarViagemScreen> {
       }
 
       if (targetId != null && targetId.isNotEmpty) {
+        try {
+          _meusVeiculos = await _supabase.getDispositivosByOperador(targetId);
+        } catch (_) {}
         if (_dispositivo == null) {
-          try {
-            final devices = await _supabase.getDispositivosByOperador(targetId);
-            if (devices.isNotEmpty) {
-              _dispositivo = devices.first;
-            }
-          } catch (_) {}
+          // Viagem em andamento > escolha salva > único veículo
+          _dispositivo = await _veiculosOperador.resolver(targetId, _meusVeiculos, tripService: _tripService);
+          _precisaEscolherVeiculo = _dispositivo == null && _meusVeiculos.length > 1;
         }
 
         // Carregar posição GPS mais recente do veículo
-        if (_dispositivo != null) {
-          try {
-            final latestMed = await _supabase.getLatestMedicao(_dispositivo!.id);
-            if (latestMed?.latitude != null && latestMed?.longitude != null) {
-              _originLatLng = LatLng(latestMed!.latitude!.toDouble(), latestMed.longitude!.toDouble());
-            }
-          } catch (_) {}
-        }
+        await _carregarPosicaoVeiculo();
 
         // Checar se já tem viagem ativa
         try {
@@ -112,6 +111,88 @@ class _IniciarViagemScreenState extends State<IniciarViagemScreen> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+
+    // Mais de um veículo e nenhuma escolha: pede para o operador escolher
+    if (_precisaEscolherVeiculo && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _escolherVeiculo(obrigatorio: true));
+    }
+  }
+
+  Future<void> _carregarPosicaoVeiculo() async {
+    if (_dispositivo == null) return;
+    try {
+      final latestMed = await _supabase.getLatestMedicao(_dispositivo!.id);
+      if (latestMed?.latitude != null && latestMed?.longitude != null) {
+        _originLatLng = LatLng(latestMed!.latitude!.toDouble(), latestMed.longitude!.toDouble());
+      }
+    } catch (_) {}
+  }
+
+  /// Abre a lista de veículos do operador e passa a controlar o escolhido.
+  Future<void> _escolherVeiculo({bool obrigatorio = false}) async {
+    if (_meusVeiculos.length < 2 || !mounted) return;
+    final escolhido = await mostrarSeletorVeiculo(
+      context,
+      _meusVeiculos,
+      atualId: _dispositivo?.id,
+      obrigatorio: obrigatorio,
+    );
+    if (escolhido == null || !mounted) return;
+
+    final operadorId = _perfil?.id ?? _supabase.currentUser?.id ?? '';
+    if (operadorId.isNotEmpty) {
+      await _veiculosOperador.salvarEscolha(operadorId, escolhido.id);
+    }
+    setState(() {
+      _dispositivo = escolhido;
+      _precisaEscolherVeiculo = false;
+      _originLatLng = null;
+    });
+    await _carregarPosicaoVeiculo();
+    if (!mounted) return;
+    setState(() => _originLatLng ??= const LatLng(-23.5505, -46.6333));
+    try {
+      _mapController.move(_destinationLatLng ?? _originLatLng!, _mapZoom);
+    } catch (_) {}
+  }
+
+  Widget _buildEscolhaVeiculoCard() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [BoxShadow(color: Color(0x08000000), blurRadius: 10, offset: Offset(0, 3))],
+      ),
+      child: Column(
+        children: [
+          const Icon(Icons.local_shipping_outlined, size: 48, color: Color(0xFF8DB600)),
+          const SizedBox(height: 12),
+          Text(
+            'Você está vinculado a ${_meusVeiculos.length} veículos',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Escolha qual veículo você vai controlar nesta viagem.',
+            style: TextStyle(fontSize: 13, color: Colors.black54),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: _escolherVeiculo,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFC23147),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            icon: const Icon(Icons.swap_horiz, color: Colors.white),
+            label: const Text('Escolher veículo', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _selectDestinationPoint(LatLng point, {String? label}) {
@@ -401,7 +482,7 @@ class _IniciarViagemScreenState extends State<IniciarViagemScreen> {
                           const SizedBox(height: 16),
                         ],
                         if (_dispositivo == null) ...[
-                          _buildNoDeviceCard(),
+                          if (_precisaEscolherVeiculo) _buildEscolhaVeiculoCard() else _buildNoDeviceCard(),
                         ] else ...[
                           _buildVehicleCard(),
                           const SizedBox(height: 16),
@@ -706,6 +787,21 @@ class _IniciarViagemScreenState extends State<IniciarViagemScreen> {
               ),
             ],
           ),
+          // Troca de veículo: só sem viagem em andamento (a viagem é do veículo)
+          if (_meusVeiculos.length > 1 && _activeTrip == null) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: _escolherVeiculo,
+                icon: const Icon(Icons.swap_horiz, size: 18, color: Color(0xFFC23147)),
+                label: Text(
+                  'Trocar veículo (${_meusVeiculos.length})',
+                  style: const TextStyle(color: Color(0xFFC23147), fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import '../../services/supabase_service.dart';
 import '../../services/trip_service.dart';
+import '../../services/veiculo_operador_service.dart';
 import '../../models/models.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -116,8 +117,8 @@ class _GpsScreenState extends State<GpsScreen> {
       if (target != null && devs.any((d) => d.id == target.id)) {
         _selectedDevice = devs.firstWhere((d) => d.id == target.id);
       } else if (_userRole == 'operador' && devs.isNotEmpty) {
-        // Operador tem acesso apenas ao seu próprio veículo
-        _selectedDevice = devs.first;
+        // Operador: veículo da viagem em andamento > escolha salva > primeiro
+        _selectedDevice = await VeiculoOperadorService().resolver(user.id, devs, tripService: _tripService) ?? devs.first;
       } else if (devs.length == 1) {
         _selectedDevice = devs.first;
       } else {
