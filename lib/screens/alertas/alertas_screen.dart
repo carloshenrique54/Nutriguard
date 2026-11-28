@@ -6,6 +6,7 @@ import '../../services/supabase_service.dart';
 import '../../models/models.dart';
 import '../../utils/alerta_formatacao.dart';
 import '../../services/admin_context_service.dart';
+import '../../services/tempo_real_service.dart';
 import '../../widgets/responsive_layout.dart';
 
 class AlertasScreen extends StatefulWidget {
@@ -24,7 +25,16 @@ class AlertasScreen extends StatefulWidget {
   State<AlertasScreen> createState() => _AlertasScreenState();
 }
 
-class _AlertasScreenState extends State<AlertasScreen> {
+class _AlertasScreenState extends State<AlertasScreen> with OuveTempoReal {
+  // Alerta novo/resolvido no banco: recarrega a lista sem "carregando".
+  @override
+  Duration? get intervaloReserva => const Duration(seconds: 15);
+
+  @override
+  void aoMudarNoBanco() {
+    if (!_isLoading) _loadOcorrencias();
+  }
+
   final SupabaseService _supabase = SupabaseService();
   bool _isLoading = true;
   UsuarioModel? _perfil;

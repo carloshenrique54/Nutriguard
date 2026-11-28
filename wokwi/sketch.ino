@@ -125,16 +125,24 @@ float lerVibracao() {
 }
 
 // ---------- Plataforma ----------
+// O Wokwi-GUEST pode levar 20 s ou mais para conectar: WiFi.begin só uma vez
+// (chamar de novo reinicia a conexão do zero) e recomeça só após 60 s sem sucesso.
+unsigned long wifiIniciadoEm = 0;
+
 void conectarWiFi() {
   if (WiFi.status() == WL_CONNECTED) return;
+  if (wifiIniciadoEm == 0 || millis() - wifiIniciadoEm > 60000) {
+    WiFi.disconnect();
+    WiFi.begin(WIFI_SSID, WIFI_SENHA, 6);
+    wifiIniciadoEm = millis();
+  }
   Serial.print("Conectando ao Wi-Fi");
-  WiFi.begin(WIFI_SSID, WIFI_SENHA, 6);
   unsigned long inicio = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - inicio < 10000) {
+  while (WiFi.status() != WL_CONNECTED && millis() - inicio < 30000) {
     delay(250);
     Serial.print(".");
   }
-  Serial.println(WiFi.status() == WL_CONNECTED ? " conectado" : " sem conexão, tentando de novo depois");
+  Serial.println(WiFi.status() == WL_CONNECTED ? " conectado" : " ainda sem conexão, aguardando o Wokwi-GUEST");
 }
 
 // Lê um campo simples da resposta JSON ("campo":valor)

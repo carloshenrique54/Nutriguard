@@ -8,6 +8,9 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../../widgets/custom_bottom_nav_bar.dart';
 import '../../widgets/custom_end_drawer.dart';
+import '../../widgets/rota_layer.dart';
+import '../../services/tempo_real_service.dart';
+import '../../widgets/selo_sinal_sensor.dart';
 import '../../services/admin_context_service.dart';
 
 class GpsScreen extends StatefulWidget {
@@ -26,7 +29,16 @@ class GpsScreen extends StatefulWidget {
   State<GpsScreen> createState() => _GpsScreenState();
 }
 
-class _GpsScreenState extends State<GpsScreen> {
+class _GpsScreenState extends State<GpsScreen> with OuveTempoReal {
+  @override
+  Iterable<String>? get idsEmTela => _dispositivos.map((d) => d.id);
+
+  @override
+  Duration get intervaloMinimo => const Duration(seconds: 2);
+
+  @override
+  void aoMudarNoBanco() => _refreshLocations();
+
   bool _isPanelExpanded = false;
   late final SupabaseService _supabase;
   late final TripService _tripService;
@@ -749,6 +761,8 @@ class _GpsScreenState extends State<GpsScreen> {
 
     // Traçado da rota e marcador de destino se houver viagem ativa com coordenadas
     final List<Polyline> polylines = [];
+    LatLng? rotaOrigem;
+    LatLng? rotaDestino;
     if (isSelectedInTrip && _selectedTripInfo != null &&
         _selectedTripInfo!.destinationLatitude != null &&
         _selectedTripInfo!.destinationLongitude != null) {
@@ -810,16 +824,8 @@ class _GpsScreenState extends State<GpsScreen> {
 
       final currentMed = _latestMedicoes[_selectedDevice!.id];
       if (currentMed != null && currentMed.latitude != null && currentMed.longitude != null) {
-        polylines.add(
-          Polyline(
-            points: [
-              LatLng(currentMed.latitude!.toDouble(), currentMed.longitude!.toDouble()),
-              destLatLng,
-            ],
-            strokeWidth: 4.0,
-            color: const Color(0xFFC23147),
-          ),
-        );
+        rotaOrigem = LatLng(currentMed.latitude!.toDouble(), currentMed.longitude!.toDouble());
+        rotaDestino = destLatLng;
       }
     }
 
@@ -847,6 +853,9 @@ class _GpsScreenState extends State<GpsScreen> {
         ),
         if (polylines.isNotEmpty)
           PolylineLayer(polylines: polylines),
+        // Caminho pelas ruas da posição atual do veículo até o destino da viagem.
+        if (rotaOrigem != null && rotaDestino != null)
+          RotaLayer(origem: rotaOrigem, destino: rotaDestino),
         MarkerLayer(markers: markers),
       ],
     );
@@ -1022,6 +1031,8 @@ class _GpsScreenState extends State<GpsScreen> {
                           ),
                         ],
                       ),
+                      const SizedBox(height: 4),
+                      SeloSinalSensor(ultimaLeitura: m?.registradoEm),
                     ],
                   ),
                 ),

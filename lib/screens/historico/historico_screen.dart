@@ -9,6 +9,7 @@ import '../../utils/alerta_formatacao.dart';
 import '../../widgets/watermark_background.dart';
 import '../../services/admin_context_service.dart';
 import '../../services/trip_service.dart';
+import '../../services/tempo_real_service.dart';
 import '../../widgets/responsive_layout.dart';
 
 class HistoricoItem {
@@ -63,7 +64,19 @@ class HistoricoScreen extends StatefulWidget {
   State<HistoricoScreen> createState() => _HistoricoScreenState();
 }
 
-class _HistoricoScreenState extends State<HistoricoScreen> {
+class _HistoricoScreenState extends State<HistoricoScreen> with OuveTempoReal {
+  // O histórico recarrega tudo: no máximo a cada 15 s, mesmo com leituras a cada 5 s.
+  @override
+  Duration get intervaloMinimo => const Duration(seconds: 15);
+
+  @override
+  Duration? get intervaloReserva => const Duration(seconds: 30);
+
+  @override
+  void aoMudarNoBanco() {
+    if (!_isLoading) _fetchHistory();
+  }
+
   final SupabaseService _supabase = SupabaseService();
   bool _isLoading = true;
   List<HistoricoGroup> _groups = [];

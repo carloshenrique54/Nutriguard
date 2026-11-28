@@ -11,6 +11,8 @@ import '../../services/admin_context_service.dart';
 import '../../services/trip_service.dart';
 import '../../services/veiculo_operador_service.dart';
 import '../../widgets/dashboard_charts.dart';
+import '../../services/tempo_real_service.dart';
+import '../../widgets/selo_sinal_sensor.dart';
 import '../../widgets/responsive_layout.dart';
 
 class DashboardVeiculoScreen extends StatefulWidget {
@@ -25,7 +27,14 @@ class DashboardVeiculoScreen extends StatefulWidget {
   State<DashboardVeiculoScreen> createState() => _DashboardVeiculoScreenState();
 }
 
-class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
+class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> with OuveTempoReal {
+  // Leitura nova do ESP32, alerta ou viagem deste veículo: atualiza na hora.
+  @override
+  Iterable<String>? get idsEmTela => _selectedDevice == null ? const [] : [_selectedDevice!.id];
+
+  @override
+  void aoMudarNoBanco() => _atualizarSilencioso();
+
   final SupabaseService _supabase = SupabaseService();
   bool _isLoading = true;
   String _userRole = '';
@@ -369,6 +378,7 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
           _buildHeader(context),
           const SizedBox(height: 12),
           _buildDeviceSelector(),
+          ..._buildSinalSensor(),
           if (_userRole == 'operador') ...[
             const SizedBox(height: 14),
             _buildOperatorTripSection(),
@@ -400,6 +410,7 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
           _buildHeader(context),
           const SizedBox(height: 14),
           _buildDeviceSelector(),
+          ..._buildSinalSensor(),
           const SizedBox(height: 18),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -912,6 +923,15 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
         ),
       ],
     );
+  }
+
+  /// Conexão do ESP32/Wokwi (operador sem viagem não vê leituras, então não vê o selo).
+  List<Widget> _buildSinalSensor() {
+    if (_selectedDevice == null || (_userRole == 'operador' && !_hasActiveTrip)) return const [];
+    return [
+      const SizedBox(height: 10),
+      SeloSinalSensor(ultimaLeitura: _latestMedicao?.registradoEm),
+    ];
   }
 
   Widget _buildDeviceSelector() {

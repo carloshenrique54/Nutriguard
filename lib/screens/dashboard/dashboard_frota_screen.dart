@@ -10,6 +10,8 @@ import '../../services/admin_context_service.dart';
 import '../../widgets/responsive_layout.dart';
 import '../../services/trip_service.dart';
 import '../../utils/alerta_formatacao.dart';
+import '../../services/tempo_real_service.dart';
+import '../../widgets/selo_sinal_sensor.dart';
 import '../../utils/resumo_frota.dart';
 
 class DashboardFrotaScreen extends StatefulWidget {
@@ -26,7 +28,17 @@ class DashboardFrotaScreen extends StatefulWidget {
   State<DashboardFrotaScreen> createState() => _DashboardFrotaScreenState();
 }
 
-class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
+class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> with OuveTempoReal {
+  @override
+  Iterable<String>? get idsEmTela => _dispositivos.map((d) => d.id);
+
+  // Frota com vários ESP32: no máximo uma recarga a cada 3 s.
+  @override
+  Duration get intervaloMinimo => const Duration(seconds: 3);
+
+  @override
+  void aoMudarNoBanco() => _atualizarSilencioso();
+
   late final SupabaseService _supabase;
   bool _isLoading = true;
   String _userName = '';
@@ -1551,6 +1563,8 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
                                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                               ),
                             ),
+                            SeloSinalSensor(ultimaLeitura: _ultimasMedicoes[d.id]?.registradoEm, compacto: true),
+                            const SizedBox(width: 6),
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                               decoration: BoxDecoration(

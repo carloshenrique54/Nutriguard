@@ -6,10 +6,12 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../../models/models.dart';
 import '../../services/supabase_service.dart';
+import '../../services/rota_service.dart';
 import '../../services/trip_service.dart';
 import '../../services/viagem_repositorio.dart';
 import '../../utils/alerta_formatacao.dart';
 import '../../services/veiculo_operador_service.dart';
+import '../../widgets/rota_layer.dart';
 import '../../widgets/seletor_veiculo.dart';
 import '../../widgets/custom_end_drawer.dart';
 import '../../widgets/watermark_background.dart';
@@ -314,6 +316,14 @@ class _IniciarViagemScreenState extends State<IniciarViagemScreen> {
 
   String? get _estimatedDistanceText {
     if (_originLatLng == null || _destinationLatLng == null) return null;
+    // Distância pelas ruas quando a rota já foi calculada; senão, em linha reta.
+    final rota = RotaService.instancia.emCache(_originLatLng!, _destinationLatLng!);
+    if (rota != null) {
+      final tempo = rota.duracaoMin >= 60
+          ? '${rota.duracaoMin ~/ 60}h${(rota.duracaoMin % 60).round().toString().padLeft(2, '0')}'
+          : '${rota.duracaoMin.round()} min';
+      return '${rota.distanciaKm.toStringAsFixed(1).replaceAll('.', ',')} km · $tempo';
+    }
     const distance = Distance();
     final km = distance.as(LengthUnit.Kilometer, _originLatLng!, _destinationLatLng!);
     if (km < 1) {
@@ -1084,14 +1094,13 @@ class _IniciarViagemScreenState extends State<IniciarViagemScreen> {
                         userAgentPackageName: 'com.example.nutriguard',
                       ),
                       if (_originLatLng != null && _destinationLatLng != null)
-                        PolylineLayer(
-                          polylines: [
-                            Polyline(
-                              points: [_originLatLng!, _destinationLatLng!],
-                              color: const Color(0xFFC23147),
-                              strokeWidth: 3.5,
-                            ),
-                          ],
+                        RotaLayer(
+                          origem: _originLatLng!,
+                          destino: _destinationLatLng!,
+                          espessura: 3.5,
+                          aoCalcular: (_) {
+                            if (mounted) setState(() {}); // atualiza a distância da rota
+                          },
                         ),
                       MarkerLayer(
                         markers: [
@@ -1397,15 +1406,7 @@ class _FullScreenMapPickerState extends State<_FullScreenMapPicker> {
                       userAgentPackageName: 'com.example.nutriguard',
                     ),
                     if (widget.initialOrigin != null && _selectedPoint != null)
-                      PolylineLayer(
-                        polylines: [
-                          Polyline(
-                            points: [widget.initialOrigin!, _selectedPoint!],
-                            color: const Color(0xFFC23147),
-                            strokeWidth: 4,
-                          ),
-                        ],
-                      ),
+                      RotaLayer(origem: widget.initialOrigin!, destino: _selectedPoint!),
                     MarkerLayer(
                       markers: [
                         if (widget.initialOrigin != null)
