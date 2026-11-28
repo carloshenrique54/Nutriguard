@@ -178,10 +178,14 @@ class VibrationMiniChartPainter extends CustomPainter {
   final double? limit;
   final double? currentVibration;
 
+  /// Cor da curva dentro do limite (vibração: verde-água; umidade: azul).
+  final Color corNormal;
+
   VibrationMiniChartPainter({
     this.values,
     this.limit,
     this.currentVibration,
+    this.corNormal = const Color(0xFF0D9488),
   });
 
   /// Rótulo curto do eixo (m/s²): "6", "1,5".
@@ -287,7 +291,7 @@ class VibrationMiniChartPainter extends CustomPainter {
     }
 
     final bool isExceeded = (pts.isNotEmpty && pts.last.abs() > maxLimit);
-    final Color strokeColor = isExceeded ? const Color(0xFFC23147) : const Color(0xFF0D9488);
+    final Color strokeColor = isExceeded ? const Color(0xFFC23147) : corNormal;
 
     // Traçado da curva
     final path = Path();

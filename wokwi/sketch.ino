@@ -368,9 +368,16 @@ void loop() {
   if (envioImediato || ultimoEnvio == 0 || millis() - ultimoEnvio >= INTERVALO_ENVIO_MS) {
     ultimoEnvio = millis();
 
+    // O DHT22 precisa de 2 s entre leituras e às vezes falha (ex.: envio imediato
+    // ao apertar a porta): nesse caso reenvia a última leitura válida.
+    static float ultimaTemp = NAN, ultimaUmid = NAN;
     TempAndHumidity th = dht.getTempAndHumidity();
-    float temp = th.temperature;
-    float umid = th.humidity;
+    if (dht.getStatus() == 0 && !isnan(th.temperature) && !isnan(th.humidity)) {
+      ultimaTemp = th.temperature;
+      ultimaUmid = th.humidity;
+    }
+    float temp = ultimaTemp;
+    float umid = ultimaUmid;
     float vib = lerVibracao();
     bool porta = portaAberta();
     int bateria = lerBateriaPercentual();

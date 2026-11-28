@@ -13,6 +13,7 @@ import '../../services/veiculo_operador_service.dart';
 import '../../widgets/dashboard_charts.dart';
 import '../../services/tempo_real_service.dart';
 import '../../widgets/selo_sinal_sensor.dart';
+import '../../utils/medicao_atual.dart';
 import '../../widgets/responsive_layout.dart';
 
 class DashboardVeiculoScreen extends StatefulWidget {
@@ -58,6 +59,7 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> with Ou
   String? _currentUserEmail;
   List<double> _recentTemperatures = [];
   List<double> _recentVibrations = [];
+  List<double> _recentHumidities = [];
 
   @override
   void initState() {
@@ -249,6 +251,7 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> with Ou
       _latestMedicao = null;
       _recentTemperatures = [];
       _recentVibrations = [];
+      _recentHumidities = [];
       _alerts = [];
       return;
     }
@@ -262,7 +265,9 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> with Ou
     final ocorrencias = telemetryResults[1] as List<OcorrenciaModel>;
     ocorrencias.sort((a, b) => (b.criadoEm ?? DateTime(1970)).compareTo(a.criadoEm ?? DateTime(1970)));
 
-    final MedicaoModel? latest = medicoes.isNotEmpty ? medicoes.last : null;
+    // Valor mais recente que chegou de cada grandeza (uma leitura falha do DHT22
+    // não apaga a temperatura/umidade da tela).
+    final MedicaoModel? latest = MedicaoAtual.combinar(medicoes);
     final bool ativa = tripInfo != null;
     final String duracaoStr = tripInfo?.formattedDuration ?? '0h 0m';
 
@@ -273,10 +278,12 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> with Ou
 
     final recentTemps = ultimos(medicoes.map((m) => m.temperatura));
     final recentVibrations = ultimos(medicoes.map((m) => m.vibracao));
+    final recentHumidities = ultimos(medicoes.map((m) => m.umidade));
 
     _latestMedicao = latest;
     _recentTemperatures = recentTemps;
     _recentVibrations = recentVibrations;
+    _recentHumidities = recentHumidities;
     _alerts = ocorrencias.take(5).toList();
     _hasActiveTrip = ativa;
     _activeTripDuration = duracaoStr;
@@ -1370,28 +1377,26 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> with Ou
                         const SizedBox(width: 8),
                         const Expanded(
                           child: Text(
-                            'Nivel de umidade',
+                            'Nível de umidade',
                             style: TextStyle(color: Colors.black87, fontSize: 11, fontWeight: FontWeight.w600),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      umiStr,
-                      style: const TextStyle(
-                        color: Color(0xFFC23147),
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const Spacer(),
-                    Wrap(
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 6,
-                      runSpacing: 4,
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
+                        Text(
+                          umiStr,
+                          style: TextStyle(
+                            color: umiForaLimite ? const Color(0xFFC23147) : const Color(0xFF0288D1),
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
@@ -1407,17 +1412,32 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> with Ou
                             ),
                           ),
                         ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Limite definido:', style: TextStyle(fontSize: 8, color: Colors.black54)),
-                            Text(
-                              umiMax != null ? '${AlertaFormatacao.numero(umiMax)}%' : '--',
-                              style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
-                            ),
-                          ],
-                        ),
                       ],
+                    ),
+                    const SizedBox(height: 6),
+                    // Últimas leituras de umidade, com a linha do limite máximo.
+                    Expanded(
+                      child: Container(
+                        key: const Key('grafico_umidade'),
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: CustomPaint(
+                          painter: VibrationMiniChartPainter(
+                            values: oculto ? const <double>[] : _recentHumidities,
+                            limit: (umiMax ?? 100).toDouble(),
+                            currentVibration: umidade?.toDouble(),
+                            corNormal: const Color(0xFF0288D1),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Limite definido: ${AlertaFormatacao.faixa(umiMin, umiMax, '%')}',
+                      style: const TextStyle(fontSize: 8, color: Colors.black54),
                     ),
                   ],
                 ),
@@ -1452,7 +1472,7 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> with Ou
                         const SizedBox(width: 8),
                         const Expanded(
                           child: Text(
-                            'Nivel de vibração',
+                            'Nível de vibração',
                             style: TextStyle(color: Colors.black87, fontSize: 11, fontWeight: FontWeight.w600),
                             overflow: TextOverflow.ellipsis,
                           ),
