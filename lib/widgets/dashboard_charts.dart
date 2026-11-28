@@ -184,15 +184,18 @@ class VibrationMiniChartPainter extends CustomPainter {
     this.currentVibration,
   });
 
+  /// Rótulo curto do eixo (m/s²): "6", "1,5".
+  static String _rotulo(double v) =>
+      (v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(1)).replaceAll('.', ',');
+
   @override
   void paint(Canvas canvas, Size size) {
     final textPainter = TextPainter(textDirection: TextDirection.ltr);
 
-    final pts = (values != null && values!.isNotEmpty)
-        ? values!
-        : [0.15, 0.22, 0.18, 0.35, 0.24, 0.19, currentVibration ?? 0.25];
+    // Sem leituras: só a linha do limite (nada de curva inventada).
+    final pts = values ?? const <double>[];
 
-    final double maxLimit = limit ?? 2.0;
+    final double maxLimit = limit ?? 6.0;
 
     // Encontra pico dos dados para escala vertical
     double peakVal = maxLimit;
@@ -201,7 +204,7 @@ class VibrationMiniChartPainter extends CustomPainter {
       if (v.abs() > peakVal) peakVal = v.abs();
       if (v < 0) hasNegative = true;
     }
-    peakVal = (peakVal * 1.25).clamp(1.0, 10.0);
+    peakVal = math.max(peakVal * 1.25, 1.0);
 
     const leftMargin = 22.0;
     const rightMargin = 6.0;
@@ -231,7 +234,7 @@ class VibrationMiniChartPainter extends CustomPainter {
 
     // Texto do limite no eixo Y
     textPainter.text = TextSpan(
-      text: '${maxLimit.toStringAsFixed(1)}G',
+      text: _rotulo(maxLimit),
       style: const TextStyle(
         color: Color(0xFFD97706),
         fontSize: 8,
@@ -253,7 +256,7 @@ class VibrationMiniChartPainter extends CustomPainter {
 
     // Rótulo da base 0G
     textPainter.text = const TextSpan(
-      text: '0G',
+      text: '0',
       style: TextStyle(
         color: Colors.black45,
         fontSize: 8,

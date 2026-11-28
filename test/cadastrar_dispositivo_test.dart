@@ -130,7 +130,8 @@ void main() {
 
       // Unit badges: 2x °C, 3x %, 1x s
       expect(find.text('°C'), findsNWidgets(2));
-      expect(find.text('%'), findsNWidgets(3));
+      expect(find.text('%'), findsNWidgets(2)); // umidade e sensibilidade
+      expect(find.text('m/s²'), findsOneWidget); // limite de vibração
       expect(find.text('s'), findsOneWidget);
 
       // Submit button

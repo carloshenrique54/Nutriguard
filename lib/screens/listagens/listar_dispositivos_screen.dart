@@ -8,6 +8,7 @@ import '../../widgets/animated_components.dart';
 import '../../widgets/watermark_background.dart';
 import '../../services/admin_context_service.dart';
 import '../../widgets/confirmation_dialog.dart';
+import '../../utils/rota_inicial.dart';
 import '../../widgets/responsive_layout.dart';
 
 class ListarDispositivosScreen extends StatefulWidget {
@@ -144,7 +145,7 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Acesso negado para seu perfil', style: TextStyle(color: Colors.white)), backgroundColor: Colors.red),
         );
-        Navigator.pushReplacementNamed(context, '/login');
+        Navigator.pushReplacementNamed(context, RotaInicial.paraPapel(role));
       }
     }
   }
@@ -435,7 +436,7 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
     );
   }
 
-  /// Gera um novo token para o ESP32 deste veículo e mostra uma única vez.
+  /// Gera um novo token para o dispositivo deste veículo e mostra uma única vez.
   Future<void> _mostrarTokenDialog(DispositivoModel device) async {
     HapticFeedback.lightImpact();
     final confirmar = await showDialog<bool>(
@@ -443,8 +444,9 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Token do dispositivo'),
         content: const Text(
-          'Um novo token será gerado para o ESP32 deste veículo. O token anterior '
-          'deixa de funcionar. Copie e cole no sketch do Wokwi (TOKEN_DISPOSITIVO).',
+          'Um novo token será gerado para o dispositivo de monitoramento deste veículo. '
+          'O token anterior deixa de funcionar. Depois, configure-o no código do '
+          'dispositivo (campo TOKEN_DISPOSITIVO).',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
@@ -472,7 +474,8 @@ class _ListarDispositivosScreenState extends State<ListarDispositivosScreen> {
               SelectableText(token, style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold)),
               const SizedBox(height: 12),
               const Text(
-                'Guarde este token: por segurança ele não será mostrado de novo.',
+                'Cole este token no código do dispositivo, no campo TOKEN_DISPOSITIVO. '
+                'Guarde-o: por segurança ele não será mostrado de novo.',
                 style: TextStyle(fontSize: 12, color: Colors.black54),
               ),
             ],
@@ -687,7 +690,7 @@ class DeviceCard extends StatelessWidget {
                         if (onToken != null) ...[
                           IconButton(
                             icon: const Icon(Icons.key_outlined, color: Color(0xFF4A4A4A), size: 20),
-                            tooltip: 'Token do ESP32',
+                            tooltip: 'Token do dispositivo',
                             onPressed: onToken,
                             constraints: const BoxConstraints(),
                             padding: EdgeInsets.zero,

@@ -180,7 +180,7 @@ void main() {
       expect(find.text('Umidade Média'), findsOneWidget);
       expect(find.text('60%'), findsOneWidget);
       expect(find.text('Pico de Vibração'), findsOneWidget);
-      expect(find.text('0.22G'), findsOneWidget);
+      expect(find.text('0.22 m/s²'), findsOneWidget);
       expect(find.text('Menor Bateria'), findsOneWidget);
       expect(find.text('94%'), findsOneWidget);
       expect(find.textContaining('BRA2E19'), findsWidgets);
@@ -188,12 +188,12 @@ void main() {
       // Alertas & Ocorrências section exists with count badge
       expect(find.text('Alertas & Ocorrências'), findsOneWidget);
       expect(find.text('2'), findsWidgets); // badge in counter
-      expect(find.text('Vibração Excessiva'), findsOneWidget);
-      expect(find.text('Temperatura Alta'), findsOneWidget);
+      expect(find.text('Vibração excessiva'), findsOneWidget);
+      expect(find.text('Temperatura acima do limite'), findsOneWidget);
       expect(find.text('Resolvido'), findsOneWidget);
       expect(find.text('Pendente'), findsOneWidget);
-      expect(find.textContaining('Registrado: 2.4G'), findsOneWidget);
-      expect(find.textContaining('Limite: 2.0G'), findsOneWidget);
+      expect(find.textContaining('Registrado: 2.4 m/s²'), findsOneWidget);
+      expect(find.textContaining('Limite: 2.0 m/s²'), findsOneWidget);
       expect(find.textContaining('Registrado: 9.1°C'), findsOneWidget);
 
       // Export button is present
@@ -249,7 +249,7 @@ void main() {
       expect(find.text('Umidade'), findsWidgets);
       expect(find.text('58%'), findsOneWidget);
       expect(find.text('Vibração'), findsWidgets);
-      expect(find.text('0.22G'), findsOneWidget);
+      expect(find.text('0.22 m/s²'), findsOneWidget);
       expect(find.text('Bateria & Porta'), findsOneWidget);
       expect(find.text('94%'), findsOneWidget);
       expect(find.text('Porta fechada'), findsOneWidget);

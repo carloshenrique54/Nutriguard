@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:nutriguard1/screens/acoes/parar_viagem_screen.dart';
 import 'package:nutriguard1/services/trip_service.dart';
+import 'package:nutriguard1/services/viagem_repositorio.dart';
 
 void main() {
   setUpAll(() async {
@@ -19,6 +20,7 @@ void main() {
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
+    TripService.repositorio = ViagemRepositorioLocal();
   });
 
   Widget createPararViagemTestApp({

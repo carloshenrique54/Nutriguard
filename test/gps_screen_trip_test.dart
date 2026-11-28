@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:nutriguard1/screens/gps/gps_screen.dart';
 import 'package:nutriguard1/services/trip_service.dart';
+import 'package:nutriguard1/services/viagem_repositorio.dart';
 import 'package:nutriguard1/services/supabase_service.dart';
 import 'package:nutriguard1/models/models.dart';
 
@@ -89,6 +90,7 @@ void main() {
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
+    TripService.repositorio = ViagemRepositorioLocal();
   });
 
   final dummyDevice = DispositivoModel(

@@ -7,6 +7,8 @@ import 'package:latlong2/latlong.dart';
 import '../../models/models.dart';
 import '../../services/supabase_service.dart';
 import '../../services/trip_service.dart';
+import '../../services/viagem_repositorio.dart';
+import '../../utils/alerta_formatacao.dart';
 import '../../services/veiculo_operador_service.dart';
 import '../../widgets/seletor_veiculo.dart';
 import '../../widgets/custom_end_drawer.dart';
@@ -46,6 +48,8 @@ class _IniciarViagemScreenState extends State<IniciarViagemScreen> {
   bool _precisaEscolherVeiculo = false;
   TripInfo? _activeTrip;
   LatLng? _originLatLng;
+  /// Última posição real do veículo (GPS); null quando o mapa usa o ponto padrão.
+  LatLng? _origemDoGps;
   LatLng? _destinationLatLng;
 
   @override
@@ -122,8 +126,10 @@ class _IniciarViagemScreenState extends State<IniciarViagemScreen> {
     if (_dispositivo == null) return;
     try {
       final latestMed = await _supabase.getLatestMedicao(_dispositivo!.id);
+      _origemDoGps = null;
       if (latestMed?.latitude != null && latestMed?.longitude != null) {
         _originLatLng = LatLng(latestMed!.latitude!.toDouble(), latestMed.longitude!.toDouble());
+        _origemDoGps = _originLatLng;
       }
     } catch (_) {}
   }
@@ -380,6 +386,8 @@ class _IniciarViagemScreenState extends State<IniciarViagemScreen> {
         vehicleModel: _dispositivo?.modeloVeiculo,
         destinationLatitude: _destinationLatLng?.latitude,
         destinationLongitude: _destinationLatLng?.longitude,
+        originLatitude: _origemDoGps?.latitude,
+        originLongitude: _origemDoGps?.longitude,
       );
 
       HapticFeedback.mediumImpact();
@@ -401,7 +409,10 @@ class _IniciarViagemScreenState extends State<IniciarViagemScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Erro ao iniciar viagem: $e', style: const TextStyle(color: Colors.white)),
+          content: Text(
+            e is ViagemException ? e.mensagem : 'Erro ao iniciar viagem: ${SupabaseService.formatarErro(e)}',
+            style: const TextStyle(color: Colors.white),
+          ),
           backgroundColor: const Color(0xFFC23147),
         ),
       );
@@ -758,7 +769,7 @@ class _IniciarViagemScreenState extends State<IniciarViagemScreen> {
                   const Text('Limite Térmico', style: TextStyle(fontSize: 11, color: Colors.black45)),
                   const SizedBox(height: 2),
                   Text(
-                    '${dev.temperaturaMinima?.toStringAsFixed(1) ?? "--"}°C a ${dev.temperaturaMaxima?.toStringAsFixed(1) ?? "--"}°C',
+                    AlertaFormatacao.faixa(dev.temperaturaMinima, dev.temperaturaMaxima, '°C'),
                     style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87),
                   ),
                 ],
@@ -769,7 +780,7 @@ class _IniciarViagemScreenState extends State<IniciarViagemScreen> {
                   const Text('Umidade Permitida', style: TextStyle(fontSize: 11, color: Colors.black45)),
                   const SizedBox(height: 2),
                   Text(
-                    '${dev.umidadeMinima?.toStringAsFixed(0) ?? "--"}% a ${dev.umidadeMaxima?.toStringAsFixed(0) ?? "--"}%',
+                    AlertaFormatacao.faixa(dev.umidadeMinima, dev.umidadeMaxima, '%'),
                     style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87),
                   ),
                 ],

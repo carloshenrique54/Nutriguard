@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nutriguard1/models/models.dart';
 import 'package:nutriguard1/services/trip_service.dart';
+import 'package:nutriguard1/services/viagem_repositorio.dart';
 import 'package:nutriguard1/services/veiculo_operador_service.dart';
 import 'package:nutriguard1/widgets/seletor_veiculo.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,7 +13,10 @@ void main() {
   final v2 = DispositivoModel(id: 'v2', placaVeiculo: 'BBB2B22', modeloVeiculo: 'Volvo VM 270');
   final service = VeiculoOperadorService();
 
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    TripService.repositorio = ViagemRepositorioLocal();
+  });
 
   group('VeiculoOperadorService.resolver', () {
     test('um único veículo é escolhido automaticamente', () async {

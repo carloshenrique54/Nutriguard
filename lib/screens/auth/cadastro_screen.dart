@@ -3,6 +3,7 @@ import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../../widgets/auth_components.dart';
 import '../../services/supabase_service.dart';
 import '../../services/trip_service.dart';
+import '../../utils/validacao_auth.dart';
 
 class CadastroScreen extends StatefulWidget {
   const CadastroScreen({super.key});
@@ -35,9 +36,19 @@ class _CadastroScreenState extends State<CadastroScreen> {
   );
 
   void _cadastrar() async {
-    if (_senhaCtrl.text != _confirmaSenhaCtrl.text) {
+    final erro = ValidacaoAuth.cadastroAdmin(
+      empresa: _empresaCtrl.text,
+      nome: _nomeCtrl.text,
+      email: _emailCtrl.text,
+      senha: _senhaCtrl.text,
+      confirmaSenha: _confirmaSenhaCtrl.text,
+      telefone: _telefoneCtrl.text,
+      cpf: _cpfCtrl.text,
+    );
+    if (erro != null) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('As senhas não coincidem.'), backgroundColor: Colors.red),
+        SnackBar(content: Text(erro), backgroundColor: Colors.red),
       );
       return;
     }
@@ -173,12 +184,6 @@ class _CadastroScreenState extends State<CadastroScreen> {
                                   text: "Cadastrar",
                                   onPressed: _cadastrar,
                                 ),
-                          if (!_isLoading) ...[
-                            GoogleButton(
-                              text: "Crie uma conta com o Google",
-                              onPressed: () {},
-                            ),
-                          ],
                           const SizedBox(height: 24),
                           GestureDetector(
                             onTap: () => Navigator.pushNamed(context, '/'),

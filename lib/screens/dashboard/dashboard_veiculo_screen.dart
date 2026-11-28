@@ -4,6 +4,7 @@ import '../../widgets/custom_bottom_nav_bar.dart';
 import '../../widgets/custom_end_drawer.dart';
 import '../../services/supabase_service.dart';
 import '../../models/models.dart';
+import '../../utils/alerta_formatacao.dart';
 import '../../widgets/watermark_background.dart';
 import '../../services/admin_context_service.dart';
 import '../../services/trip_service.dart';
@@ -36,6 +37,12 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
 
   bool _hasActiveTrip = false;
   String _activeTripDuration = '0h 0m';
+
+  /// Há leitura do sensor nos últimos 5 minutos (telemetria de fato chegando).
+  bool get _telemetriaRecente {
+    final r = _latestMedicao?.registradoEm;
+    return r != null && DateTime.now().difference(r).inMinutes < 5;
+  }
   TripInfo? _currentTripInfo;
   UsuarioModel? _currentPerfil;
   String? _currentUserEmail;
@@ -608,10 +615,14 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              const Flexible(
+              Flexible(
                 child: Text(
-                  'Telemetria ativa em tempo real',
-                  style: TextStyle(fontSize: 11, color: Color(0xFF2E7D32), fontWeight: FontWeight.bold),
+                  _telemetriaRecente ? 'Telemetria ativa em tempo real' : 'Aguardando telemetria do sensor',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: _telemetriaRecente ? const Color(0xFF2E7D32) : const Color(0xFFB26A00),
+                    fontWeight: FontWeight.bold,
+                  ),
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.end,
                 ),
@@ -1072,7 +1083,8 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
 
     bool hasTemp = tempVal != null;
     bool inRange = hasTemp && tempVal >= minTemp && tempVal <= maxTemp;
-    String statusText = hasTemp ? (inRange ? 'Dentro do limite' : 'Fora do limite') : 'Dentro do limite';
+    String statusText = hasTemp ? (inRange ? 'Dentro do limite' : 'Fora do limite') : 'Sem leituras';
+    if (!hasTemp) inRange = true;
 
     if (_userRole == 'operador' && !_hasActiveTrip) {
       hasTemp = false;
@@ -1082,11 +1094,10 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
 
     final String tempDisplay = hasTemp && tempVal != null
         ? '${tempVal.toStringAsFixed(1).replaceAll('.', ',')}°C'
-        : '5,4°C';
+        : '--';
 
-    final List<double> chartPoints = _recentTemperatures.isNotEmpty
-        ? _recentTemperatures
-        : [5.0, 5.2, 4.8, 5.1, 4.9, 4.2, 5.4];
+    // Sem leituras o gráfico fica vazio (nada de valores de exemplo).
+    final List<double> chartPoints = hasTemp ? _recentTemperatures : const <double>[];
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1171,21 +1182,23 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
     final dev = _selectedDevice;
     final med = _latestMedicao;
 
-    String lastTimeStr = '1 minuto(s) atrás';
+    String lastTimeStr = 'Sem leituras';
     if (_userRole == 'operador' && !_hasActiveTrip) {
       lastTimeStr = 'Não iniciada';
     } else if (med?.registradoEm != null) {
       final diff = DateTime.now().difference(med!.registradoEm!);
       if (diff.inMinutes < 60) {
         lastTimeStr = '${diff.inMinutes <= 0 ? 1 : diff.inMinutes} minuto(s) atrás';
-      } else {
+      } else if (diff.inHours < 24) {
         lastTimeStr = '${diff.inHours}h atrás';
+      } else {
+        lastTimeStr = '${diff.inDays} dia(s) atrás';
       }
     }
 
-    final String limitStr = dev?.temperaturaMaxima != null
-        ? '${dev!.temperaturaMaxima}°C'
-        : '8°C';
+    final String limitStr = (dev?.temperaturaMinima != null && dev?.temperaturaMaxima != null)
+        ? '${AlertaFormatacao.numero(dev!.temperaturaMinima!)} a ${AlertaFormatacao.numero(dev.temperaturaMaxima!)}°C'
+        : (dev?.temperaturaMaxima != null ? '${AlertaFormatacao.numero(dev!.temperaturaMaxima!)}°C' : '--');
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -1290,33 +1303,37 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
     final dev = _selectedDevice;
     final med = _latestMedicao;
 
-    final String umiStr = (_userRole == 'operador' && !_hasActiveTrip)
-        ? '32%'
-        : (med?.umidade != null ? '${med!.umidade}%' : '32%');
+    // Operador sem viagem iniciada não vê leituras; sem medição mostra "--".
+    final bool oculto = _userRole == 'operador' && !_hasActiveTrip;
+    final MedicaoModel? m = oculto ? null : med;
 
-    final bool isDoorClosed = med?.portaAberta == false || med?.portaAberta == null;
-    final String doorStatus = isDoorClosed ? 'Fechado' : 'Aberto';
-
-    final String batStr = (_userRole == 'operador' && !_hasActiveTrip)
-        ? '78%'
-        : (med?.bateria != null ? '${med!.bateria}%' : '78%');
-
-    final num? vibVal = med?.vibracao;
-    const double defaultVib = 0.25;
-    final double currentVib = (_userRole == 'operador' && !_hasActiveTrip)
-        ? 0.0
-        : (vibVal?.toDouble() ?? (_recentVibrations.isNotEmpty ? _recentVibrations.last : defaultVib));
-
-    final double limiteVib = (dev?.limiteVibracao ?? 2).toDouble();
-    final bool isVibAlert = (_userRole != 'operador' || _hasActiveTrip) && currentVib > limiteVib;
-
-    final String vibStr = (_userRole == 'operador' && !_hasActiveTrip)
-        ? '0,00 G'
-        : '${currentVib.toStringAsFixed(2).replaceAll('.', ',')} G';
-
-    final String vibStatusText = (_userRole == 'operador' && !_hasActiveTrip)
+    final num? umidade = m?.umidade;
+    final String umiStr = umidade != null ? '${AlertaFormatacao.numero(umidade)}%' : '--';
+    final num? umiMax = dev?.umidadeMaxima;
+    final num? umiMin = dev?.umidadeMinima;
+    final bool umiForaLimite = umidade != null &&
+        ((umiMax != null && umidade > umiMax) || (umiMin != null && umidade < umiMin));
+    final String umiStatus = oculto
         ? 'Não iniciada'
-        : (isVibAlert ? 'Alerta' : 'Estável');
+        : (umidade == null ? 'Sem leituras' : (umiForaLimite ? 'Fora do limite' : 'Dentro do limite'));
+
+    final bool semPorta = m?.portaAberta == null;
+    final bool isDoorClosed = m?.portaAberta != true;
+    final String doorStatus = oculto ? 'Não iniciada' : (semPorta ? 'Sem leituras' : (isDoorClosed ? 'Fechado' : 'Aberto'));
+
+    final String batStr = m?.bateria != null ? '${AlertaFormatacao.numero(m!.bateria!)}%' : '--';
+
+    final num? vibVal = m?.vibracao;
+    final double currentVib = vibVal?.toDouble() ?? 0.0;
+
+    final double limiteVib = (dev?.limiteVibracao ?? 6).toDouble();
+    final bool isVibAlert = vibVal != null && currentVib > limiteVib;
+
+    final String vibStr = vibVal != null ? '${AlertaFormatacao.numero(currentVib)} m/s²' : '--';
+
+    final String vibStatusText = oculto
+        ? 'Não iniciada'
+        : (vibVal == null ? 'Sem leituras' : (isVibAlert ? 'Alerta' : 'Estável'));
 
     return Column(
       children: [
@@ -1376,12 +1393,16 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFC8E569),
+                            color: umiForaLimite ? const Color(0xFFFFCDD2) : const Color(0xFFC8E569),
                             borderRadius: BorderRadius.circular(4),
                           ),
-                          child: const Text(
-                            'Dentro do limite',
-                            style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Color(0xFF2E7D32)),
+                          child: Text(
+                            umiStatus,
+                            style: TextStyle(
+                              fontSize: 8,
+                              fontWeight: FontWeight.bold,
+                              color: umiForaLimite ? const Color(0xFFC23147) : const Color(0xFF2E7D32),
+                            ),
                           ),
                         ),
                         Column(
@@ -1389,7 +1410,7 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
                           children: [
                             const Text('Limite definido:', style: TextStyle(fontSize: 8, color: Colors.black54)),
                             Text(
-                              '${dev?.umidadeMaxima ?? 40}%',
+                              umiMax != null ? '${AlertaFormatacao.numero(umiMax)}%' : '--',
                               style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
                             ),
                           ],
@@ -1478,9 +1499,7 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
                         ),
                         child: CustomPaint(
                           painter: VibrationMiniChartPainter(
-                            values: (_userRole == 'operador' && !_hasActiveTrip)
-                                ? [0.0, 0.0, 0.0]
-                                : (_recentVibrations.isNotEmpty ? _recentVibrations : null),
+                            values: oculto ? const <double>[] : _recentVibrations,
                             limit: limiteVib,
                             currentVibration: currentVib,
                           ),
@@ -1489,7 +1508,7 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Limite definido: ${limiteVib.toStringAsFixed(1)}G',
+                      'Limite definido: ${AlertaFormatacao.numero(limiteVib)} m/s²',
                       style: const TextStyle(fontSize: 8, color: Colors.black54),
                     ),
                   ],
@@ -1613,11 +1632,21 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
   }
 
   Widget _buildStatusBanner() {
-    final hasAlerts = _alerts.isNotEmpty;
-    final title = hasAlerts ? 'Atenção necessária' : 'Carga em condições normais';
+    // Só alertas de sensor ainda abertos pedem atenção (avisos de viagem e
+    // alertas resolvidos não).
+    final abertos = _alerts
+        .where((a) => !AlertaFormatacao.resolvido(a.status) && !AlertaFormatacao.informativo(a.tipo))
+        .length;
+    final hasAlerts = abertos > 0;
+    final semLeituras = _latestMedicao == null;
+    final title = hasAlerts
+        ? 'Atenção necessária'
+        : (semLeituras ? 'Aguardando dados do sensor' : 'Carga em condições normais');
     final subtitle = hasAlerts
-        ? '${_alerts.length} ocorrência(s) detectada(s)'
-        : 'Todos os parâmetros estão dentro dos limites';
+        ? '$abertos ocorrência(s) em aberto'
+        : (semLeituras
+            ? 'Nenhuma leitura recebida deste veículo ainda'
+            : 'Todos os parâmetros estão dentro dos limites');
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -1634,7 +1663,9 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(
-              hasAlerts ? Icons.warning_amber_rounded : Icons.check_circle_outline_rounded,
+              hasAlerts
+                  ? Icons.warning_amber_rounded
+                  : (semLeituras ? Icons.sensors_off_outlined : Icons.check_circle_outline_rounded),
               color: hasAlerts ? const Color(0xFFC23147) : const Color(0xFF8DB600),
               size: 26,
             ),
@@ -1707,45 +1738,51 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
           child: Column(
             children: _alerts.isNotEmpty
                 ? _alerts.take(3).map((alerta) {
-                    final isCritical = alerta.tipo?.toLowerCase().contains('crítico') == true;
+                    final isCritical = AlertaFormatacao.critico(alerta.tipo);
                     final time = alerta.criadoEm != null
                         ? '${alerta.criadoEm!.hour.toString().padLeft(2, '0')}:${alerta.criadoEm!.minute.toString().padLeft(2, '0')}'
-                        : '09:41';
+                        : '';
                     return Column(
                       children: [
                         _buildEventItem(
-                          icon: isCritical ? Icons.warning_amber_rounded : Icons.thermostat,
-                          title: alerta.tipo ?? 'Condições normais',
-                          detail1Label: 'Valor: ',
-                          detail1Val: alerta.valorRegistrado?.toString() ?? '5,4°C',
+                          icon: AlertaFormatacao.iconeViagem(alerta.tipo) ??
+                              (isCritical ? Icons.warning_amber_rounded : Icons.thermostat),
+                          title: AlertaFormatacao.titulo(alerta.tipo),
+                          detail1Label: '',
+                          detail1Val: AlertaFormatacao.detalhe(alerta),
                           time: time,
                         ),
                         if (alerta != _alerts.take(3).last) const Divider(height: 18, color: Colors.black12),
                       ],
                     );
                   }).toList()
-                : [
-                    _buildEventItem(
-                      icon: Icons.thermostat,
-                      title: 'Condições normais',
-                      detail1Label: 'Temperatura: ',
-                      detail1Val: '5,4°C',
-                      detail2Label: 'Umidade: ',
-                      detail2Val: '32%',
-                      time: '09:41',
-                    ),
-                    const Divider(height: 18, color: Colors.black12),
-                    _buildEventItem(
-                      icon: Icons.timeline,
-                      title: 'Impacto leve detectado',
-                      detail1Label: 'Intensidade: ',
-                      detail1Val: '1,8 g',
-                      time: '09:41',
-                    ),
-                  ],
+                : [_eventoSemAlertas()],
           ),
         ),
       ],
+    );
+  }
+
+  /// Sem alertas: mostra a última leitura real, ou que ainda não há eventos.
+  Widget _eventoSemAlertas() {
+    final m = (_userRole == 'operador' && !_hasActiveTrip) ? null : _latestMedicao;
+    if (m == null) {
+      return _buildEventItem(
+        icon: Icons.inbox_outlined,
+        title: 'Nenhum evento registrado',
+        detail1Label: 'Os eventos aparecem quando o sensor envia dados',
+        detail1Val: '',
+        time: '',
+      );
+    }
+    return _buildEventItem(
+      icon: Icons.thermostat,
+      title: 'Condições normais',
+      detail1Label: m.temperatura != null ? 'Temperatura: ' : null,
+      detail1Val: m.temperatura != null ? '${AlertaFormatacao.numero(m.temperatura!)}°C' : null,
+      detail2Label: m.umidade != null ? 'Umidade: ' : null,
+      detail2Val: m.umidade != null ? '${AlertaFormatacao.numero(m.umidade!)}%' : null,
+      time: AlertaFormatacao.dataHora(m.registradoEm).split(' ').last,
     );
   }
 

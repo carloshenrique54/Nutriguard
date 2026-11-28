@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/models.dart';
 
@@ -111,7 +114,7 @@ class SupabaseService {
   /// com o e-mail e o cargo (o banco confere se quem convida pode criar esse
   /// cargo); depois criamos a conta. A trigger de cadastro lê o convite e
   /// aplica o cargo e a empresa — nada disso é confiado ao app.
-  Future<AuthResponse> cadastrarFuncionario({
+  Future<User> cadastrarFuncionario({
     required String email,
     required String password,
     required String nome,
@@ -135,21 +138,15 @@ class SupabaseService {
       throw Exception(formatarErro(e));
     }
 
-    // 3) Criação da conta no Supabase Auth usando cliente temporário com fluxo implícito
-    final tempClient = SupabaseClient(
-      supabaseUrl,
-      supabaseAnonKey,
-      authOptions: const AuthClientOptions(
-        authFlowType: AuthFlowType.implicit,
-        autoRefreshToken: false,
-      ),
-    );
-
+    // 3) Criação da conta direto na API de Auth (sem cliente GoTrue).
+    //    Um segundo SupabaseClient na web compartilha o BroadcastChannel
+    //    "sb-<projeto>-auth-token" com o cliente principal: o login do novo
+    //    funcionário era repassado para a aba e o admin perdia a sessão.
     try {
-      final response = await tempClient.auth.signUp(
+      final user = await criarContaAuth(
         email: cleanEmail,
         password: password,
-        data: {
+        dados: {
           'nome': nome,
           'cpf': cleanCpf,
           'telefone': telefone,
@@ -162,20 +159,54 @@ class SupabaseService {
         },
       );
 
-      final user = response.user;
-      if (user == null) {
-        throw Exception('Falha ao registrar usuário no sistema.');
-      }
-
       // O perfil (nome, CPF, CNH, cargo e empresa) é criado pela trigger
       // handle_new_user a partir do convite e dos dados enviados acima.
       invalidarCachePerfil(user.id);
-
-      return response;
+      return user;
     } catch (e) {
       throw Exception(formatarErro(e));
+    }
+  }
+
+  /// Cria a conta via `POST /auth/v1/signup` sem tocar na sessão atual.
+  @visibleForTesting
+  static Future<User> criarContaAuth({
+    required String email,
+    required String password,
+    required Map<String, dynamic> dados,
+    http.Client? httpClient,
+  }) async {
+    final client = httpClient ?? http.Client();
+    try {
+      final resp = await client.post(
+        Uri.parse('$supabaseUrl/auth/v1/signup'),
+        headers: {
+          'apikey': supabaseAnonKey,
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({'email': email, 'password': password, 'data': dados}),
+      );
+      Map<String, dynamic> corpo = const {};
+      try {
+        final decodificado = jsonDecode(resp.body);
+        if (decodificado is Map<String, dynamic>) corpo = decodificado;
+      } catch (_) {}
+
+      if (resp.statusCode >= 400) {
+        final msg = (corpo['msg'] ?? corpo['message'] ?? corpo['error_description'] ?? corpo['error'] ?? resp.body).toString();
+        throw AuthException(msg, statusCode: resp.statusCode.toString(), code: corpo['error_code']?.toString());
+      }
+
+      // Com confirmação de e-mail ligada a API devolve o usuário; desligada,
+      // devolve a sessão com o usuário dentro (que é descartada aqui).
+      final userJson = corpo['user'] is Map<String, dynamic> ? corpo['user'] as Map<String, dynamic> : corpo;
+      final user = User.fromJson(userJson);
+      if (user == null) {
+        throw Exception('Falha ao registrar usuário no sistema.');
+      }
+      return user;
     } finally {
-      tempClient.dispose();
+      if (httpClient == null) client.close();
     }
   }
 
@@ -251,6 +282,9 @@ class SupabaseService {
       if (msg.contains('database error')) {
         return 'Erro de comunicação com o banco de dados. Verifique os dados e tente novamente.';
       }
+      if (msg.contains('anonymous sign-ins are disabled')) {
+        return 'Preencha o e-mail e a senha.';
+      }
       if (msg.contains('invalid login credentials') ||
           msg.contains('invalid credentials') ||
           msg.contains('invalid_credentials')) {
@@ -322,6 +356,19 @@ class SupabaseService {
           return 'O nome do dispositivo é obrigatório.';
         }
         return 'Preencha todos os campos obrigatórios antes de prosseguir.';
+      }
+      // Regras de coerência (CHECK) do banco
+      if (error.code == '23514' || msg.contains('violates check constraint')) {
+        if (msg.contains('chk_temperatura_limites')) {
+          return 'A temperatura mínima precisa ser menor que a temperatura máxima.';
+        }
+        if (msg.contains('chk_umidade_limites')) {
+          return 'A umidade precisa estar entre 0% e 100%, com a máxima maior que a mínima.';
+        }
+        if (msg.contains('chk_bateria_minima')) {
+          return 'A bateria mínima precisa estar entre 0% e 100%.';
+        }
+        return 'Algum valor informado está fora do permitido. Confira os limites e tente novamente.';
       }
       if (error.code == '42501' || msg.contains('permission denied') || msg.contains('row-level security')) {
         return 'Você não tem permissão para realizar esta operação.';
@@ -625,12 +672,14 @@ class SupabaseService {
     return data != null ? DispositivoModel.fromJson(data) : null;
   }
 
+  /// Exclui o veículo (admin da empresa ou gerente da frota). Sem histórico ele
+  /// é apagado; com medições/alertas ele é desativado — o histórico do banco é
+  /// imutável — e some do app (supabase/correcoes_auditoria.sql).
   Future<void> deleteDispositivo(String id) async {
-    // .select() devolve as linhas apagadas: lista vazia = o RLS não permitiu
-    // (ex.: gerente tentando apagar veículo de outra frota).
-    final apagados = await _client.from('Dispositivos').delete().eq('id', id).select('id');
-    if ((apagados as List).isEmpty) {
-      throw Exception('Você não tem permissão para excluir este dispositivo.');
+    try {
+      await _client.rpc('excluir_dispositivo', params: {'p_dispositivo': id});
+    } catch (e) {
+      throw Exception(formatarErro(e));
     }
   }
 
@@ -927,6 +976,7 @@ class SupabaseService {
   Future<bool> salvarFimViagem({
     required String operatorId,
     String? deviceId,
+    String? viagemId,
     required String motivo,
     required String rua,
     required String bairro,
@@ -939,6 +989,7 @@ class SupabaseService {
       final payload = {
         if (cleanOpId.isNotEmpty) 'id_operador': cleanOpId,
         if (deviceId != null && deviceId.trim().isNotEmpty) 'id_dispositivo': deviceId.trim(),
+        if (viagemId != null && viagemId.trim().isNotEmpty) 'id_viagem': viagemId.trim(),
         'motivo': motivo.trim(),
         'rua': rua.trim(),
         'bairro': bairro.trim(),

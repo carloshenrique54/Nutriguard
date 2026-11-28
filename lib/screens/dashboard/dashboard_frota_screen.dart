@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../widgets/custom_bottom_nav_bar.dart';
 import '../../widgets/custom_end_drawer.dart';
@@ -8,6 +9,8 @@ import '../../widgets/watermark_background.dart';
 import '../../services/admin_context_service.dart';
 import '../../widgets/responsive_layout.dart';
 import '../../services/trip_service.dart';
+import '../../utils/alerta_formatacao.dart';
+import '../../utils/resumo_frota.dart';
 
 class DashboardFrotaScreen extends StatefulWidget {
   final String? initialFrotaId;
@@ -36,6 +39,15 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
   List<DispositivoModel> _dispositivos = [];
   Map<String, int> _frotaDeviceCounts = {};
   List<OcorrenciaModel> _alerts = [];
+  List<OcorrenciaModel> _ocorrencias = [];
+  Map<String, MedicaoModel?> _ultimasMedicoes = {};
+  ResumoFrota get _resumo => ResumoFrota.calcular(_dispositivos, _ultimasMedicoes, _ocorrencias);
+
+  /// Última medição de cada veículo (consultas em paralelo).
+  Future<Map<String, MedicaoModel?>> _carregarUltimas(List<DispositivoModel> devs) async {
+    final res = await Future.wait(devs.map((d) => _supabase.getLatestMedicao(d.id)));
+    return {for (var i = 0; i < devs.length; i++) devs[i].id: res[i]};
+  }
   int _totalSystemDevices = 0;
   Set<String> _devicesInTrip = {};
 
@@ -48,12 +60,44 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fetchData();
     });
+    _atualizacao = Timer.periodic(const Duration(seconds: 15), (_) => _atualizarSilencioso());
   }
 
   @override
   void dispose() {
+    _atualizacao?.cancel();
     TripService().tripStateNotifier.removeListener(_onTripStateChanged);
     super.dispose();
+  }
+
+  Timer? _atualizacao;
+  bool _atualizando = false;
+
+  /// Atualiza viagens, alertas e últimas leituras dos veículos exibidos sem
+  /// mostrar carregamento (operador e ESP32 mudam o estado em outro aparelho).
+  Future<void> _atualizarSilencioso() async {
+    if (_atualizando || _isLoading || _dispositivos.isEmpty || !mounted) return;
+    _atualizando = true;
+    try {
+      final devs = _dispositivos;
+      final agora = DateTime.now();
+      final ocorrenciasFuture =
+          _supabase.getOcorrenciasFiltro(devs.map((d) => d.id).toList(), agora.subtract(const Duration(days: 30)), agora);
+      final ultimas = await _carregarUltimas(devs);
+      final ocorrencias = await ocorrenciasFuture;
+      ocorrencias.sort((a, b) => (b.criadoEm ?? agora).compareTo(a.criadoEm ?? agora));
+      if (!mounted || !identical(devs, _dispositivos)) return;
+      setState(() {
+        _ocorrencias = ocorrencias;
+        _ultimasMedicoes = ultimas;
+        _alerts = ocorrencias.take(5).toList();
+      });
+      await _updateActiveTrips(devs);
+    } catch (e) {
+      debugPrint('Atualização automática do dashboard da frota falhou: $e');
+    } finally {
+      _atualizando = false;
+    }
   }
 
   void _onTripStateChanged() {
@@ -63,14 +107,7 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
   }
 
   Future<void> _updateActiveTrips(List<DispositivoModel> devices) async {
-    final tripService = TripService();
-    final Set<String> inTrip = {};
-    final flags = await Future.wait(
-      devices.map((d) => tripService.isDeviceInTrip(d.id, operatorId: d.idOperador)),
-    );
-    for (var i = 0; i < devices.length; i++) {
-      if (flags[i]) inTrip.add(devices[i].id);
-    }
+    final inTrip = await TripService().devicesInTrip(devices.map((d) => d.id).toList());
     if (mounted) {
       setState(() {
         _devicesInTrip = inTrip;
@@ -168,7 +205,9 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
       final List<String> devIds = activeDevices.map((d) => d.id).toList();
       final DateTime agora = DateTime.now();
       final DateTime inicio = agora.subtract(const Duration(days: 30));
-      final List<OcorrenciaModel> ocorrencias = await _supabase.getOcorrenciasFiltro(devIds, inicio, agora);
+      final ocorrenciasFuture = _supabase.getOcorrenciasFiltro(devIds, inicio, agora);
+      final ultimas = await _carregarUltimas(activeDevices);
+      final List<OcorrenciaModel> ocorrencias = await ocorrenciasFuture;
       ocorrencias.sort((a, b) => (b.criadoEm ?? agora).compareTo(a.criadoEm ?? agora));
 
       if (mounted) {
@@ -177,6 +216,8 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
           _selectedFrota = selected;
           _dispositivos = activeDevices;
           _frotaDeviceCounts = counts;
+          _ocorrencias = ocorrencias;
+          _ultimasMedicoes = ultimas;
           _alerts = ocorrencias.take(5).toList();
           _isLoading = false;
         });
@@ -202,12 +243,16 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
       final List<String> devIds = devs.map((d) => d.id).toList();
       final DateTime agora = DateTime.now();
       final DateTime inicio = agora.subtract(const Duration(days: 30));
-      final ocorrencias = await _supabase.getOcorrenciasFiltro(devIds, inicio, agora);
+      final ocorrenciasFuture = _supabase.getOcorrenciasFiltro(devIds, inicio, agora);
+      final ultimas = await _carregarUltimas(devs);
+      final ocorrencias = await ocorrenciasFuture;
       ocorrencias.sort((a, b) => (b.criadoEm ?? agora).compareTo(a.criadoEm ?? agora));
 
       if (mounted) {
         setState(() {
           _dispositivos = devs;
+          _ocorrencias = ocorrencias;
+          _ultimasMedicoes = ultimas;
           _alerts = ocorrencias.take(5).toList();
           _isLoading = false;
         });
@@ -786,9 +831,10 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
 
   Widget _buildManagementCard() {
     final devCount = _dispositivos.length;
-    final int critCount = _alerts.where((a) => a.tipo != null && a.tipo!.toLowerCase().contains('crítico')).map((a) => a.idDispositivo).toSet().length;
-    final int warnCount = _alerts.where((a) => a.tipo == null || !a.tipo!.toLowerCase().contains('crítico')).map((a) => a.idDispositivo).toSet().length;
-    final int normCount = (devCount - critCount - warnCount) > 0 ? (devCount - critCount - warnCount) : (devCount > 0 ? devCount : 0);
+    final resumo = _resumo;
+    final int critCount = resumo.criticos;
+    final int warnCount = resumo.atencao;
+    final int normCount = resumo.normais;
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -835,7 +881,7 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
                     ),
                     const SizedBox(width: 8),
                     const Text(
-                      'Veiculos',
+                      'Veículos',
                       style: TextStyle(
                         color: Color(0xFF1E293B),
                         fontSize: 16,
@@ -915,6 +961,8 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
   }
 
   Widget _buildSplitCard() {
+    final resumo = _resumo;
+    final tempMedia = resumo.temperaturaMedia;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
@@ -938,20 +986,20 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
                   child: const Icon(Icons.thermostat, color: Colors.white, size: 22),
                 ),
                 const SizedBox(width: 10),
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      const Text(
                         'Temperatura média',
                         style: TextStyle(fontSize: 11, color: Colors.black54, fontWeight: FontWeight.w500),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      SizedBox(height: 2),
+                      const SizedBox(height: 2),
                       Text(
-                        '8°C',
-                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
+                        tempMedia != null ? '${AlertaFormatacao.numero(tempMedia)}°C' : '--',
+                        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
                       ),
                     ],
                   ),
@@ -977,20 +1025,20 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
                   child: const Icon(Icons.access_time, color: Colors.white, size: 22),
                 ),
                 const SizedBox(width: 10),
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      const Text(
                         'Última atualização',
                         style: TextStyle(fontSize: 11, color: Colors.black54, fontWeight: FontWeight.w500),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      SizedBox(height: 2),
+                      const SizedBox(height: 2),
                       Text(
-                        '1 minuto(s) atrás',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
+                        ResumoFrota.tempoDesde(resumo.ultimaLeitura),
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -1007,6 +1055,10 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
 
   Widget _buildTwoColumnCards() {
     final devCount = _dispositivos.length;
+    final resumo = _resumo;
+    final umidMedia = resumo.umidadeMedia;
+    final umidFora = resumo.umidadeForaLimite;
+    final limiteUmid = resumo.limiteUmidadeComum;
     final emViagemCount = _devicesInTrip.length;
 
     return Row(
@@ -1035,17 +1087,20 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
                       child: const Icon(Icons.water_drop, color: Colors.white, size: 20),
                     ),
                     const SizedBox(width: 8),
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
+                          const Text(
                             'Umidade média',
                             style: TextStyle(fontSize: 11, color: Colors.black54, fontWeight: FontWeight.w500),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          Text('32%', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFFC23147))),
+                          Text(
+                            umidMedia != null ? '${AlertaFormatacao.numero(umidMedia)}%' : '--',
+                            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFFC23147)),
+                          ),
                         ],
                       ),
                     ),
@@ -1058,23 +1113,31 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFD7EBB0),
+                        color: umidFora > 0 ? const Color(0xFFFFCDD2) : const Color(0xFFD7EBB0),
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: const Text(
-                        'Dentro do limite',
-                        style: TextStyle(color: Color(0xFF2E7D32), fontSize: 9, fontWeight: FontWeight.bold),
+                      child: Text(
+                        umidMedia == null
+                            ? 'Sem leituras'
+                            : (umidFora > 0 ? 'Fora do limite em $umidFora' : 'Dentro do limite'),
+                        style: TextStyle(
+                          color: umidFora > 0 ? const Color(0xFFC23147) : const Color(0xFF2E7D32),
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 6),
                     RichText(
-                      text: const TextSpan(
+                      text: TextSpan(
                         text: 'Limite definido: ',
-                        style: TextStyle(fontSize: 9, color: Colors.black54),
+                        style: const TextStyle(fontSize: 9, color: Colors.black54),
                         children: [
                           TextSpan(
-                            text: '40%',
-                            style: TextStyle(color: Color(0xFFC23147), fontWeight: FontWeight.bold),
+                            text: limiteUmid != null
+                                ? '${AlertaFormatacao.numero(limiteUmid)}%'
+                                : (devCount > 0 ? 'por veículo' : '--'),
+                            style: const TextStyle(color: Color(0xFFC23147), fontWeight: FontWeight.bold),
                           ),
                         ],
                       ),
@@ -1265,8 +1328,7 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
   }
 
   Widget _buildRecentEvents() {
-    final devFirst = _dispositivos.firstOrNull;
-    final veiculoNome = devFirst?.modeloVeiculo ?? devFirst?.placaVeiculo ?? 'Volvo FH 540';
+    final eventos = _alerts.take(3).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1294,29 +1356,49 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
               BoxShadow(color: Color(0x0D000000), blurRadius: 10, offset: Offset(0, 3)),
             ],
           ),
-          child: Column(
-            children: [
-              _buildEventItem(
-                icon: Icons.thermostat,
-                iconBg: const Color(0xFFD7EBB0),
-                iconColor: const Color(0xFF2E7D32),
-                title: 'Condições normais',
-                veiculoTag: 'Veículo: $veiculoNome',
-                metricsText: 'Temperatura: 5,4°C  |  Umidade: 32%',
-                time: '09:41',
-              ),
-              const Divider(height: 18),
-              _buildEventItem(
-                icon: Icons.graphic_eq,
-                iconBg: const Color(0xFFE8F5E9),
-                iconColor: const Color(0xFF689F38),
-                title: 'Impacto leve detectado',
-                veiculoTag: 'Veículo: $veiculoNome',
-                metricsText: 'Intensidade: 1,8 g',
-                time: '09:41',
-              ),
-            ],
-          ),
+          child: eventos.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    children: [
+                      Icon(Icons.inbox_outlined, color: Colors.black38),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Nenhum alerta nos últimos 30 dias.',
+                          style: TextStyle(fontSize: 12, color: Colors.black54),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : Column(
+                  children: [
+                    for (var i = 0; i < eventos.length; i++) ...[
+                      if (i > 0) const Divider(height: 18),
+                      _buildEventItem(
+                        icon: AlertaFormatacao.iconeViagem(eventos[i].tipo) ??
+                            (AlertaFormatacao.critico(eventos[i].tipo)
+                                ? Icons.warning_amber_rounded
+                                : Icons.notifications_active_outlined),
+                        iconBg: AlertaFormatacao.viagem(eventos[i].tipo)
+                            ? AlertaFormatacao.fundoViagem(eventos[i].tipo)
+                            : (AlertaFormatacao.critico(eventos[i].tipo)
+                                ? const Color(0xFFFFCDD2)
+                                : const Color(0xFFFFF3CD)),
+                        iconColor: AlertaFormatacao.viagem(eventos[i].tipo)
+                            ? AlertaFormatacao.corViagem(eventos[i].tipo)
+                            : (AlertaFormatacao.critico(eventos[i].tipo)
+                                ? const Color(0xFFC23147)
+                                : const Color(0xFFB7791F)),
+                        title: AlertaFormatacao.titulo(eventos[i].tipo),
+                        veiculoTag: 'Veículo: ${AlertaFormatacao.veiculo(eventos[i].idDispositivo, _dispositivos)}',
+                        metricsText: AlertaFormatacao.detalhe(eventos[i]),
+                        time: AlertaFormatacao.dataHora(eventos[i].criadoEm),
+                      ),
+                    ],
+                  ],
+                ),
         ),
       ],
     );

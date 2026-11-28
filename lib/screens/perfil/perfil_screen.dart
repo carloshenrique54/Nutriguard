@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../../widgets/custom_end_drawer.dart';
 import '../../widgets/watermark_background.dart';
 import '../../services/supabase_service.dart';
@@ -168,7 +169,14 @@ class _PerfilScreenState extends State<PerfilScreen> {
   Future<void> _editProfile() async {
     if (_perfil == null) return;
     final nameController = TextEditingController(text: _perfil!.nome);
-    final phoneController = TextEditingController(text: _perfil!.telefone);
+    final telefoneMask = MaskTextInputFormatter(
+      mask: '(##) #####-####',
+      filter: {'#': RegExp(r'[0-9]')},
+      type: MaskAutoCompletionType.lazy,
+    );
+    final phoneController = TextEditingController(
+      text: telefoneMask.maskText((_perfil!.telefone ?? '').replaceAll(RegExp(r'\D'), '')),
+    );
     
     await showDialog(context: context, barrierDismissible: false, builder: (context) {
       bool isSaving = false;
@@ -205,6 +213,8 @@ class _PerfilScreenState extends State<PerfilScreen> {
                       const SizedBox(height: 16),
                       TextField(
                         controller: phoneController,
+                        inputFormatters: [telefoneMask],
+                        keyboardType: TextInputType.phone,
                         decoration: InputDecoration(
                           labelText: 'Telefone',
                           labelStyle: const TextStyle(color: Color(0xFFC23147)),
@@ -236,6 +246,12 @@ class _PerfilScreenState extends State<PerfilScreen> {
                               onPressed: () async {
                                 if (nameController.text.trim().isEmpty) {
                                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nome não pode ser vazio')));
+                                  return;
+                                }
+                                if (phoneController.text.replaceAll(RegExp(r'\D'), '').length < 10) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('O telefone deve conter DDD e pelo menos 10 dígitos.')),
+                                  );
                                   return;
                                 }
                                 setDialogState(() { isSaving = true; });
@@ -971,7 +987,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
           iconBgColor: const Color(0xFFE3F2FD),
           iconColor: const Color(0xFF1565C0),
           title: 'VEÍCULOS & SENSORES IoT',
-          value: '$_totalDispositivos ${_totalDispositivos == 1 ? 'dispositivo conectado' : 'dispositivos conectados'}',
+          value: '$_totalDispositivos ${_totalDispositivos == 1 ? 'veículo monitorado' : 'veículos monitorados'}',
           subtitle: 'Monitoramento térmico, umidade e impacto',
           onTap: () => Navigator.pushNamed(context, '/listar-dispositivos'),
         ),

@@ -211,7 +211,9 @@ void main() {
       expect(find.text('Viagens no período'), findsWidgets);
       expect(find.text('0'), findsWidgets);
       expect(find.text('0h 0m'), findsOneWidget);
-      expect(find.text('0.0%'), findsOneWidget);
+      // Sem leituras no período a conformidade não é inventada (0% ou 100%).
+      expect(find.text('0.0%'), findsNothing);
+      expect(find.text('Conformidade'), findsOneWidget);
 
       // Chart 1 Stylized Empty State
       expect(find.text('SEM MEDIÇÕES'), findsOneWidget);

@@ -148,21 +148,14 @@ class _GpsScreenState extends State<GpsScreen> {
     try {
       final user = _supabase.currentUser;
       final currentUserId = user?.id ?? '';
-      final Set<String> inTrip = {};
-
-      final tripFlags = await Future.wait(
-        _dispositivos.map((d) => _tripService.isDeviceInTrip(d.id, operatorId: d.idOperador)),
-      );
-      for (var i = 0; i < _dispositivos.length; i++) {
-        if (tripFlags[i]) inTrip.add(_dispositivos[i].id);
-      }
+      final Set<String> inTrip = {
+        ...await _tripService.devicesInTrip(_dispositivos.map((d) => d.id).toList()),
+      };
 
       TripInfo? trip;
       if (_selectedDevice != null) {
-        trip = await _tripService.getActiveTripByDevice(
-          _selectedDevice!.id,
-          operatorId: _selectedDevice!.idOperador ?? currentUserId,
-        );
+        // Viagem deste veículo (de qualquer operador).
+        trip = await _tripService.getActiveTripByDevice(_selectedDevice!.id);
       }
 
       if (trip == null && _userRole == 'operador' && currentUserId.isNotEmpty) {

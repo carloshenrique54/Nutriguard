@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../../models/models.dart';
 import '../../widgets/auth_components.dart';
 import '../../services/supabase_service.dart';
+import '../../utils/validacao_auth.dart';
 import '../../services/trip_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -20,6 +21,18 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _login() async {
     HapticFeedback.lightImpact();
+    final erro = ValidacaoAuth.login(email: _emailCtrl.text, senha: _senhaCtrl.text);
+    if (erro != null) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(erro, style: const TextStyle(color: Colors.white)),
+          backgroundColor: const Color(0xFFC23147),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
     setState(() => _isLoading = true);
     try {
       final authResponse = await _supabaseService.signIn(
@@ -156,12 +169,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                   text: "Login",
                                   onPressed: _login,
                                 ),
-                          if (!_isLoading) ...[
-                            GoogleButton(
-                              text: "Entrar com Google",
-                              onPressed: () {},
-                            ),
-                          ],
                           const SizedBox(height: 24),
                           GestureDetector(
                             onTap: () => Navigator.pushNamed(context, '/cadastro'),

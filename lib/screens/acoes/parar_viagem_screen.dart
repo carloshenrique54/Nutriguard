@@ -111,6 +111,22 @@ class _PararViagemScreenState extends State<PararViagemScreen> {
       final activeTrip = await _tripService.getActiveTrip(operatorId);
       final deviceId = activeTrip?.deviceId;
 
+      // O relatório vai antes do encerramento: o banco gera o alerta de fim de
+      // viagem "com relatório" quando encontra o fins_viagem desta viagem.
+      try {
+        await _supabase.salvarFimViagem(
+          operatorId: operatorId,
+          deviceId: deviceId,
+          viagemId: activeTrip?.id,
+          motivo: motivo,
+          rua: rua,
+          bairro: bairro,
+          cidade: cidade,
+          cep: cep.isNotEmpty ? cep : null,
+          anexos: _anexos,
+        );
+      } catch (_) {}
+
       await _tripService.endTripWithReport(
         operatorId: operatorId,
         motivo: motivo,
@@ -121,19 +137,6 @@ class _PararViagemScreenState extends State<PararViagemScreen> {
         anexos: _anexos,
       );
 
-      try {
-        await _supabase.salvarFimViagem(
-          operatorId: operatorId,
-          deviceId: deviceId,
-          motivo: motivo,
-          rua: rua,
-          bairro: bairro,
-          cidade: cidade,
-          cep: cep.isNotEmpty ? cep : null,
-          anexos: _anexos,
-        );
-      } catch (_) {}
-
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -143,7 +146,13 @@ class _PararViagemScreenState extends State<PararViagemScreen> {
         ),
       );
 
-      Navigator.pop(context, true);
+      if (widget.initialOperatorId == null) {
+        // Operador encerrou a própria viagem: volta para "Iniciar viagem"
+        // (mesmo destino do login sem viagem ativa), seja qual for a tela de origem.
+        Navigator.pushNamedAndRemoveUntil(context, '/iniciar-viagem', (route) => false);
+      } else {
+        Navigator.pop(context, true);
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

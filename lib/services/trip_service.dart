@@ -1,7 +1,12 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'viagem_repositorio.dart';
 
 class TripInfo {
+  /// Id da linha em `public.viagens` (null em dados antigos).
+  final String? id;
   final String operatorId;
   final String deviceId;
   final String destination;
@@ -12,6 +17,7 @@ class TripInfo {
   final double? destinationLongitude;
 
   const TripInfo({
+    this.id,
     required this.operatorId,
     required this.deviceId,
     required this.destination,
@@ -21,6 +27,18 @@ class TripInfo {
     this.destinationLatitude,
     this.destinationLongitude,
   });
+
+  factory TripInfo.deRegistro(ViagemRegistro v) => TripInfo(
+        id: v.id,
+        operatorId: v.idOperador ?? '',
+        deviceId: v.idDispositivo,
+        destination: v.destino,
+        startedAt: v.iniciadoEm,
+        vehiclePlate: v.placaVeiculo,
+        vehicleModel: v.modeloVeiculo,
+        destinationLatitude: v.destinoLatitude,
+        destinationLongitude: v.destinoLongitude,
+      );
 
   Duration get duration => DateTime.now().difference(startedAt);
 
@@ -59,14 +77,26 @@ class TripService {
   factory TripService() => _instance;
   TripService._internal();
 
+  static ViagemRepositorio? _repositorio;
+
+  /// Onde as viagens ficam: Supabase (tabela `viagens`) no app, para que admin,
+  /// gerente e o ESP32 vejam o mesmo estado; armazenamento local quando o
+  /// Supabase não foi inicializado (testes).
+  static ViagemRepositorio get repositorio => _repositorio ??= _padrao();
+  static set repositorio(ViagemRepositorio r) => _repositorio = r;
+
+  static ViagemRepositorio _padrao() {
+    try {
+      if (Supabase.instance.isInitialized) return ViagemRepositorioSupabase();
+    } catch (_) {}
+    return ViagemRepositorioLocal();
+  }
+
   /// Notifier reativo para avisar ouvintes (como Drawer ou Dashboards) sobre mudanças de estado
   final ValueNotifier<bool> tripStateNotifier = ValueNotifier<bool>(false);
 
   Future<bool> isTripActive(String operatorId) async {
-    final cleanId = operatorId.trim();
-    if (cleanId.isEmpty) return false;
-    final prefs = await SharedPreferences.getInstance();
-    final active = prefs.getBool('trip_active_$cleanId') ?? false;
+    final active = await getActiveTrip(operatorId) != null;
     tripStateNotifier.value = active;
     return active;
   }
@@ -74,80 +104,35 @@ class TripService {
   Future<TripInfo?> getActiveTrip(String operatorId) async {
     final cleanId = operatorId.trim();
     if (cleanId.isEmpty) return null;
-    final prefs = await SharedPreferences.getInstance();
-    final active = prefs.getBool('trip_active_$cleanId') ?? false;
-    if (!active) return null;
-
-    final deviceId = prefs.getString('trip_device_id_$cleanId') ?? '';
-    final destination = prefs.getString('trip_destination_$cleanId') ?? '';
-    final startedAtStr = prefs.getString('trip_started_at_$cleanId');
-    final vehiclePlate = prefs.getString('trip_vehicle_plate_$cleanId');
-    final vehicleModel = prefs.getString('trip_vehicle_model_$cleanId');
-    final destinationLat = prefs.getDouble('trip_destination_lat_$cleanId');
-    final destinationLng = prefs.getDouble('trip_destination_lng_$cleanId');
-
-    final startedAt = startedAtStr != null ? DateTime.tryParse(startedAtStr) ?? DateTime.now() : DateTime.now();
-
-    return TripInfo(
-      operatorId: cleanId,
-      deviceId: deviceId,
-      destination: destination,
-      startedAt: startedAt,
-      vehiclePlate: vehiclePlate,
-      vehicleModel: vehicleModel,
-      destinationLatitude: destinationLat,
-      destinationLongitude: destinationLng,
-    );
+    final v = await repositorio.ativaDoOperador(cleanId);
+    return v == null ? null : TripInfo.deRegistro(v);
   }
 
+  /// Viagem em andamento do operador informado ou, se não houver, do veículo.
   Future<TripInfo?> getActiveTripByDevice(String deviceId, {String? operatorId}) async {
-    final cleanDevId = deviceId.trim();
     if (operatorId != null && operatorId.trim().isNotEmpty) {
       final trip = await getActiveTrip(operatorId.trim());
       if (trip != null) return trip;
     }
-
-    if (cleanDevId.isNotEmpty) {
-      final prefs = await SharedPreferences.getInstance();
-      for (final key in prefs.getKeys()) {
-        if (key.startsWith('trip_device_id_') && prefs.getString(key) == cleanDevId) {
-          final opId = key.substring('trip_device_id_'.length);
-          if (prefs.getBool('trip_active_$opId') == true) {
-            final trip = await getActiveTrip(opId);
-            if (trip != null) return trip;
-          }
-        }
-      }
-    }
-    return null;
+    if (deviceId.trim().isEmpty) return null;
+    final v = await repositorio.ativaDoDispositivo(deviceId.trim());
+    return v == null ? null : TripInfo.deRegistro(v);
   }
 
+  /// O veículo tem viagem em andamento (de qualquer operador)?
   Future<bool> isDeviceInTrip(String deviceId, {String? operatorId}) async {
-    final cleanDevId = deviceId.trim();
-    final prefs = await SharedPreferences.getInstance();
-
-    if (operatorId != null && operatorId.trim().isNotEmpty) {
-      final active = prefs.getBool('trip_active_${operatorId.trim()}') ?? false;
-      if (active) return true;
-    }
-
-    if (cleanDevId.isNotEmpty) {
-      if (prefs.getBool('trip_device_active_$cleanDevId') == true) {
-        return true;
-      }
-      for (final key in prefs.getKeys()) {
-        if (key.startsWith('trip_device_id_') && prefs.getString(key) == cleanDevId) {
-          final opId = key.substring('trip_device_id_'.length);
-          if (prefs.getBool('trip_active_$opId') == true) {
-            return true;
-          }
-        }
-      }
-    }
-    return false;
+    if (deviceId.trim().isEmpty) return false;
+    return await repositorio.ativaDoDispositivo(deviceId.trim()) != null;
   }
 
-  Future<void> startTrip({
+  /// Ids dos veículos em viagem, numa única consulta.
+  Future<Set<String>> devicesInTrip(List<String> deviceIds) => repositorio.dispositivosEmViagem(deviceIds);
+
+  /// Viagens (em andamento ou encerradas) dos veículos no período.
+  Future<List<ViagemRegistro>> tripsInPeriod(List<String> deviceIds, DateTime inicio, DateTime fim) =>
+      repositorio.doPeriodo(deviceIds, inicio, fim);
+
+  Future<TripInfo> startTrip({
     required String operatorId,
     required String deviceId,
     required String destination,
@@ -155,43 +140,34 @@ class TripService {
     String? vehicleModel,
     double? destinationLatitude,
     double? destinationLongitude,
+    double? originLatitude,
+    double? originLongitude,
   }) async {
-    final cleanId = operatorId.trim();
-    if (cleanId.isEmpty) return;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('trip_active_$cleanId', true);
-    await prefs.setString('trip_device_id_$cleanId', deviceId.trim());
-    await prefs.setBool('trip_device_active_${deviceId.trim()}', true);
-    await prefs.setString('trip_destination_$cleanId', destination.trim());
-    await prefs.setString('trip_started_at_$cleanId', DateTime.now().toIso8601String());
-    if (vehiclePlate != null) {
-      await prefs.setString('trip_vehicle_plate_$cleanId', vehiclePlate.trim());
-    }
-    if (vehicleModel != null) {
-      await prefs.setString('trip_vehicle_model_$cleanId', vehicleModel.trim());
-    }
-    if (destinationLatitude != null) {
-      await prefs.setDouble('trip_destination_lat_$cleanId', destinationLatitude);
-    }
-    if (destinationLongitude != null) {
-      await prefs.setDouble('trip_destination_lng_$cleanId', destinationLongitude);
-    }
+    final v = await repositorio.iniciar(
+      operadorId: operatorId.trim(),
+      dispositivoId: deviceId.trim(),
+      destino: destination,
+      destinoLatitude: destinationLatitude,
+      destinoLongitude: destinationLongitude,
+      origemLatitude: originLatitude,
+      origemLongitude: originLongitude,
+      placaVeiculo: vehiclePlate,
+      modeloVeiculo: vehicleModel,
+    );
     tripStateNotifier.value = true;
+    return TripInfo.deRegistro(v);
   }
 
+  /// Encerra a viagem sem relatório de parada (ex.: logout). O banco gera o
+  /// alerta "viagem encerrada sem relatório" para gerente e ADM.
   Future<void> endTrip(String operatorId) async {
     final cleanId = operatorId.trim();
-    if (cleanId.isNotEmpty) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('trip_active_$cleanId', false);
-      final devId = prefs.getString('trip_device_id_$cleanId');
-      if (devId != null && devId.isNotEmpty) {
-        await prefs.setBool('trip_device_active_$devId', false);
-      }
-    }
+    if (cleanId.isNotEmpty) await repositorio.encerrar(cleanId);
     tripStateNotifier.value = false;
   }
 
+  /// Encerra a viagem depois do formulário "Parar viagem" (o relatório em
+  /// `fins_viagem` deve ser gravado ANTES, para o alerta sair como "com relatório").
   Future<void> endTripWithReport({
     required String operatorId,
     required String motivo,
@@ -203,12 +179,8 @@ class TripService {
   }) async {
     final cleanId = operatorId.trim();
     if (cleanId.isNotEmpty) {
+      await repositorio.encerrar(cleanId, observacoes: motivo);
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('trip_active_$cleanId', false);
-      final devId = prefs.getString('trip_device_id_$cleanId');
-      if (devId != null && devId.isNotEmpty) {
-        await prefs.setBool('trip_device_active_$devId', false);
-      }
       await prefs.setString('trip_stop_motivo_$cleanId', motivo.trim());
       await prefs.setString('trip_stop_rua_$cleanId', rua.trim());
       await prefs.setString('trip_stop_bairro_$cleanId', bairro.trim());

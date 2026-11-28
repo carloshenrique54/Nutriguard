@@ -6,6 +6,7 @@ import '../../services/supabase_service.dart';
 import '../../services/admin_context_service.dart';
 import '../../models/models.dart';
 import '../../widgets/watermark_background.dart';
+import '../../utils/rota_inicial.dart';
 import '../../widgets/responsive_layout.dart';
 
 /// Formatador de texto para transformar caracteres em caixa alta (ex: Placas de veículos)
@@ -122,6 +123,8 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
   List<UsuarioModel> _operadores = [];
   bool _isLoading = true;
   bool _isSubmitting = false;
+  /// Selo do cabeçalho ('ADM'/'GERENTE') do usuário logado.
+  String? _selo;
   DispositivoModel? _dispositivoToEdit;
   bool _hasInitializedRoute = false;
 
@@ -296,8 +299,9 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
     }
 
     // Validação de coerência das temperaturas
-    if (tempMin > tempMax) {
-      _mostrarErro('A temperatura mínima não pode ser maior que a temperatura máxima!');
+    // (o banco exige mínima estritamente menor: regra chk_temperatura_limites)
+    if (tempMin >= tempMax) {
+      _mostrarErro('A temperatura mínima precisa ser menor que a temperatura máxima!');
       return;
     }
 
@@ -309,6 +313,16 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
     final humidade = _parseNum(_humidadeCtrl.text);
     if (humidade == null) {
       _mostrarErro('Informe um valor numérico válido para a umidade máxima!');
+      return;
+    }
+    // Regras do banco (chk_umidade_limites): entre 0 e 100% e acima da mínima
+    if (humidade < 0 || humidade > 100) {
+      _mostrarErro('A umidade máxima precisa estar entre 0% e 100%!');
+      return;
+    }
+    final umidadeMinima = _dispositivoToEdit?.umidadeMinima;
+    if (umidadeMinima != null && humidade <= umidadeMinima) {
+      _mostrarErro('A umidade máxima precisa ser maior que a mínima configurada (${umidadeMinima.toString().replaceAll('.', ',')}%)!');
       return;
     }
 
@@ -331,6 +345,10 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
     final limiteVibracao = _parseInt(_limiteVibracaoCtrl.text);
     if (limiteVibracao == null) {
       _mostrarErro('Informe um valor numérico válido para o limite de vibração!');
+      return;
+    }
+    if (limiteVibracao <= 0) {
+      _mostrarErro('O limite de vibração precisa ser maior que zero (em m/s²)!');
       return;
     }
 
@@ -479,6 +497,9 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
     }
     final perfil = await _supabase.getUsuarioPerfil(currentUserId);
     final role = perfil?.role ?? '';
+    if (mounted && (role == 'admin' || role == 'gerente')) {
+      setState(() => _selo = role == 'admin' ? 'ADM' : 'GERENTE');
+    }
 
     // Admin: qualquer frota da empresa. Gerente: apenas a própria frota
     // (o banco restringe as frotas e operadores visíveis via RLS).
@@ -492,7 +513,7 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
             backgroundColor: Color(0xFFC23147),
           ),
         );
-        Navigator.pushReplacementNamed(context, '/login');
+        Navigator.pushReplacementNamed(context, RotaInicial.paraPapel(role));
       }
     }
   }
@@ -609,7 +630,7 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          widget.userRole,
+                          _selo ?? widget.userRole,
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 12,
@@ -899,12 +920,12 @@ class _CadastrarDispositivoScreenState extends State<CadastrarDispositivoScreen>
                             ),
                             const SizedBox(height: 12),
 
-                            // Limite de Vibração (%)
+                            // Limite de Vibração (m/s²)
                             CustomFormInput(
                               label: 'Limite de vibração',
-                              hintText: 'Ex: 80',
+                              hintText: 'Ex: 6',
                               controller: _limiteVibracaoCtrl,
-                              suffixText: '%',
+                              suffixText: 'm/s²',
                               keyboardType: const TextInputType.numberWithOptions(decimal: true),
                               inputFormatters: [PercentageTextInputFormatter()],
                               enabled: !_isSubmitting,

@@ -10,8 +10,10 @@ import '../../widgets/custom_end_drawer.dart';
 import '../../widgets/watermark_background.dart';
 import '../../services/supabase_service.dart';
 import '../../models/models.dart';
+import '../../utils/alerta_formatacao.dart';
 import '../../services/admin_context_service.dart';
 import '../../services/trip_service.dart';
+import '../../services/viagem_repositorio.dart';
 import '../../widgets/responsive_layout.dart';
 
 class ViagemData {
@@ -22,6 +24,7 @@ class ViagemData {
   final bool ativa;
   final int duracaoMinutos;
   final int qtdeAlertas;
+  final String? destino;
 
   ViagemData({
     required this.dispositivo,
@@ -31,6 +34,7 @@ class ViagemData {
     required this.ativa,
     required this.duracaoMinutos,
     required this.qtdeAlertas,
+    this.destino,
   });
 }
 
@@ -74,6 +78,8 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
   int _tempoRotaAtual = 0;
   int _tempoMedioViagem = 0;
   double _conformidade = 0;
+  /// Há leituras de temperatura no período? Sem elas a conformidade é "--".
+  bool _temConformidade = false;
   int _alertasRecebidos = 0;
 
   @override
@@ -216,11 +222,12 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
       final results = await Future.wait([
         _supabase.getMedicoesFiltro(deviceIds, inicio, fim),
         _supabase.getOcorrenciasFiltro(deviceIds, inicio, fim),
+        TripService().tripsInPeriod(deviceIds, inicio, fim),
       ]);
       _medicoes = results[0] as List<MedicaoModel>;
       _ocorrencias = results[1] as List<OcorrenciaModel>;
 
-      await _calculateMetrics(targetDevices);
+      await _calculateMetrics(targetDevices, results[2] as List<ViagemRegistro>);
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao buscar relatórios: $e')));
     } finally {
@@ -228,7 +235,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
     }
   }
 
-  Future<void> _calculateMetrics(List<DispositivoModel> devices) async {
+  Future<void> _calculateMetrics(List<DispositivoModel> devices, [List<ViagemRegistro> viagens = const []]) async {
     _viagens.clear();
     _tempoRotaAtual = 0;
     _tempoMedioViagem = 0;
@@ -248,49 +255,42 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
         medsByDev.putIfAbsent(m.idDispositivo!, () => []).add(m);
       }
     }
-    final Map<String, int> alertasByDev = {};
-    for (final o in _ocorrencias) {
-      if (o.idDispositivo != null) {
-        alertasByDev[o.idDispositivo!] = (alertasByDev[o.idDispositivo!] ?? 0) + 1;
-      }
-    }
     final Map<String, FrotaModel> frotasById = {for (var f in _frotas) f.id: f};
 
-    // Pre-consulta status de viagem em paralelo para todos os dispositivos
-    final tripFlags = await Future.wait(
-      devices.map((d) => TripService().isDeviceInTrip(d.id, operatorId: d.idOperador)),
-    );
+    // Viagens reais (tabela `viagens`) que estiveram ativas no período.
+    final Map<String, DispositivoModel> devsById = {for (final d in devices) d.id: d};
+    final DateTime agoraCalc = DateTime.now();
+    for (final v in viagens) {
+      final d = devsById[v.idDispositivo];
+      if (d == null) continue;
+      final int duracao = v.duracaoAte(agoraCalc);
+      if (v.emAndamento && duracao > _tempoRotaAtual) _tempoRotaAtual = duracao;
+      final FrotaModel? f = d.idFrota != null ? frotasById[d.idFrota!] : null;
+      final DateTime fimJanela = v.finalizadoEm ?? agoraCalc;
+      final int qtdeAl = _ocorrencias.where((o) {
+        final c = o.criadoEm;
+        return o.idDispositivo == d.id &&
+            !AlertaFormatacao.informativo(o.tipo) &&
+            c != null &&
+            !c.isBefore(v.iniciadoEm) &&
+            !c.isAfter(fimJanela);
+      }).length;
+      _viagens.add(ViagemData(
+        dispositivo: d,
+        frota: f,
+        inicio: v.iniciadoEm,
+        fim: v.finalizadoEm,
+        ativa: v.emAndamento,
+        duracaoMinutos: duracao,
+        qtdeAlertas: qtdeAl,
+        destino: v.destino,
+      ));
+    }
 
     for (var i = 0; i < devices.length; i++) {
       final d = devices[i];
       final meds = medsByDev[d.id];
       if (meds != null && meds.isNotEmpty) {
-        meds.sort((a, b) => a.registradoEm!.compareTo(b.registradoEm!));
-        
-        final DateTime inicio = meds.first.registradoEm!;
-        final DateTime fim = meds.last.registradoEm!;
-        
-        // Status de viagem calculado em paralelo
-        final bool ativa = tripFlags[i];
-        final int duracao = fim.difference(inicio).inMinutes;
-
-        if (ativa && duracao > _tempoRotaAtual) {
-          _tempoRotaAtual = duracao;
-        }
-
-        final int qtdeAl = alertasByDev[d.id] ?? 0;
-        final FrotaModel? f = d.idFrota != null ? frotasById[d.idFrota!] : null;
-        
-        _viagens.add(ViagemData(
-          dispositivo: d,
-          frota: f,
-          inicio: inicio,
-          fim: ativa ? null : fim,
-          ativa: ativa,
-          duracaoMinutos: duracao,
-          qtdeAlertas: qtdeAl,
-        ));
-
         final num tMin = d.temperaturaMinima ?? minTempDefault;
         final num tMax = d.temperaturaMaxima ?? maxTempDefault;
 
@@ -307,9 +307,10 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
 
     _totalViagens = _viagens.length;
     _conformidade = totalValidas > 0 ? (dentroLimite / totalValidas) * 100 : 100.0;
+    _temConformidade = totalValidas > 0;
     
+    // Conformidade depende só das leituras; tempo médio, das viagens.
     if (_viagens.isEmpty) {
-      _conformidade = 0.0;
       _tempoMedioViagem = 0;
     } else {
       int totalDuracao = 0;
@@ -390,7 +391,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
                       : 'Tempo médio de viagem: ${_tempoMedioViagem ~/ 60}h ${_tempoMedioViagem % 60}m')
                   : 'Tempo médio de viagem: ${_tempoMedioViagem ~/ 60}h ${_tempoMedioViagem % 60}m',
             ),
-            pw.Bullet(text: 'Conformidade: ${_conformidade.toStringAsFixed(1)}%'),
+            pw.Bullet(text: 'Conformidade: ${_temConformidade ? '${_conformidade.toStringAsFixed(1).replaceAll('.', ',')}%' : 'sem leituras no período'}'),
             pw.Bullet(text: 'Alertas Recebidos: $_alertasRecebidos'),
             pw.SizedBox(height: 16),
             pw.Text(
@@ -400,12 +401,12 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
             if (_selectedDispositivoId == null) ...[
               pw.Bullet(text: 'Temperatura Média da Frota: ${avgTemp != null ? "${avgTemp.toStringAsFixed(1)}°C" : "N/D"} | Mín: ${minTemp?.toStringAsFixed(1) ?? "N/D"}°C | Máx: ${maxTemp?.toStringAsFixed(1) ?? "N/D"}°C'),
               pw.Bullet(text: 'Umidade Média da Frota: ${avgUmid != null ? "${avgUmid.toStringAsFixed(0)}%" : "N/D"}'),
-              pw.Bullet(text: 'Pico Máximo de Vibração na Frota: ${maxVib != null ? "${maxVib.toStringAsFixed(2)}G" : "N/D"}'),
+              pw.Bullet(text: 'Pico Máximo de Vibração na Frota: ${maxVib != null ? "${maxVib.toStringAsFixed(2)} m/s²" : "N/D"}'),
               pw.Bullet(text: 'Menor Bateria da Frota: ${latestMed?.bateria != null ? "${latestMed!.bateria!.toStringAsFixed(0)}%" : "N/D"} | Porta: ${latestMed?.portaAberta == true ? "Aberta" : "Fechada"}'),
             ] else ...[
               pw.Bullet(text: 'Temperatura: ${latestMed?.temperatura != null ? "${latestMed!.temperatura!.toStringAsFixed(1)}°C (última)" : "N/D"} | Média: ${avgTemp?.toStringAsFixed(1) ?? "N/D"}°C | Mín: ${minTemp?.toStringAsFixed(1) ?? "N/D"}°C | Máx: ${maxTemp?.toStringAsFixed(1) ?? "N/D"}°C'),
               pw.Bullet(text: 'Umidade: ${latestMed?.umidade != null ? "${latestMed!.umidade!.toStringAsFixed(0)}% (última)" : "N/D"} | Média: ${avgUmid?.toStringAsFixed(0) ?? "N/D"}%'),
-              pw.Bullet(text: 'Vibração: ${latestMed?.vibracao != null ? "${latestMed!.vibracao!.toStringAsFixed(2)}G (última)" : "N/D"} | Pico máx: ${maxVib?.toStringAsFixed(2) ?? "N/D"}G'),
+              pw.Bullet(text: 'Vibração: ${latestMed?.vibracao != null ? "${latestMed!.vibracao!.toStringAsFixed(2)} m/s² (última)" : "N/D"} | Pico máx: ${maxVib != null ? "${maxVib.toStringAsFixed(2)} m/s²" : "N/D"}'),
               pw.Bullet(text: 'Bateria e Compartimento: ${latestMed?.bateria != null ? "${latestMed!.bateria!.toStringAsFixed(0)}%" : "N/D"} | Porta: ${latestMed?.portaAberta == true ? "Aberta" : "Fechada"}'),
             ],
             pw.SizedBox(height: 16),
@@ -422,9 +423,9 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
                   return [
                     o.criadoEm != null ? DateFormat('dd/MM/yy HH:mm').format(o.criadoEm!) : '-',
                     dev?.placaVeiculo ?? dev?.nomeDispositivo ?? o.idDispositivo ?? 'N/D',
-                    o.tipo ?? 'Alerta',
-                    o.valorRegistrado?.toString() ?? '-',
-                    o.limiteConfigurado?.toString() ?? '-',
+                    AlertaFormatacao.titulo(o.tipo),
+                    o.valorRegistrado != null ? '${AlertaFormatacao.numero(o.valorRegistrado!)}${AlertaFormatacao.unidade(o.tipo)}' : '-',
+                    o.limiteConfigurado != null ? '${AlertaFormatacao.numero(o.limiteConfigurado!)}${AlertaFormatacao.unidade(o.tipo)}' : '-',
                     o.status ?? 'Pendente',
                   ];
                 }).toList(),
@@ -1068,12 +1069,12 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
     final String tempoTitle = showRotaAtual ? 'Tempo na rota atual' : 'Tempo médio de viagem';
 
     String conformidadeStr;
-    if (_conformidade == 0.0) {
-      conformidadeStr = '0.0%';
+    if (!_temConformidade) {
+      conformidadeStr = '--';
     } else if (_conformidade == _conformidade.roundToDouble()) {
       conformidadeStr = '${_conformidade.toInt()}%';
     } else {
-      conformidadeStr = '${_conformidade.toStringAsFixed(0)}%';
+      conformidadeStr = '${_conformidade.toStringAsFixed(1).replaceAll('.', ',')}%';
     }
 
     return LayoutBuilder(
@@ -1266,9 +1267,9 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
 
     final String vibTitle = isFleet ? 'Pico de Vibração' : 'Vibração';
     final String vibStr = isFleet
-        ? (maxVib != null ? '${maxVib.toStringAsFixed(2)}G' : (latestMed?.vibracao != null ? '${latestMed!.vibracao!.toStringAsFixed(2)}G' : '--'))
-        : (latestMed?.vibracao != null ? '${latestMed!.vibracao!.toStringAsFixed(2)}G' : '--');
-    final String vibSub = isFleet ? 'Maior impacto na frota' : (maxVib != null ? 'Pico máx: ${maxVib.toStringAsFixed(2)}G' : 'Estável');
+        ? (maxVib != null ? '${maxVib.toStringAsFixed(2)} m/s²' : (latestMed?.vibracao != null ? '${latestMed!.vibracao!.toStringAsFixed(2)} m/s²' : '--'))
+        : (latestMed?.vibracao != null ? '${latestMed!.vibracao!.toStringAsFixed(2)} m/s²' : '--');
+    final String vibSub = isFleet ? 'Maior impacto na frota' : (maxVib != null ? 'Pico máx: ${maxVib.toStringAsFixed(2)} m/s²' : 'Estável');
 
     final String batTitle = isFleet ? 'Menor Bateria' : 'Bateria & Porta';
     final String batStr = isFleet
@@ -1538,13 +1539,18 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
     String limitLabel = '8°C';
     String paramTitle = 'Temperatura média';
 
+    // Limites do veículo selecionado (quando houver) em vez de valores fixos
+    final DispositivoModel? veiculoSel = _selectedDispositivoId == null
+        ? null
+        : _dispositivos.where((x) => x.id == _selectedDispositivoId).firstOrNull;
+
     if (_selectedTelemetriaParametro == 'Umidade') {
-      limit = 60.0;
-      limitLabel = '60%';
+      limit = veiculoSel?.umidadeMaxima?.toDouble() ?? 80.0;
+      limitLabel = '${limit.toStringAsFixed(0)}%';
       paramTitle = 'Umidade média';
     } else if (_selectedTelemetriaParametro == 'Vibração') {
-      limit = 2.0;
-      limitLabel = '2.0G';
+      limit = veiculoSel?.limiteVibracao?.toDouble() ?? 6.0;
+      limitLabel = '${AlertaFormatacao.numero(limit)} m/s²';
       paramTitle = 'Vibração média';
     } else {
       // Temperatura
@@ -1677,9 +1683,10 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
       unitSuffix = '%';
     } else if (_selectedTelemetriaParametro == 'Vibração') {
       minY = 0.0;
-      maxY = (maxYFound > 2.0 ? maxYFound + 0.8 : 3.0).ceilToDouble();
-      yInterval = 1.0;
-      unitSuffix = 'G';
+      final double topo = (maxYFound > limit ? maxYFound : limit) * 1.2;
+      yInterval = _passoEixo(topo / 4);
+      maxY = (topo / yInterval).ceilToDouble() * yInterval;
+      unitSuffix = ' m/s²';
     } else {
       // Temperatura: a escala acompanha os dados (inclusive negativos, como
       // em cargas congeladas) e sempre mostra os limites e o zero.
@@ -1860,7 +1867,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
                                 interval: yInterval,
                                 getTitlesWidget: (value, meta) {
                                   return Text(
-                                    '${value == value.roundToDouble() ? value.toInt() : value.toStringAsFixed(1)}$unitSuffix',
+                                    '${value == value.roundToDouble() ? value.toInt() : value.toStringAsFixed(1)}${unitSuffix.length > 2 ? '' : unitSuffix}',
                                     style: const TextStyle(fontSize: 9.5, color: Color(0xFF888888)),
                                   );
                                 },
@@ -1933,7 +1940,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
                                 interval: yInterval,
                                 getTitlesWidget: (value, meta) {
                                   return Text(
-                                    '${value == value.roundToDouble() ? value.toInt() : value.toStringAsFixed(1)}$unitSuffix',
+                                    '${value == value.roundToDouble() ? value.toInt() : value.toStringAsFixed(1)}${unitSuffix.length > 2 ? '' : unitSuffix}',
                                     style: const TextStyle(fontSize: 9.5, color: Color(0xFF888888)),
                                   );
                                 },
@@ -2378,10 +2385,13 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
     Color alertColor = const Color(0xFFC23147);
     String unit = '';
 
-    if (tipoLower.contains('vibr')) {
+    if (AlertaFormatacao.viagem(o.tipo)) {
+      alertIcon = AlertaFormatacao.iconeViagem(o.tipo)!;
+      alertColor = AlertaFormatacao.corViagem(o.tipo);
+    } else if (tipoLower.contains('vibr')) {
       alertIcon = Icons.vibration_rounded;
       alertColor = const Color(0xFFE65100);
-      unit = 'G';
+      unit = ' m/s²';
     } else if (tipoLower.contains('umid')) {
       alertIcon = Icons.water_drop_outlined;
       alertColor = const Color(0xFF0288D1);
@@ -2395,7 +2405,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
       unit = '°C';
     }
 
-    final bool isResolvido = (o.status ?? '').toLowerCase() == 'resolvido';
+    final bool isResolvido = AlertaFormatacao.resolvido(o.status);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -2437,7 +2447,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
                   children: [
                     Expanded(
                       child: Text(
-                        o.tipo ?? 'Alerta de Telemetria',
+                        AlertaFormatacao.titulo(o.tipo),
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 13,
@@ -2456,7 +2466,7 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
-                        isResolvido ? 'Resolvido' : (o.status ?? 'Pendente'),
+                        AlertaFormatacao.status(o.status),
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
@@ -2479,7 +2489,16 @@ class _RelatoriosScreenState extends State<RelatoriosScreen> {
                         color: Color(0xFF333333),
                       ),
                     ),
-                    if (o.valorRegistrado != null) ...[
+                    if (AlertaFormatacao.viagem(o.tipo)) ...[
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          '• ${AlertaFormatacao.detalhe(o)}',
+                          style: const TextStyle(fontSize: 11, color: Color(0xFF555555)),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ] else if (o.valorRegistrado != null) ...[
                       const SizedBox(width: 6),
                       Text(
                         '• Registrado: ${o.valorRegistrado}$unit',

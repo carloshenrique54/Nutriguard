@@ -6,6 +6,7 @@ import '../../models/models.dart';
 import '../../widgets/animated_components.dart';
 import '../../widgets/watermark_background.dart';
 import '../../widgets/confirmation_dialog.dart';
+import '../../utils/rota_inicial.dart';
 import '../../widgets/responsive_layout.dart';
 
 class ListarOperadoresScreen extends StatefulWidget {
@@ -110,7 +111,7 @@ class _ListarOperadoresScreenState extends State<ListarOperadoresScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Acesso negado para seu perfil', style: TextStyle(color: Colors.white)), backgroundColor: Colors.red),
         );
-        Navigator.pushReplacementNamed(context, '/login');
+        Navigator.pushReplacementNamed(context, RotaInicial.paraPapel(role));
       }
     }
   }

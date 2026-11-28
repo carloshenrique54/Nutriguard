@@ -6,6 +6,7 @@ import '../../services/admin_context_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/models.dart';
 import '../../widgets/watermark_background.dart';
+import '../../utils/rota_inicial.dart';
 import '../../widgets/responsive_layout.dart';
 
 class VeiculoItem {
@@ -340,7 +341,7 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Acesso negado para seu perfil', style: TextStyle(color: Colors.white)), backgroundColor: Colors.red),
         );
-        Navigator.pushReplacementNamed(context, '/login');
+        Navigator.pushReplacementNamed(context, RotaInicial.paraPapel(role));
       }
     }
   }
@@ -551,6 +552,31 @@ class _CriarFrotaScreenState extends State<CriarFrotaScreen> {
                   ),
                 ),
               ),
+              if (!_isLoading && _gerentes.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Cada frota precisa de um gerente sem frota. Cadastre um gerente primeiro.',
+                          style: TextStyle(color: Colors.black54, fontSize: 12),
+                        ),
+                      ),
+                      TextButton.icon(
+                        key: const Key('cadastrar_gerente_atalho'),
+                        onPressed: _isSubmitting
+                            ? null
+                            : () async {
+                                await Navigator.pushNamed(context, '/cadastrar-funcionario');
+                                if (mounted) _fetchData();
+                              },
+                        icon: const Icon(Icons.person_add_alt_1, size: 18, color: Color(0xFFC23147)),
+                        label: const Text('Cadastrar gerente', style: TextStyle(color: Color(0xFFC23147), fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ),
+                ),
 
               // 4. CABEÇALHO DA LISTA DE VEÍCULOS
               const SizedBox(height: 24),

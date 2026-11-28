@@ -5,8 +5,10 @@ import '../../widgets/custom_bottom_nav_bar.dart';
 import '../../widgets/custom_end_drawer.dart';
 import '../../services/supabase_service.dart';
 import '../../models/models.dart';
+import '../../utils/alerta_formatacao.dart';
 import '../../widgets/watermark_background.dart';
 import '../../services/admin_context_service.dart';
+import '../../services/trip_service.dart';
 import '../../widgets/responsive_layout.dart';
 
 class HistoricoItem {
@@ -223,7 +225,7 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
     final DateTime agora = DateTime.now();
     final DateTime inicio = agora.subtract(const Duration(days: 30));
 
-    List<HistoricoItem> items = [];
+    final List<HistoricoItem> items = [];
 
     if (targetIds.isNotEmpty) {
       List<OcorrenciaModel> ocorrencias = [];
@@ -243,152 +245,138 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
       for (var o in ocorrencias) {
         final date = o.criadoEm ?? agora;
         final hora = DateFormat('H:mm').format(date);
-        final tipo = o.tipo ?? 'Alerta registrado';
-        final lower = tipo.toLowerCase();
-
-        String title = tipo;
-        String? detail;
-        IconData icon = Icons.thermostat_outlined;
-
-        if (lower.contains('vibra') || lower.contains('impacto')) {
-          title = 'Impacto elevado';
-          icon = Icons.view_in_ar_outlined;
-          detail = o.valorRegistrado != null
-              ? 'Intensidade ${o.valorRegistrado.toString().replaceAll(RegExp(r'\.0$'), '')}Kg'
-              : 'Intensidade 2Kg';
-        } else if (lower.contains('temperatura') || lower.contains('térmico')) {
-          final lim = o.limiteConfigurado != null
-              ? '${o.limiteConfigurado.toString().replaceAll(RegExp(r'\.0$'), '')}°C'
-              : '8°C';
-          title = 'Temperatura acima do limite de $lim';
+        final lower = (o.tipo ?? '').toLowerCase();
+        final String title = AlertaFormatacao.titulo(o.tipo);
+        final String detail = AlertaFormatacao.detalhe(o);
+        final bool ehViagem = AlertaFormatacao.viagem(o.tipo);
+        IconData icon = AlertaFormatacao.iconeViagem(o.tipo) ?? Icons.warning_amber_rounded;
+        if (ehViagem) {
+          // ícone já definido
+        } else if (lower.contains('vibra')) {
+          icon = Icons.vibration_rounded;
+        } else if (lower.contains('temperatura')) {
           icon = Icons.thermostat_outlined;
-          detail = o.valorRegistrado != null
-              ? '${o.valorRegistrado.toString().replaceAll(RegExp(r'\.0$'), '')}°C'
-              : '10°C';
         } else if (lower.contains('porta')) {
-          title = 'Porta aberta detectada';
           icon = Icons.sensor_door_outlined;
-          detail = 'Duração excessiva';
         } else if (lower.contains('umidade')) {
-          final lim = o.limiteConfigurado != null
-              ? '${o.limiteConfigurado.toString().replaceAll(RegExp(r'\.0$'), '')}%'
-              : 'limite';
-          title = 'Umidade fora do limite ($lim)';
           icon = Icons.water_drop_outlined;
-          detail = o.valorRegistrado != null ? '${o.valorRegistrado}%' : null;
+        } else if (lower.contains('bateria')) {
+          icon = Icons.battery_alert_rounded;
         }
 
         items.add(HistoricoItem(
           id: o.id,
           title: title,
-          location: 'São José dos Campos',
+          location: AlertaFormatacao.veiculo(o.idDispositivo, _dispositivos),
           time: hora,
           timestamp: date,
-          isAlert: true,
+          isAlert: !ehViagem,
           extraDetail: detail,
           icon: icon,
-          iconColor: const Color(0xFFC23147),
-          iconBgColor: const Color(0xFFFDE8EC),
-          iconBorderColor: const Color(0xFFF8BBD0),
+          iconColor: ehViagem ? AlertaFormatacao.corViagem(o.tipo) : const Color(0xFFC23147),
+          iconBgColor: ehViagem ? AlertaFormatacao.fundoViagem(o.tipo) : const Color(0xFFFDE8EC),
+          iconBorderColor: ehViagem ? AlertaFormatacao.corViagem(o.tipo).withValues(alpha: 0.3) : const Color(0xFFF8BBD0),
         ));
       }
 
-      // 2. Process Measurements (Normal Telemetry Checkpoints)
+      // 2. Medições: status calculado com os limites do veículo
+      final Map<String, DispositivoModel> veiculosPorId = {for (final d in _dispositivos) d.id: d};
       for (var m in medicoes) {
         final date = m.registradoEm ?? agora;
         final hora = DateFormat('H:mm').format(date);
+        final v = veiculosPorId[m.idDispositivo];
+        final local = AlertaFormatacao.veiculo(m.idDispositivo, _dispositivos);
 
         if (m.umidade != null) {
-            items.add(HistoricoItem(
-              id: '${m.id}_umi',
-              title: 'Umidade dentro do limite',
-              location: 'São José dos Campos',
-              time: hora,
-              timestamp: date,
-              isAlert: false,
-              extraDetail: null,
-              icon: Icons.water_drop_outlined,
-              iconColor: const Color(0xFF8DB600),
-              iconBgColor: const Color(0xFFF1F8E9),
-              iconBorderColor: const Color(0xFFD4E7B5),
-            ));
-          }
+          final double u = m.umidade!.toDouble();
+          final bool fora = (v?.umidadeMaxima != null && u > v!.umidadeMaxima!) ||
+              (v?.umidadeMinima != null && u < v!.umidadeMinima!);
+          items.add(HistoricoItem(
+            id: '${m.id}_umi',
+            title: fora ? 'Umidade fora do limite' : 'Umidade dentro do limite',
+            location: local,
+            time: hora,
+            timestamp: date,
+            isAlert: fora,
+            extraDetail: '${AlertaFormatacao.numero(u)}%',
+            icon: Icons.water_drop_outlined,
+            iconColor: fora ? const Color(0xFFC23147) : const Color(0xFF8DB600),
+            iconBgColor: fora ? const Color(0xFFFDE8EC) : const Color(0xFFF1F8E9),
+            iconBorderColor: fora ? const Color(0xFFF8BBD0) : const Color(0xFFD4E7B5),
+          ));
+        }
 
-          if (m.temperatura != null) {
+        if (m.temperatura != null) {
+          final double t = m.temperatura!.toDouble();
+          final bool fora = (v?.temperaturaMaxima != null && t > v!.temperaturaMaxima!) ||
+              (v?.temperaturaMinima != null && t < v!.temperaturaMinima!);
+          items.add(HistoricoItem(
+            id: '${m.id}_temp',
+            title: fora ? 'Temperatura fora do limite' : 'Temperatura dentro do limite',
+            location: local,
+            time: hora,
+            timestamp: date.add(const Duration(seconds: 1)),
+            isAlert: fora,
+            extraDetail: '${AlertaFormatacao.numero(t)}°C',
+            icon: Icons.thermostat_outlined,
+            iconColor: fora ? const Color(0xFFC23147) : const Color(0xFF8DB600),
+            iconBgColor: fora ? const Color(0xFFFDE8EC) : const Color(0xFFF1F8E9),
+            iconBorderColor: fora ? const Color(0xFFF8BBD0) : const Color(0xFFD4E7B5),
+          ));
+        }
+      }
+    }
+
+    // Viagens (tabela `viagens`): início e fim. O fim só entra aqui quando não
+    // há o aviso de fim de viagem correspondente (o operador não recebe esse aviso).
+    if (targetIds.isNotEmpty) {
+      final viagens = await TripService().tripsInPeriod(targetIds, inicio, agora);
+      for (final v in viagens) {
+        final local = AlertaFormatacao.veiculo(v.idDispositivo, _dispositivos);
+        if (!v.iniciadoEm.isBefore(inicio)) {
+          items.add(HistoricoItem(
+            id: 'viagem_ini_${v.id}',
+            title: 'Viagem iniciada',
+            location: local,
+            time: DateFormat('H:mm').format(v.iniciadoEm),
+            timestamp: v.iniciadoEm,
+            isAlert: false,
+            extraDetail: 'Destino: ${v.destino}',
+            icon: Icons.play_circle_outline,
+            iconColor: const Color(0xFF8DB600),
+            iconBgColor: const Color(0xFFF1F8E9),
+            iconBorderColor: const Color(0xFFD4E7B5),
+          ));
+        }
+        final fimEm = v.finalizadoEm;
+        if (fimEm != null) {
+          final temAviso = items.any((it) =>
+              it.icon != Icons.play_circle_outline &&
+              (it.title == AlertaFormatacao.titulo('viagem_finalizada') ||
+                  it.title == AlertaFormatacao.titulo('viagem_encerrada_sem_relatorio')) &&
+              it.location == local &&
+              it.timestamp.difference(fimEm).inMinutes.abs() <= 2);
+          if (!temAviso) {
             items.add(HistoricoItem(
-              id: '${m.id}_temp',
-              title: 'Temperatura dentro do limite',
-              location: 'São José dos Campos',
-              time: hora,
-              timestamp: date.add(const Duration(seconds: 1)),
+              id: 'viagem_fim_${v.id}',
+              title: 'Viagem finalizada',
+              location: local,
+              time: DateFormat('H:mm').format(fimEm),
+              timestamp: fimEm,
               isAlert: false,
-              extraDetail: null,
-              icon: Icons.thermostat_outlined,
-              iconColor: const Color(0xFF8DB600),
-              iconBgColor: const Color(0xFFF1F8E9),
-              iconBorderColor: const Color(0xFFD4E7B5),
+              extraDetail: 'Destino: ${v.destino} · ${AlertaFormatacao.duracao(v.duracaoAte(fimEm))}',
+              icon: Icons.flag_outlined,
+              iconColor: const Color(0xFF2E7D32),
+              iconBgColor: const Color(0xFFE8F5E9),
+              iconBorderColor: const Color(0xFFC8E6C9),
             ));
           }
         }
       }
-
-    // 3. Fallback demo data if items is empty, perfectly matching prototype mockup
-    if (items.isEmpty) {
-      final now = DateTime.now();
-      final baseDate = DateTime(now.year, now.month, now.day);
-      items = [
-        HistoricoItem(
-          id: 'demo-1',
-          title: 'Umidade dentro do limite',
-          location: 'São José dos Campos',
-          time: '9:30',
-          timestamp: baseDate.add(const Duration(hours: 9, minutes: 30)),
-          isAlert: false,
-          icon: Icons.water_drop_outlined,
-          iconColor: const Color(0xFF8DB600),
-          iconBgColor: const Color(0xFFF1F8E9),
-          iconBorderColor: const Color(0xFFD4E7B5),
-        ),
-        HistoricoItem(
-          id: 'demo-2',
-          title: 'Temperatura dentro do limite',
-          location: 'São José dos Campos',
-          time: '9:50',
-          timestamp: baseDate.add(const Duration(hours: 9, minutes: 50)),
-          isAlert: false,
-          icon: Icons.thermostat_outlined,
-          iconColor: const Color(0xFF8DB600),
-          iconBgColor: const Color(0xFFF1F8E9),
-          iconBorderColor: const Color(0xFFD4E7B5),
-        ),
-        HistoricoItem(
-          id: 'demo-3',
-          title: 'Temperatura acima do limite de 8°C',
-          location: 'São José dos Campos',
-          time: '12:00',
-          timestamp: baseDate.add(const Duration(hours: 10, minutes: 10)),
-          isAlert: true,
-          extraDetail: '10°C',
-          icon: Icons.thermostat_outlined,
-          iconColor: const Color(0xFFC23147),
-          iconBgColor: const Color(0xFFFDE8EC),
-          iconBorderColor: const Color(0xFFF8BBD0),
-        ),
-        HistoricoItem(
-          id: 'demo-4',
-          title: 'Impacto elevado',
-          location: 'São José dos Campos',
-          time: '10:10',
-          timestamp: baseDate.add(const Duration(hours: 10, minutes: 10, seconds: 1)),
-          isAlert: true,
-          extraDetail: 'Intensidade 2Kg',
-          icon: Icons.view_in_ar_outlined,
-          iconColor: const Color(0xFFC23147),
-          iconBgColor: const Color(0xFFFDE8EC),
-          iconBorderColor: const Color(0xFFF8BBD0),
-        ),
-      ];
     }
+
+    // Sem dados: a tela mostra o estado vazio ("Nenhum evento registrado...").
+    // (Antes eram exibidos alertas fictícios de demonstração.)
 
     // Sort items chronologically
     items.sort((a, b) => a.timestamp.compareTo(b.timestamp));
@@ -720,7 +708,7 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
             children: [
               const Flexible(
                 child: Text(
-                  'Historico',
+                  'Histórico',
                   style: TextStyle(
                     fontSize: 26,
                     fontWeight: FontWeight.bold,

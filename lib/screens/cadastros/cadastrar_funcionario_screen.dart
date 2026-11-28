@@ -4,6 +4,7 @@ import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../../widgets/custom_end_drawer.dart';
 import '../../services/supabase_service.dart';
 import '../../widgets/watermark_background.dart';
+import '../../utils/rota_inicial.dart';
 import '../../widgets/responsive_layout.dart';
 
 class CadastrarFuncionarioScreen extends StatefulWidget {
@@ -98,7 +99,7 @@ class _CadastrarFuncionarioScreenState extends State<CadastrarFuncionarioScreen>
             backgroundColor: Color(0xFFC23147),
           ),
         );
-        Navigator.pop(context);
+        Navigator.pushReplacementNamed(context, RotaInicial.paraPapel(role));
       }
     }
   }
@@ -462,9 +463,9 @@ class _CadastrarFuncionarioScreenState extends State<CadastrarFuncionarioScreen>
                         color: const Color(0xFFC23147),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Text(
-                        'ADM',
-                        style: TextStyle(
+                      child: Text(
+                        _isGerente ? 'GERENTE' : 'ADM',
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 12,
                           fontWeight: FontWeight.bold,

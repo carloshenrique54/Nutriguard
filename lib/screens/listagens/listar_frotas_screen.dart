@@ -218,6 +218,8 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
                                   confirmDismiss: (direction) async {
                                     HapticFeedback.mediumImpact();
                                     if (direction == DismissDirection.endToStart) {
+                                      // Só o ADM exclui frotas (o gerente apenas vê a sua).
+                                      if (_userRole != 'admin') return false;
                                       return await _showDeleteDialog(context, fleet);
                                     } else {
                                       // Edit Action
@@ -259,10 +261,12 @@ class _ListarFrotasScreenState extends State<ListarFrotasScreen> {
                                             if (res == true || mounted) _fetchData();
                                           }
                                         : null,
-                                    onDelete: () {
-                                      HapticFeedback.mediumImpact();
-                                      _showDeleteDialog(context, fleet);
-                                    },
+                                    onDelete: _userRole == 'admin'
+                                        ? () {
+                                            HapticFeedback.mediumImpact();
+                                            _showDeleteDialog(context, fleet);
+                                          }
+                                        : null,
                                     onTap: () {
                                       if (_userRole == 'admin') {
                                         AdminContextService().setFrota(fleet);
@@ -332,7 +336,7 @@ class FleetCard extends StatelessWidget {
   final String gerenteName;
   final int deviceCount;
   final VoidCallback? onEdit;
-  final VoidCallback onDelete;
+  final VoidCallback? onDelete;
   final VoidCallback onTap;
   final VoidCallback? onTapVehicles;
 
@@ -342,7 +346,7 @@ class FleetCard extends StatelessWidget {
     required this.gerenteName,
     required this.deviceCount,
     this.onEdit,
-    required this.onDelete,
+    this.onDelete,
     required this.onTap,
     this.onTapVehicles,
   });
@@ -437,12 +441,13 @@ class FleetCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 8),
                         ],
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline, color: Color(0xFFC23147), size: 20),
-                          onPressed: onDelete,
-                          constraints: const BoxConstraints(),
-                          padding: EdgeInsets.zero,
-                        ),
+                        if (onDelete != null)
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, color: Color(0xFFC23147), size: 20),
+                            onPressed: onDelete,
+                            constraints: const BoxConstraints(),
+                            padding: EdgeInsets.zero,
+                          ),
                       ],
                     ),
                     const SizedBox(height: 4),

@@ -4,6 +4,7 @@ import '../../widgets/custom_end_drawer.dart';
 import '../../widgets/watermark_background.dart';
 import '../../services/supabase_service.dart';
 import '../../models/models.dart';
+import '../../utils/alerta_formatacao.dart';
 import '../../services/admin_context_service.dart';
 import '../../widgets/responsive_layout.dart';
 
@@ -526,23 +527,27 @@ class _AlertasScreenState extends State<AlertasScreen> {
   }
 
   Widget _buildStatusCard() {
-    final int ativos = _ocorrencias.where((o) => o.status != 'Resolvido').length;
+    final int ativos = _ocorrencias.where((o) => !AlertaFormatacao.resolvido(o.status)).length;
+    final bool tudoCerto = ativos == 0;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFC23147),
+        color: tudoCerto ? const Color(0xFF2E7D32) : const Color(0xFFC23147),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Status Geral', style: TextStyle(color: Colors.white70, fontSize: 14)),
-                SizedBox(height: 4),
-                Text('Atenção Necessária', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                const Text('Status Geral', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                const SizedBox(height: 4),
+                Text(
+                  tudoCerto ? 'Nenhum alerta ativo' : 'Atenção Necessária',
+                  style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                ),
               ],
             ),
           ),
@@ -565,7 +570,7 @@ class _AlertasScreenState extends State<AlertasScreen> {
   }
 
   Widget _buildAlertCard(OcorrenciaModel o) {
-    final bool isCritical = o.tipo != null && o.tipo!.toLowerCase().contains('crítico');
+    final bool isCritical = AlertaFormatacao.critico(o.tipo);
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -588,12 +593,16 @@ class _AlertasScreenState extends State<AlertasScreen> {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: isCritical ? const Color(0xFFFEEBEE) : const Color(0xFFFFF8E1),
+                  color: AlertaFormatacao.viagem(o.tipo)
+                      ? AlertaFormatacao.fundoViagem(o.tipo)
+                      : (isCritical ? const Color(0xFFFEEBEE) : const Color(0xFFFFF8E1)),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
-                  isCritical ? Icons.warning_rounded : Icons.info_outline,
-                  color: isCritical ? const Color(0xFFC23147) : Colors.orange,
+                  AlertaFormatacao.iconeViagem(o.tipo) ?? (isCritical ? Icons.warning_rounded : Icons.info_outline),
+                  color: AlertaFormatacao.viagem(o.tipo)
+                      ? AlertaFormatacao.corViagem(o.tipo)
+                      : (isCritical ? const Color(0xFFC23147) : Colors.orange),
                   size: 24,
                 ),
               ),
@@ -603,12 +612,12 @@ class _AlertasScreenState extends State<AlertasScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      o.tipo ?? 'Alerta Registrado',
+                      AlertaFormatacao.titulo(o.tipo),
                       style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Disp: ${o.idDispositivo?.substring(0, 8) ?? 'N/D'} | Valor: ${o.valorRegistrado ?? '-'}',
+                      '${AlertaFormatacao.veiculo(o.idDispositivo, _dispositivos)} · ${AlertaFormatacao.detalhe(o)}',
                       style: const TextStyle(fontSize: 12, color: Colors.black54),
                     ),
                   ],
@@ -620,7 +629,7 @@ class _AlertasScreenState extends State<AlertasScreen> {
                   const Icon(Icons.access_time, color: Colors.black54, size: 14),
                   const SizedBox(width: 4),
                   Text(
-                    o.criadoEm != null ? '${o.criadoEm!.day}/${o.criadoEm!.month} ${o.criadoEm!.hour}:${o.criadoEm!.minute.toString().padLeft(2, '0')}' : '',
+                    AlertaFormatacao.dataHora(o.criadoEm),
                     style: const TextStyle(color: Colors.black54, fontSize: 12, fontWeight: FontWeight.w600),
                   ),
                 ],
