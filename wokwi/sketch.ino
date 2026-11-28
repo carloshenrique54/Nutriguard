@@ -47,7 +47,7 @@ const int PIN_LED_ATEN = 33;
 const int PIN_LED_CRIT = 32;
 // MPU6050 no I2C padrão do ESP32: SDA = 21, SCL = 22
 
-const unsigned long INTERVALO_ENVIO_MS = 10000;   // 10 s entre medições
+const unsigned long INTERVALO_ENVIO_MS = 5000;    // 5 s entre medições (o app atualiza a cada 5 s; DHT22 pede >= 2 s)
 
 // ---------- Limites (valores padrão até a plataforma responder) ----------
 float tempMin       = 2.0;

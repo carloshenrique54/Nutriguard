@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../widgets/custom_bottom_nav_bar.dart';
@@ -55,6 +56,32 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fetchData();
     });
+    _atualizacao = Timer.periodic(const Duration(seconds: 5), (_) => _atualizarSilencioso());
+  }
+
+  @override
+  void dispose() {
+    _atualizacao?.cancel();
+    super.dispose();
+  }
+
+  Timer? _atualizacao;
+  bool _atualizando = false;
+
+  /// Leituras do ESP32 chegam a cada poucos segundos: recarrega o veículo
+  /// exibido sem mostrar carregamento.
+  Future<void> _atualizarSilencioso() async {
+    final device = _selectedDevice;
+    if (_atualizando || _isLoading || device == null || !mounted) return;
+    _atualizando = true;
+    try {
+      await _loadTelemetryForDevice(device);
+      if (mounted && identical(device, _selectedDevice)) setState(() {});
+    } catch (e) {
+      debugPrint('Atualização automática do painel do veículo falhou: $e');
+    } finally {
+      _atualizando = false;
+    }
   }
 
   @override
@@ -196,15 +223,17 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
     final user = _supabase.currentUser;
     final operatorId = _currentPerfil?.id ?? user?.id ?? '';
 
+    // Viagem real (tabela `viagens`): do operador logado ou, para admin e
+    // gerente, a do veículo exibido.
     TripInfo? tripInfo;
-    if (isOperador && operatorId.isNotEmpty) {
-      tripInfo = await TripService().getActiveTrip(operatorId);
-      _currentTripInfo = tripInfo;
+    if (isOperador) {
+      if (operatorId.isNotEmpty) tripInfo = await TripService().getActiveTrip(operatorId);
+    } else {
+      tripInfo = await TripService().getActiveTripByDevice(device.id);
     }
+    _currentTripInfo = tripInfo;
 
-    // Se for operador e a viagem NÃO estiver ativa:
-    // "quando o operador faz cadastro, a viajem não é pra estar iniciada...
-    // e é quando ele ta com a viajem iniciada que ele vai pega as informações"
+    // Operador sem viagem iniciada não vê as leituras (só durante a viagem).
     if (isOperador && tripInfo == null) {
       _hasActiveTrip = false;
       _activeTripDuration = '0h 0m';
@@ -215,73 +244,26 @@ class _DashboardVeiculoScreenState extends State<DashboardVeiculoScreen> {
       return;
     }
 
-    // "e as informações do dashboard tem que ser sempre a mais recente"
+    // Só as últimas leituras (o painel se atualiza a cada poucos segundos).
     final telemetryResults = await Future.wait([
-      _supabase.getLatestMedicao(device.id),
-      _supabase.getMedicoesFiltro([device.id], inicio, agora),
+      _supabase.getUltimasMedicoes(device.id, limite: 20),
       _supabase.getOcorrenciasFiltro([device.id], inicio, agora),
     ]);
-    final latestDirect = telemetryResults[0] as MedicaoModel?;
-    final medicoes = telemetryResults[1] as List<MedicaoModel>;
-    final ocorrencias = telemetryResults[2] as List<OcorrenciaModel>;
+    final medicoes = telemetryResults[0] as List<MedicaoModel>;
+    final ocorrencias = telemetryResults[1] as List<OcorrenciaModel>;
     ocorrencias.sort((a, b) => (b.criadoEm ?? DateTime(1970)).compareTo(a.criadoEm ?? DateTime(1970)));
 
-    MedicaoModel? latest = latestDirect;
-    if (medicoes.isNotEmpty) {
-      medicoes.sort((a, b) => (b.registradoEm ?? DateTime(1970)).compareTo(a.registradoEm ?? DateTime(1970)));
-      if (latest == null) {
-        latest = medicoes.first;
-      } else if (medicoes.first.registradoEm != null && latest.registradoEm != null) {
-        if (medicoes.first.registradoEm!.isAfter(latest.registradoEm!)) {
-          latest = medicoes.first;
-        }
-      }
+    final MedicaoModel? latest = medicoes.isNotEmpty ? medicoes.last : null;
+    final bool ativa = tripInfo != null;
+    final String duracaoStr = tripInfo?.formattedDuration ?? '0h 0m';
+
+    List<double> ultimos(Iterable<num?> v) {
+      final l = v.whereType<num>().map((e) => e.toDouble()).toList();
+      return l.length > 10 ? l.sublist(l.length - 10) : l;
     }
 
-    bool ativa = false;
-    String duracaoStr = '0h 0m';
-
-    if (isOperador && tripInfo != null) {
-      ativa = true;
-      duracaoStr = tripInfo.formattedDuration;
-    } else if (latest?.registradoEm != null) {
-      ativa = agora.difference(latest!.registradoEm!).inHours < 2;
-      if (ativa && medicoes.isNotEmpty) {
-        medicoes.sort((a, b) => (a.registradoEm ?? agora).compareTo(b.registradoEm ?? agora));
-        final DateTime first = medicoes.first.registradoEm ?? agora;
-        final int duracao = agora.difference(first).inMinutes;
-        duracaoStr = '${duracao ~/ 60}h ${duracao % 60}m';
-      }
-    }
-
-    List<double> recentTemps = [];
-    List<double> recentVibrations = [];
-    if (medicoes.isNotEmpty) {
-      final sortedCron = List<MedicaoModel>.from(medicoes);
-      sortedCron.sort((a, b) => (a.registradoEm ?? agora).compareTo(b.registradoEm ?? agora));
-      recentTemps = sortedCron
-          .map((m) => m.temperatura?.toDouble())
-          .whereType<double>()
-          .toList();
-      if (recentTemps.length > 10) {
-        recentTemps = recentTemps.sublist(recentTemps.length - 10);
-      }
-
-      recentVibrations = sortedCron
-          .map((m) => m.vibracao?.toDouble())
-          .whereType<double>()
-          .toList();
-      if (recentVibrations.length > 10) {
-        recentVibrations = recentVibrations.sublist(recentVibrations.length - 10);
-      }
-    }
-
-    if (recentTemps.isEmpty && latest?.temperatura != null) {
-      recentTemps.add(latest!.temperatura!.toDouble());
-    }
-    if (recentVibrations.isEmpty && latest?.vibracao != null) {
-      recentVibrations.add(latest!.vibracao!.toDouble());
-    }
+    final recentTemps = ultimos(medicoes.map((m) => m.temperatura));
+    final recentVibrations = ultimos(medicoes.map((m) => m.vibracao));
 
     _latestMedicao = latest;
     _recentTemperatures = recentTemps;

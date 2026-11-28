@@ -60,7 +60,7 @@ class _DashboardFrotaScreenState extends State<DashboardFrotaScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fetchData();
     });
-    _atualizacao = Timer.periodic(const Duration(seconds: 15), (_) => _atualizarSilencioso());
+    _atualizacao = Timer.periodic(const Duration(seconds: 10), (_) => _atualizarSilencioso());
   }
 
   @override

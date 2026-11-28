@@ -42,6 +42,8 @@ class NutriGuardApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'NutriGuard',
+      // Fonte empacotada no app (ver pubspec.yaml), sem download do Google Fonts.
+      theme: ThemeData(fontFamily: 'Roboto'),
       initialRoute: '/splash',
       routes: {
         // Splash

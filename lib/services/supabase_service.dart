@@ -926,6 +926,20 @@ class SupabaseService {
     return (data as List).map((e) => MedicaoModel.fromJson(e)).toList().reversed.toList();
   }
 
+  /// Últimas [limite] medições do veículo, da mais antiga para a mais recente
+  /// (consulta leve para os painéis que se atualizam sozinhos).
+  Future<List<MedicaoModel>> getUltimasMedicoes(String dispositivoId, {int limite = 20}) async {
+    final cleanId = dispositivoId.trim();
+    if (cleanId.isEmpty) return [];
+    final data = await _client
+        .from('medicoes')
+        .select()
+        .eq('id_dispositivo', cleanId)
+        .order('registrado_em', ascending: false)
+        .limit(limite);
+    return (data as List).map((e) => MedicaoModel.fromJson(e)).toList().reversed.toList();
+  }
+
   Future<MedicaoModel?> getLatestMedicao(String dispositivoId) async {
     try {
       final cleanId = dispositivoId.trim();

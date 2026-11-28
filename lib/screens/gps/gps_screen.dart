@@ -52,7 +52,8 @@ class _GpsScreenState extends State<GpsScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fetchData();
     });
-    _timer = Timer.periodic(const Duration(seconds: 30), (_) {
+    // O ESP32 envia a cada poucos segundos: posição atualizada a cada 5 s.
+    _timer = Timer.periodic(const Duration(seconds: 5), (_) {
       _refreshLocations();
     });
   }
